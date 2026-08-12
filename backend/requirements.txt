@@ -1,0 +1,37 @@
+# Pinned exactly so an image rebuild cannot silently pull a different (or
+# breaking, or compromised) version. Bump deliberately, not by accident.
+
+# --- Web framework ---
+fastapi==0.141.1
+uvicorn[standard]==0.52.1
+python-multipart==0.0.32
+
+# --- Database ---
+sqlalchemy==2.0.51
+alembic==1.19.0
+asyncpg==0.31.0
+psycopg2-binary==2.9.12
+
+# --- Validation / settings ---
+pydantic==2.13.4
+pydantic-settings==2.14.2
+email-validator==2.3.0
+python-dotenv==1.2.2
+
+# --- Auth ---
+python-jose[cryptography]==3.5.0
+bcrypt==5.0.0
+pyotp==2.10.0
+qrcode[pil]==8.2
+
+# --- Infrastructure ---
+redis==8.1.0
+celery==5.6.3
+httpx==0.28.1
+
+# --- Spreadsheet export (formatted XLSX schedule exports) ---
+openpyxl==3.1.5
+
+# --- Third-party services ---
+stripe==15.4.0
+sentry-sdk[fastapi]==2.66.1

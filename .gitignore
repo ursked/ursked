@@ -1,0 +1,35 @@
+
+# --- gh-backup baseline ---
+node_modules/
+.next/
+dist/
+build/
+out/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.jks
+*.keystore
+media/
+uploads/
+public/uploads/
+**/__pycache__/
+*session*.json
+*.log
+*.out
+nohup.out
+
+# Build caches (any variant, e.g. .next-old snapshots)
+.next*/
+!.next.example
+.venv/
+venv/
+.pytest_cache/
+
+# Local dev / test artifacts and client data (never commit)
+e2e/
+*.xlsx
+backend/seed_client_schedule.py

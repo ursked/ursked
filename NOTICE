@@ -1,0 +1,18 @@
+ursked — Community Edition
+Copyright (c) 2026 Jan Roldan Hernandez
+
+This software is SOURCE AVAILABLE, licensed under the Elastic License 2.0
+(ELv2). See the LICENSE file for the full terms.
+
+It is NOT "open source": the Elastic License 2.0 is not approved by the Open
+Source Initiative and is not an OSI-approved license. Please do not describe
+ursked as open source.
+
+In particular, the Elastic License 2.0 does not permit you to provide the
+software to third parties as a hosted or managed service that gives them access
+to a substantial set of its features. You may run it for your own organization
+and modify it, subject to the terms in LICENSE.
+
+The name "ursked" and the ursked logo are trademarks of Jan Roldan Hernandez and
+are not covered by the Elastic License 2.0. See TRADEMARK.md — forks and
+redistributions must use a different name and logo.
