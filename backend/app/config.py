@@ -48,6 +48,14 @@ class Settings(BaseSettings):
     # --- Cookie-based auth ---
     COOKIE_SECURE: bool = True
     COOKIE_SAMESITE: str = "lax"
+
+    # Escape hatch for self-hosting on a trusted network with no TLS (e.g. a LAN
+    # trial). When true, the production guards on COOKIE_SECURE=false and on
+    # http:// CORS origins are downgraded from hard errors to loud startup
+    # warnings, so the app runs with ENVIRONMENT=production instead of forcing
+    # development mode. It never relaxes the DEBUG guard or the wildcard-CORS
+    # guard. Leave this false for any internet-facing deployment.
+    ALLOW_INSECURE_TRANSPORT: bool = False
     COOKIE_DOMAIN: Optional[str] = None
     ACCESS_COOKIE_NAME: str = "access_token"
     REFRESH_COOKIE_NAME: str = "refresh_token"
@@ -126,20 +134,48 @@ class Settings(BaseSettings):
             )
 
         if self.is_production:
+            # DEBUG is never negotiable: it leaks exception detail and enables
+            # wildcard CORS. ALLOW_INSECURE_TRANSPORT does not touch this.
             if self.DEBUG:
                 raise ValueError(
                     "DEBUG must be false in production: it enables wildcard CORS "
                     "and leaks exception details to clients."
                 )
-            if not self.COOKIE_SECURE:
-                raise ValueError("COOKIE_SECURE must be true in production.")
+            # A wildcard origin is always a hard error — it is never part of a
+            # legitimate no-TLS trial and defeats CSRF/cookie protections.
             if any(o.strip() == "*" for o in self.CORS_ORIGINS):
                 raise ValueError("CORS_ORIGINS must not contain '*' in production.")
-            insecure = [o for o in self.CORS_ORIGINS if o.startswith("http://")]
-            if insecure:
-                raise ValueError(
-                    f"CORS_ORIGINS must use https in production; got: {insecure}"
-                )
+
+            insecure_cors = [o for o in self.CORS_ORIGINS if o.startswith("http://")]
+
+            if self.ALLOW_INSECURE_TRANSPORT:
+                # Trusted-network / no-TLS opt-in: downgrade the transport-security
+                # guards to loud warnings so the app still runs as production.
+                if not self.COOKIE_SECURE:
+                    logger.warning(
+                        "ALLOW_INSECURE_TRANSPORT is set: running with "
+                        "COOKIE_SECURE=false. Auth cookies will be sent over "
+                        "plain HTTP. Use this ONLY on a trusted network; put TLS "
+                        "in front and set COOKIE_SECURE=true for anything "
+                        "internet-facing."
+                    )
+                if insecure_cors:
+                    logger.warning(
+                        "ALLOW_INSECURE_TRANSPORT is set: allowing http:// CORS "
+                        "origins %s. Use https origins behind TLS in production.",
+                        insecure_cors,
+                    )
+            else:
+                if not self.COOKIE_SECURE:
+                    raise ValueError(
+                        "COOKIE_SECURE must be true in production. For a no-TLS "
+                        "trial on a trusted network, set ALLOW_INSECURE_TRANSPORT=true."
+                    )
+                if insecure_cors:
+                    raise ValueError(
+                        f"CORS_ORIGINS must use https in production; got: {insecure_cors}. "
+                        "For a no-TLS trial, set ALLOW_INSECURE_TRANSPORT=true."
+                    )
 
         if self.COOKIE_SAMESITE == "none" and not self.COOKIE_SECURE:
             raise ValueError("COOKIE_SAMESITE=none requires COOKIE_SECURE=true.")

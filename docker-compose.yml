@@ -71,6 +71,10 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-[]}
       COOKIE_SECURE: "${COOKIE_SECURE:-true}"
       COOKIE_SAMESITE: ${COOKIE_SAMESITE:-lax}
+      # No-TLS trial opt-in: downgrades the COOKIE_SECURE / http-CORS production
+      # guards to warnings so the app runs as production over plain HTTP on a
+      # trusted network. Never enable this internet-facing. See .env.example.
+      ALLOW_INSECURE_TRANSPORT: "${ALLOW_INSECURE_TRANSPORT:-false}"
       EXPOSE_API_DOCS: "${EXPOSE_API_DOCS:-false}"
       # First-boot bootstrap (see backend/seed_ce.py). Consumed only when the
       # database has no users yet; ignored on every subsequent start.
@@ -112,9 +116,12 @@ services:
       # backend. Keeps auth cookies first-party and avoids CORS entirely.
       NEXT_PUBLIC_API_URL: ""
       API_INTERNAL_URL: http://backend:8000
-    # Bind to loopback; terminate TLS at a reverse proxy in front of this.
+    # Serves on all interfaces by default so the app is reachable on the LAN.
+    # For production, put a TLS-terminating reverse proxy in front of this and
+    # keep COOKIE_SECURE=true. To restrict to loopback, change this to
+    # "127.0.0.1:3000:3000".
     ports:
-      - "127.0.0.1:3000:3000"
+      - "3000:3000"
     depends_on:
       backend:
         condition: service_healthy

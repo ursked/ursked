@@ -59,16 +59,34 @@ generated password. Copy it now.
 
 ### Sign in
 
-Open the app (default `http://127.0.0.1:3000`, or your proxied domain), sign in
+Open the app (by default it serves on all interfaces, so `http://<this-host>:3000`
+on your LAN, or `http://127.0.0.1:3000` locally, or your proxied domain), sign in
 with the admin email and that password. **You will be required to change the
 password on first sign-in.**
 
 ## Running behind HTTPS
 
-Keep `COOKIE_SECURE=true` and put a TLS-terminating reverse proxy in front of
-the frontend's `127.0.0.1:3000`. The browser only ever talks to the frontend
-origin; it proxies `/api/*` to the backend internally, so no CORS setup is
-needed. For a plain-HTTP trial on localhost only, set `COOKIE_SECURE=false`.
+For production, keep `ENVIRONMENT=production` and `COOKIE_SECURE=true`, and put a
+TLS-terminating reverse proxy in front of the frontend's `:3000`. The browser
+only ever talks to the frontend origin; it proxies `/api/*` to the backend
+internally, so no CORS setup is needed.
+
+### Plain-HTTP trial (no proxy)
+
+Secure cookies require HTTPS, so production refuses to start without them. To try
+the app over plain HTTP on a **trusted network** (localhost or a LAN IP, no
+reverse proxy), set both of these in `.env`:
+
+```
+COOKIE_SECURE=false
+ALLOW_INSECURE_TRANSPORT=true
+```
+
+`ENVIRONMENT` stays `production`. The opt-in downgrades only the two transport
+checks (Secure cookies and `http://` CORS origins) to loud startup warnings;
+`DEBUG` and wildcard CORS remain hard-blocked. **Never enable
+`ALLOW_INSECURE_TRANSPORT` on anything reachable from the internet** — put TLS in
+front and leave it `false`.
 
 ## Updating
 
