@@ -1,16 +1,98 @@
-# ursked — Community Edition
+<div align="center">
 
-A self-hosted platform for **employee scheduling, leave, attendance and
-payroll** — the roster all the way to the payslip, in one place.
+<img src="frontend/public/logo/urskedlogo.png" alt="ursked" width="360">
 
-This is the **Community Edition**: a single-organization, self-hosted build. It
-has no marketing page, no self-service sign-up, and no multi-tenant / billing
-console. You run it for your own organization.
+### The employee roster, all the way to the payslip — self-hosted.
+
+**ursked** is a workforce-management platform for scheduling, leave, attendance
+and payroll. This is the **Community Edition**: a single-organization build you
+run on your own server, with your data on your own infrastructure.
+
+[Quickstart](#quickstart) · [What it does](#what-it-does) · [Screenshots](#screenshots) · [Security](#security--access-control) · [License](#license)
+
+![Weekly schedule](frontend/public/screenshots/schedules.png)
+
+</div>
+
+---
 
 > **Source available, not open source.** ursked is licensed under the
-> [Elastic License 2.0](LICENSE). You can run and modify it for your own use,
-> but you may not offer it to third parties as a hosted or managed service. See
-> [NOTICE](NOTICE) and [TRADEMARK.md](TRADEMARK.md).
+> [Elastic License 2.0](LICENSE). You may run and modify it for your own
+> organization, but you may **not** offer it to third parties as a hosted or
+> managed service. See [NOTICE](NOTICE) and [TRADEMARK.md](TRADEMARK.md).
+
+## What it does
+
+ursked replaces the spreadsheet-and-email workflow most teams use to run their
+staff. It covers the whole cycle in one place, with role-aware access so people
+only see and do what they should.
+
+### Scheduling
+- Weekly roster grid with multiple shift patterns and work arrangements
+  (on-site, WFH, hybrid).
+- Draft rosters, then publish when they're ready — nothing is visible to staff
+  until you say so.
+- One-click week duplication, per-employee display timezones, and guardrails
+  against over-scheduling.
+- Shift change requests and swaps that route through approval.
+
+### Leave management
+- Configurable leave types with balances and accrual.
+- Multi-level, priority-based approval chains — route requests to the right
+  approvers, with fallbacks and exclusions.
+- Live balance tracking so requesters and approvers see what's available.
+
+### Attendance & overtime
+- Track clock times, tardiness and overtime against policy rules.
+- Policy-driven exceptions are flagged automatically.
+- Night-differential and holiday handling built in.
+
+### Payroll & compensation
+- Salary grades with effective-dated raises.
+- Bonuses, allowances and deductions as an auditable ledger.
+- Run payroll per period; figures are denominated in your organization's master
+  currency.
+- Sensitive salary data sits behind an approval-based enrollment gate.
+
+### Organization
+- Model your company down to Company → Division → Department → Section → Team —
+  the hierarchy is configurable to any depth.
+- Assign heads and deputies; drive schedule visibility and approval routing from
+  the tree.
+- List view and an interactive org chart.
+
+### Analytics
+- Monthly trends for overtime, leave and attendance to help you staff smarter.
+
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%"><b>Weekly schedule</b><br>
+      <img src="frontend/public/screenshots/schedules.png" alt="Weekly schedule grid"></td>
+    <td width="50%"><b>Payroll &amp; salaries</b><br>
+      <img src="frontend/public/screenshots/payroll.png" alt="Employee salaries and payroll"></td>
+  </tr>
+  <tr>
+    <td width="50%"><b>Organization chart</b><br>
+      <img src="frontend/public/screenshots/org.png" alt="Organization chart"></td>
+    <td width="50%"><b>Dashboard</b><br>
+      <img src="frontend/public/screenshots/dashboard.png" alt="Dashboard overview"></td>
+  </tr>
+</table>
+
+## How it's built
+
+| Layer | Stack |
+|---|---|
+| Backend | FastAPI · SQLAlchemy (async) · Alembic migrations |
+| Frontend | Next.js 14 (App Router) · Tailwind CSS |
+| Data | PostgreSQL · Redis |
+| Delivery | Docker images for `backend` and `frontend`, orchestrated by Docker Compose |
+
+The browser only ever talks to the frontend origin; it proxies `/api/*` to the
+backend internally, so auth cookies stay first-party and there is no CORS to
+configure for the default deployment.
 
 ## Requirements
 
@@ -29,12 +111,12 @@ cd ursked
 # 2. Configure
 cp .env.example .env
 
-# Generate the two required secrets and paste them into .env
+# Generate the required secrets and paste them into .env
 python3 -c "import secrets; print('JWT_SECRET_KEY=' + secrets.token_urlsafe(64))"
 python3 -c "import secrets; print('POSTGRES_PASSWORD=' + secrets.token_urlsafe(24))"
 python3 -c "import secrets; print('REDIS_PASSWORD=' + secrets.token_urlsafe(24))"
 
-# Edit .env: set the passwords above, and your ORG_NAME / ADMIN_EMAIL.
+# Edit .env: set the secrets above, and your ORG_NAME / ADMIN_EMAIL.
 # Leave ADMIN_PASSWORD blank to have one generated for you.
 nano .env
 
@@ -59,8 +141,8 @@ generated password. Copy it now.
 
 ### Sign in
 
-Open the app (by default it serves on all interfaces, so `http://<this-host>:3000`
-on your LAN, or `http://127.0.0.1:3000` locally, or your proxied domain), sign in
+By default the app serves on all interfaces, so open `http://<this-host>:3000`
+on your LAN, `http://127.0.0.1:3000` locally, or your proxied domain. Sign in
 with the admin email and that password. **You will be required to change the
 password on first sign-in.**
 
@@ -87,6 +169,19 @@ checks (Secure cookies and `http://` CORS origins) to loud startup warnings;
 `DEBUG` and wildcard CORS remain hard-blocked. **Never enable
 `ALLOW_INSECURE_TRANSPORT` on anything reachable from the internet** — put TLS in
 front and leave it `false`.
+
+## Security & access control
+
+- **Role-based access control** — a module-and-action permission matrix across
+  seven built-in roles governs what each user can see and do.
+- **Two-factor authentication** — TOTP, SMS, or email.
+- **Salary access gating** — payroll figures are only visible to users
+  explicitly enrolled through an approval flow.
+- **Hardened startup** — the backend refuses to boot in production with a weak
+  JWT secret, `DEBUG` on, wildcard CORS, or insecure cookies (see the trial
+  opt-in above for the one deliberate, network-scoped exception).
+- **CSRF protection** on state-changing requests, with security response headers
+  applied globally.
 
 ## Updating
 
