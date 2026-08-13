@@ -441,7 +441,10 @@ class SalaryEnrollmentService:
             )
             for email in emails:
                 EmailService.fire_and_forget(
-                    lambda d, e=email: EmailService.send_email(d, e, subject, html)
+                    lambda d, e=email: EmailService.send_email(
+                        d, e, subject, html,
+                        log_type="salary_access_request", tenant_id=tenant_id,
+                    )
                 )
         except Exception:
             logger.exception("Failed to queue approver notification emails")
@@ -457,7 +460,10 @@ class SalaryEnrollmentService:
             if row and row[0]:
                 html = f"<p>{body}</p>"
                 EmailService.fire_and_forget(
-                    lambda d, e=row[0]: EmailService.send_email(d, e, subject, html)
+                    lambda d, e=row[0]: EmailService.send_email(
+                        d, e, subject, html,
+                        log_type="salary_access_decision", tenant_id=tenant_id,
+                    )
                 )
         except Exception:
             logger.exception("Failed to queue requester notification email")

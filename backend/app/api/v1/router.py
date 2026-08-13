@@ -7,6 +7,7 @@ from app.api.v1.auth import router as auth_router
 from app.api.v1.leave import router as leave_router
 from app.api.v1.organizations import router as organizations_router
 from app.api.v1.schedules import router as schedules_router
+from app.api.v1.schedule_visibility import router as schedule_visibility_router
 from app.api.v1.settings import router as settings_router
 from app.api.v1.configurable_types import router as configurable_types_router
 from app.api.v1.payroll import router as payroll_router
@@ -16,6 +17,8 @@ from app.api.v1.attendance import router as attendance_router
 from app.api.v1.policy_rules import router as policy_rules_router
 from app.api.v1.data_export import router as data_export_router
 from app.api.v1.site import router as site_router
+from app.api.v1.capabilities import router as capabilities_router
+from app.api.v1.smtp_settings import router as smtp_settings_router
 from app.api.v1.users import router as users_router
 from app.api.v1.salary_enrollment import router as salary_enrollment_router
 from app.api.v1.notifications import router as notifications_router
@@ -35,9 +38,12 @@ if EE:
 api_router = APIRouter()
 
 api_router.include_router(site_router)
+api_router.include_router(capabilities_router)
+api_router.include_router(smtp_settings_router)
 api_router.include_router(auth_router)
 api_router.include_router(users_router)
 api_router.include_router(schedules_router)
+api_router.include_router(schedule_visibility_router)
 api_router.include_router(leave_router)
 api_router.include_router(organizations_router)
 api_router.include_router(analytics_router)

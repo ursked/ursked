@@ -11,6 +11,9 @@ import {
   DashboardMetrics,
   Department,
   AppSettings,
+  SmtpSettings,
+  SmtpSettingsUpdate,
+  EmailLogEntry,
   ShiftStatusType,
   UserPreferences,
   OrgLevel,
@@ -18,6 +21,8 @@ import {
   OrgTreeResponse,
   OrgNodeDetail,
   OrgNodeMembersResponse,
+  ScheduleVisibilityGrant,
+  AccessibleNodesResponse,
   ApprovalChainResponse,
   LeaveTypeConfig,
   LeavePolicy,
@@ -422,6 +427,44 @@ class ApiClient {
     return response.json();
   }
 
+  async forgotPassword(email: string): Promise<{ message: string }> {
+    // Always resolves to the same neutral message regardless of whether the
+    // address exists — no account enumeration.
+    const response = await fetch(`${this.baseUrl}/api/v1/auth/forgot-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    return response.json();
+  }
+
+  async validateResetToken(token: string): Promise<{ valid: boolean }> {
+    const response = await fetch(
+      `${this.baseUrl}/api/v1/auth/validate-reset-token?token=${encodeURIComponent(token)}`,
+    );
+    if (!response.ok) {
+      return { valid: false };
+    }
+    return response.json();
+  }
+
+  async resetPassword(token: string, newPassword: string): Promise<{ message: string }> {
+    const response = await fetch(`${this.baseUrl}/api/v1/auth/reset-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, new_password: newPassword }),
+    });
+    if (!response.ok) {
+      let detail = 'Password reset failed';
+      try {
+        const data = await response.json();
+        detail = data.detail || detail;
+      } catch { /* ignore */ }
+      throw new Error(detail);
+    }
+    return response.json();
+  }
+
   async updateMyProfile(data: unknown): Promise<User> {
     return this.patch('/api/v1/users/me', data) as Promise<User>;
   }
@@ -634,6 +677,27 @@ class ApiClient {
 
   async updateAppSettings(data: Partial<AppSettings>): Promise<AppSettings> {
     return this.patch('/api/v1/settings/app', data) as Promise<AppSettings>;
+  }
+
+  // SMTP (self-host email)
+  async getSmtpSettings(): Promise<SmtpSettings> {
+    return this.get('/api/v1/smtp-settings') as Promise<SmtpSettings>;
+  }
+
+  async updateSmtpSettings(data: Partial<SmtpSettingsUpdate>): Promise<SmtpSettings> {
+    return this.put('/api/v1/smtp-settings', data) as Promise<SmtpSettings>;
+  }
+
+  async testSmtp(recipient?: string): Promise<{ success: boolean; message: string }> {
+    return this.post('/api/v1/smtp-settings/test', { recipient: recipient ?? null }) as Promise<{
+      success: boolean;
+      message: string;
+    }>;
+  }
+
+  async getEmailLogs(status?: string): Promise<EmailLogEntry[]> {
+    const q = status ? `?status=${encodeURIComponent(status)}` : '';
+    return this.get(`/api/v1/smtp-settings/email-logs${q}`) as Promise<EmailLogEntry[]>;
   }
 
   async getStatusTypes(): Promise<ShiftStatusType[]> {
@@ -899,6 +963,30 @@ class ApiClient {
     return this.get('/api/v1/organizations/tree') as Promise<OrgTreeResponse>;
   }
 
+  // Per-node schedule visibility grants
+  async getScheduleVisibilityGrants(userId?: number): Promise<ScheduleVisibilityGrant[]> {
+    const query = userId != null ? `?user_id=${userId}` : '';
+    return this.get(`/api/v1/schedule-visibility${query}`) as Promise<ScheduleVisibilityGrant[]>;
+  }
+
+  async createScheduleVisibilityGrant(data: {
+    user_id: number;
+    org_node_id: number;
+    include_descendants?: boolean;
+  }): Promise<ScheduleVisibilityGrant> {
+    return this.post('/api/v1/schedule-visibility', data) as Promise<ScheduleVisibilityGrant>;
+  }
+
+  async deleteScheduleVisibilityGrant(grantId: number): Promise<void> {
+    await this.del(`/api/v1/schedule-visibility/${grantId}`);
+  }
+
+  // The org nodes whose schedules the current user may view, with the count of
+  // members they can actually see in each.
+  async getAccessibleNodes(): Promise<AccessibleNodesResponse> {
+    return this.get('/api/v1/schedule-visibility/accessible-nodes') as Promise<AccessibleNodesResponse>;
+  }
+
   async createOrgNode(data: {
     parent_id?: number | null;
     level_id: number;
@@ -983,6 +1071,13 @@ class ApiClient {
   // Site status (public)
   async getSiteStatus(): Promise<{ maintenance_mode: boolean; registration_enabled: boolean; site_name: string }> {
     return this.get('/api/v1/site/status') as Promise<{ maintenance_mode: boolean; registration_enabled: boolean; site_name: string }>;
+  }
+
+  // Deployment capabilities (public): edition + core modules. Used to render
+  // edition-specific UI (e.g. the self-host SMTP tab only on Community, since
+  // the hosted SaaS manages SMTP through the operator console).
+  async getCapabilities(): Promise<{ site_name: string; version: string; edition: 'community' | 'enterprise'; core_modules: string[] }> {
+    return this.get('/api/v1/capabilities') as Promise<{ site_name: string; version: string; edition: 'community' | 'enterprise'; core_modules: string[] }>;
   }
 
   // Enterprise console (site settings, SMTP, audit logs, backups, tenants)

@@ -1,4 +1,4 @@
-/* SchedulePro service worker (hand-rolled, no build step).
+/* ursked service worker (hand-rolled, no build step).
  *
  * Strategy:
  *   - App shell / static assets: cache-first, versioned cache.

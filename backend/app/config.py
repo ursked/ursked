@@ -71,6 +71,26 @@ class Settings(BaseSettings):
     TWO_FACTOR_RATE_LIMIT_ATTEMPTS: int = 5
     TWO_FACTOR_RATE_LIMIT_WINDOW_SECONDS: int = 300
 
+    # --- Password reset ---
+    PASSWORD_RESET_TOKEN_TTL_MINUTES: int = 30
+    # Budget per email address AND per IP within the window (mailbomb guard).
+    PASSWORD_RESET_RATE_LIMIT_ATTEMPTS: int = 3
+    PASSWORD_RESET_RATE_LIMIT_WINDOW_SECONDS: int = 900
+
+    # --- Self-host SMTP bootstrap ---
+    # Optional. When SMTP_HOST is set, a startup bootstrap seeds the single
+    # SiteSettings SMTP config so a self-hosted (CE) install can send email
+    # without an operator console. Ignored once an admin edits SMTP in-app.
+    # The hosted SaaS leaves these unset and configures SMTP via superadmin.
+    SMTP_HOST: Optional[str] = None
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: Optional[str] = None
+    SMTP_PASSWORD: Optional[str] = None
+    SMTP_USE_TLS: bool = True
+    SMTP_USE_SSL: bool = False
+    SMTP_FROM_EMAIL: Optional[str] = None
+    SMTP_FROM_NAME: Optional[str] = None
+
     # --- API surface ---
     EXPOSE_API_DOCS: bool = False
 

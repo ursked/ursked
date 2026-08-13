@@ -296,4 +296,5 @@ def _node_to_response(node, member_count: int = 0) -> OrgNodeResponse:
         sort_order=node.sort_order,
         is_active=node.is_active,
         member_count=member_count,
+        schedule_visibility=node.schedule_visibility,
     )

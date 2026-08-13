@@ -1,6 +1,6 @@
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 # ── Org Level Schemas ────────────────────────────────────────────────
@@ -32,6 +32,21 @@ class OrgLevelsResponse(BaseModel):
 # ── Org Node Schemas ─────────────────────────────────────────────────
 
 
+_SCHEDULE_VISIBILITY_MODES = {"own_node", "own_and_children", "own_and_parent", "all"}
+
+
+def _validate_schedule_visibility(v: Optional[str]) -> Optional[str]:
+    """Accept a known mode, or None/'inherit' (both mean 'inherit from parent')."""
+    if v is None or v == "" or v == "inherit":
+        return None
+    if v not in _SCHEDULE_VISIBILITY_MODES:
+        raise ValueError(
+            "schedule_visibility must be one of: inherit, "
+            + ", ".join(sorted(_SCHEDULE_VISIBILITY_MODES))
+        )
+    return v
+
+
 class OrgNodeCreate(BaseModel):
     parent_id: Optional[int] = None
     level_id: int
@@ -41,6 +56,12 @@ class OrgNodeCreate(BaseModel):
     head_user_id: Optional[int] = None
     deputy_head_user_id: Optional[int] = None
     sort_order: int = 0
+    schedule_visibility: Optional[str] = None
+
+    @field_validator("schedule_visibility")
+    @classmethod
+    def _check_visibility(cls, v: Optional[str]) -> Optional[str]:
+        return _validate_schedule_visibility(v)
 
 
 class OrgNodeUpdate(BaseModel):
@@ -52,6 +73,12 @@ class OrgNodeUpdate(BaseModel):
     deputy_head_user_id: Optional[int] = None
     sort_order: Optional[int] = None
     is_active: Optional[bool] = None
+    schedule_visibility: Optional[str] = None
+
+    @field_validator("schedule_visibility")
+    @classmethod
+    def _check_visibility(cls, v: Optional[str]) -> Optional[str]:
+        return _validate_schedule_visibility(v)
 
 
 class OrgNodeMemberSummary(BaseModel):
@@ -81,6 +108,7 @@ class OrgNodeResponse(BaseModel):
     sort_order: int = 0
     is_active: bool = True
     member_count: int = 0
+    schedule_visibility: Optional[str] = None
 
 
 class OrgTreeNode(BaseModel):

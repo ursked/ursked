@@ -7,6 +7,14 @@ import { api } from '@/lib/api';
 import { OrgNodeDetail, OrgNodeMember } from '@/types';
 import MemberAssignModal from './MemberAssignModal';
 
+const VISIBILITY_LABELS: Record<string, string> = {
+  '': 'Inherited',
+  own_node: 'Own node only',
+  own_and_children: 'Own node + below',
+  own_and_parent: 'Own node + parent',
+  all: 'Whole organization',
+};
+
 interface Props {
   nodeId: number;
   canEdit: boolean;
@@ -26,6 +34,7 @@ export default function NodeDetailPanel({ nodeId, canEdit, onClose, onUpdated, o
     name: '',
     code: '',
     description: '',
+    schedule_visibility: '',
   });
 
   const { data: node, isLoading } = useQuery<OrgNodeDetail>({
@@ -46,6 +55,7 @@ export default function NodeDetailPanel({ nodeId, canEdit, onClose, onUpdated, o
         name: node.name,
         code: node.code || '',
         description: node.description || '',
+        schedule_visibility: node.schedule_visibility || '',
       });
       setEditing(false);
       setConfirmDelete(false);
@@ -91,6 +101,10 @@ export default function NodeDetailPanel({ nodeId, canEdit, onClose, onUpdated, o
     if (formData.name !== node?.name) updates.name = formData.name;
     if (formData.code !== (node?.code || '')) updates.code = formData.code || null;
     if (formData.description !== (node?.description || '')) updates.description = formData.description || null;
+    if (formData.schedule_visibility !== (node?.schedule_visibility || '')) {
+      // Empty string means "inherit" — send 'inherit' so the backend clears the override.
+      updates.schedule_visibility = formData.schedule_visibility || 'inherit';
+    }
 
     if (Object.keys(updates).length === 0) {
       setEditing(false);
@@ -179,6 +193,23 @@ export default function NodeDetailPanel({ nodeId, canEdit, onClose, onUpdated, o
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none resize-none"
                   />
                 </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Schedule visibility</label>
+                  <select
+                    value={formData.schedule_visibility}
+                    onChange={(e) => setFormData({ ...formData, schedule_visibility: e.target.value })}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
+                  >
+                    <option value="">Inherit from parent / tenant default</option>
+                    <option value="own_node">Own node only</option>
+                    <option value="own_and_children">Own node + everything below</option>
+                    <option value="own_and_parent">Own node + parent</option>
+                    <option value="all">Everyone (whole organization)</option>
+                  </select>
+                  <p className="mt-1 text-xs text-gray-400">
+                    Controls whose schedules members of this node can see. Overrides the tenant default; child nodes inherit unless they set their own.
+                  </p>
+                </div>
                 <div className="flex gap-2">
                   <button
                     onClick={handleSave}
@@ -188,7 +219,7 @@ export default function NodeDetailPanel({ nodeId, canEdit, onClose, onUpdated, o
                     {updateMutation.isPending ? 'Saving...' : 'Save'}
                   </button>
                   <button
-                    onClick={() => { setEditing(false); setFormData({ name: node.name, code: node.code || '', description: node.description || '' }); }}
+                    onClick={() => { setEditing(false); setFormData({ name: node.name, code: node.code || '', description: node.description || '', schedule_visibility: node.schedule_visibility || '' }); }}
                     className="px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 rounded-lg"
                   >
                     Cancel
@@ -224,6 +255,16 @@ export default function NodeDetailPanel({ nodeId, canEdit, onClose, onUpdated, o
               </svg>
               <span className="text-gray-500">Deputy:</span>
               <span className="font-medium text-gray-900">{node.deputy_head_user_name || '—'}</span>
+            </div>
+            <div className="flex items-center gap-2 text-sm">
+              <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+              </svg>
+              <span className="text-gray-500">Visibility:</span>
+              <span className="font-medium text-gray-900">
+                {VISIBILITY_LABELS[node.schedule_visibility || ''] || 'Inherited'}
+              </span>
             </div>
           </div>
 

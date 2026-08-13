@@ -641,6 +641,13 @@ async def publish_schedule_range(
             body=f"Your schedule for {label} has been published.",
         )
     await db.commit()
+    # Also email each affected employee (fire-and-forget), respecting the
+    # tenant's schedule-change notification preference.
+    if affected and await _should_notify_schedule_change(db, current_user.tenant_id):
+        await _notify_employee_ids(
+            db, current_user.tenant_id, affected,
+            f"Your schedule for {label} has been published.",
+        )
     return {"published_count": result["published_count"], "notified": len(affected)}
 
 
@@ -805,6 +812,29 @@ async def create_schedule_change_request(
         .where(ScheduleChangeRequest.id == request.id)
     )
     loaded = result.scalar_one()
+
+    # Notify the approver(s) who currently have a pending step (fire-and-forget).
+    requester_name = (
+        f"{loaded.requester.first_name} {loaded.requester.last_name}"
+        if loaded.requester else "An employee"
+    )
+    req_date = loaded.date.isoformat() if loaded.date else ""
+    for step in loaded.approval_steps:
+        if step.status == "pending" and step.approver and step.approver.email:
+            EmailService.fire_and_forget(
+                lambda db, email=step.approver.email,
+                approver_name=f"{step.approver.first_name} {step.approver.last_name}":
+                    EmailService.send_schedule_change_request_email(
+                        db,
+                        approver_email=email,
+                        approver_name=approver_name,
+                        requester_name=requester_name,
+                        request_type=loaded.request_type,
+                        req_date=req_date,
+                        reason=loaded.reason or "",
+                    )
+            )
+
     return _request_to_response(loaded)
 
 
@@ -912,6 +942,56 @@ async def review_schedule_change_request(
         .where(ScheduleChangeRequest.id == request_id)
     )
     loaded = result.scalar_one()
+
+    # On a FINAL decision, notify the requester (fire-and-forget). A rejection
+    # at any step is final; an approval is only final once no pending steps remain.
+    if new_status in ("approved", "rejected") and loaded.requester and loaded.requester.email:
+        EmailService.fire_and_forget(
+            lambda db, email=loaded.requester.email,
+            requester_name=f"{loaded.requester.first_name} {loaded.requester.last_name}",
+            reviewer_name=f"{current_user.first_name} {current_user.last_name}",
+            req_date=(loaded.date.isoformat() if loaded.date else ""):
+                EmailService.send_schedule_change_decision_email(
+                    db,
+                    to_email=email,
+                    requester_name=requester_name,
+                    decision=new_status,
+                    request_type=loaded.request_type,
+                    req_date=req_date,
+                    reviewer_name=reviewer_name,
+                    notes=review.notes or "",
+                )
+        )
+    elif new_status == "pending":
+        # This approval advanced the chain: notify the NEXT approver(s) whose
+        # step just became actionable (lowest pending step_order), so multi-step
+        # chains don't stall waiting on someone who was never told.
+        pending_steps = [s for s in loaded.approval_steps if s.status == "pending"]
+        if pending_steps:
+            next_order = min(s.step_order for s in pending_steps)
+            requester_name = (
+                f"{loaded.requester.first_name} {loaded.requester.last_name}"
+                if loaded.requester else "An employee"
+            )
+            req_date = loaded.date.isoformat() if loaded.date else ""
+            for step in pending_steps:
+                if step.step_order != next_order:
+                    continue
+                if step.approver and step.approver.email:
+                    EmailService.fire_and_forget(
+                        lambda db, email=step.approver.email,
+                        approver_name=f"{step.approver.first_name} {step.approver.last_name}":
+                            EmailService.send_schedule_change_request_email(
+                                db,
+                                approver_email=email,
+                                approver_name=approver_name,
+                                requester_name=requester_name,
+                                request_type=loaded.request_type,
+                                req_date=req_date,
+                                reason=loaded.reason or "",
+                            )
+                    )
+
     return _request_to_response(loaded)
 
 

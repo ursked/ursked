@@ -30,9 +30,11 @@ from app.models.tenant import Tenant
 from app.models.user import User
 from app.schemas.auth import (
     ActivateAccountRequest,
+    ForgotPasswordRequest,
     LoginRequest,
     LoginResponse,
     PasswordChangeRequest,
+    ResetPasswordRequest,
     TokenRefreshResponse,
     TwoFactorSetupResponse,
     TwoFactorVerifyRequest,
@@ -42,6 +44,7 @@ from app.schemas.user import UserResponse
 from app.services.auth_service import AuthService
 from app.services.email_service import EmailService
 from app.services.invite_service import InviteService
+from app.services.password_reset_service import PasswordResetService
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +66,20 @@ def _client_ip(request: Request) -> str:
     if forwarded:
         return forwarded.split(",")[0].strip()
     return request.client.host if request.client else "unknown"
+
+
+async def _frontend_base(db: AsyncSession, http_request: Request) -> str:
+    """Best base URL for building user-facing links. Prefers the configured
+    SiteSettings.base_url (correct behind a reverse proxy); falls back to the
+    request's own base with the API port swapped for the frontend port."""
+    from app.models.site_settings import SiteSettings
+
+    result = await db.execute(select(SiteSettings).limit(1))
+    site = result.scalar_one_or_none()
+    if site and site.base_url:
+        return site.base_url.replace(":8000", ":3000").rstrip("/")
+    base = str(http_request.base_url).rstrip("/")
+    return base.replace(":8000", ":3000")
 
 
 def _issue_session(response: Response, user: User) -> str:
@@ -123,8 +140,28 @@ async def login(
         dummy_verify_password(request.password)
 
     if not user or not verify_password(request.password, user.password_hash):
-        await AccountLockout.record_failure(identifier)
+        just_locked = await AccountLockout.record_failure(identifier)
         logger.warning("Login failed for username=%s ip=%s", request.username, ip)
+        # If this failure just tripped the lockout AND the account exists, alert
+        # the real owner. The send is fire-and-forget (off the response path), so
+        # it does not add a timing oracle for account existence.
+        if just_locked and user and user.email:
+            when = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+            EmailService.fire_and_forget(
+                lambda db, to=user.email, name=user.first_name, addr=ip, ts=when:
+                    EmailService.send_security_alert_email(
+                        db,
+                        to_email=to,
+                        first_name=name,
+                        event=(
+                            "Your account was temporarily locked after several failed "
+                            "sign-in attempts."
+                        ),
+                        ip_address=addr,
+                        when=ts,
+                        log_type="account_locked",
+                    )
+            )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid username or password",
@@ -214,6 +251,83 @@ async def activate_account(
     )
 
     return {"message": "Account activated successfully. You can now sign in."}
+
+
+# Identical message for any address — never reveal whether an account exists.
+_FORGOT_PASSWORD_MESSAGE = (
+    "If an account exists for that address, we've sent a password reset link."
+)
+
+
+@router.post("/forgot-password")
+async def forgot_password(
+    data: ForgotPasswordRequest,
+    http_request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Begin a password reset. Always returns the same message and status so it
+    cannot be used to enumerate accounts."""
+    email = (data.email or "").strip().lower()
+    ip = _client_ip(http_request)
+
+    # Rate-limit per address AND per IP so this can't be used to mailbomb someone
+    # or to brute the address space. Over-limit still returns the neutral message.
+    over_ip = await RateLimiter.hit(
+        f"pwreset:ip:{ip}",
+        settings.PASSWORD_RESET_RATE_LIMIT_ATTEMPTS,
+        settings.PASSWORD_RESET_RATE_LIMIT_WINDOW_SECONDS,
+    )
+    over_email = await RateLimiter.hit(
+        f"pwreset:email:{email}",
+        settings.PASSWORD_RESET_RATE_LIMIT_ATTEMPTS,
+        settings.PASSWORD_RESET_RATE_LIMIT_WINDOW_SECONDS,
+    )
+    if not over_ip and not over_email:
+        try:
+            frontend_base = await _frontend_base(db, http_request)
+            await PasswordResetService.request_reset(db, email, frontend_base)
+        except Exception:
+            # Never surface internal errors here — that would be an oracle too.
+            logger.exception("forgot-password processing failed for a request")
+
+    return {"message": _FORGOT_PASSWORD_MESSAGE}
+
+
+@router.get("/validate-reset-token", response_model=ValidateTokenResponse)
+async def validate_reset_token(
+    token: str = Query(...),
+    db: AsyncSession = Depends(get_db),
+):
+    valid = await PasswordResetService.validate_token(db, token)
+    return ValidateTokenResponse(valid=valid)
+
+
+@router.post("/reset-password")
+async def reset_password(
+    data: ResetPasswordRequest,
+    http_request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Complete a password reset with a valid token. Cap attempts to keep the
+    token space from being brute-forced."""
+    ip = _client_ip(http_request)
+    if await RateLimiter.hit(
+        f"pwreset-verify:ip:{ip}",
+        settings.LOGIN_RATE_LIMIT_ATTEMPTS,
+        settings.LOGIN_RATE_LIMIT_WINDOW_SECONDS,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many attempts. Please request a new reset link.",
+        )
+
+    ok = await PasswordResetService.complete_reset(db, data.token, data.new_password)
+    if not ok:
+        raise HTTPException(
+            status_code=400,
+            detail="This password reset link is invalid or has expired. Please request a new one.",
+        )
+    return {"message": "Your password has been reset. You can now sign in."}
 
 
 @router.post("/2fa/verify", response_model=LoginResponse)

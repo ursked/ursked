@@ -334,7 +334,22 @@ function SchedulesPageInner() {
     queryFn: () => api.getOrgTree(),
     staleTime: 5 * 60_000,
   });
+  // The nodes THIS user may actually view (mirrors their real schedule
+  // visibility: role scope + per-node override + secondary assignments + grants).
+  // Used to restrict the picker so a non-admin only sees choosable units, with a
+  // live count of the people they can see in each.
+  const { data: accessible } = useQuery({
+    queryKey: ['accessible-nodes'],
+    queryFn: () => api.getAccessibleNodes(),
+    staleTime: 5 * 60_000,
+  });
   const orgNodeOptions = useMemo(() => {
+    const counts = new Map<number, number>();
+    for (const n of accessible?.nodes ?? []) counts.set(n.id, n.visible_member_count);
+    // Admins ("can_see_all") get the full tree; everyone else is restricted to
+    // the nodes they can view.
+    const restrict = accessible ? !accessible.can_see_all : false;
+
     const out: { id: number; label: string; depth: number }[] = [];
     const walk = (nodes: OrgTreeNode[], depth: number) => {
       for (const n of nodes) {
@@ -343,13 +358,18 @@ function SchedulesPageInner() {
           walk(n.children ?? [], depth); // descend without adding the root
           continue;
         }
-        out.push({ id: n.id, label: n.name, depth });
+        const visible = !restrict || counts.has(n.id);
+        if (visible) {
+          const count = counts.get(n.id);
+          const label = count != null ? `${n.name} (${count})` : n.name;
+          out.push({ id: n.id, label, depth });
+        }
         if (n.children?.length) walk(n.children, depth + 1);
       }
     };
     walk(orgTree?.nodes ?? [], 0);
     return out;
-  }, [orgTree]);
+  }, [orgTree, accessible]);
 
   // Guardrail lint for the visible range (editors only) → inline cell warnings.
   const { data: lintData } = useQuery({

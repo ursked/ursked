@@ -11,7 +11,8 @@ from sqlalchemy.orm import selectinload
 
 from app.models.schedule import DateRemark, ScheduleSnapshot, ScheduleTemplate, Shift
 from app.models.settings import AppSettings, ShiftStatusType
-from app.models.org_hierarchy import OrgNode
+from app.models.org_hierarchy import NodeScheduleVisibility, OrgNode
+from app.models.configurable_types import UserOrgNode
 from app.models.leave import LeaveApplication, LeaveApproverAssignment
 from app.models.user import User
 
@@ -59,6 +60,98 @@ class ScheduleService:
         return list(visited)
 
     @staticmethod
+    async def _get_user_node_ids(
+        db: AsyncSession, user_id: int, tenant_id: UUID
+    ) -> List[int]:
+        """All org nodes a user belongs to: the primary (User.org_node_id) AND
+        every secondary assignment (UserOrgNode). Multi-node staff (e.g. someone
+        who splits time across two teams) should be scoped to all of them."""
+        node_ids: set[int] = set()
+        primary = (
+            await db.execute(
+                select(User.org_node_id).where(
+                    User.id == user_id, User.tenant_id == tenant_id
+                )
+            )
+        ).one_or_none()
+        if primary and primary[0]:
+            node_ids.add(primary[0])
+        secondary = await db.execute(
+            select(UserOrgNode.org_node_id)
+            .join(User, User.id == UserOrgNode.user_id)
+            .where(UserOrgNode.user_id == user_id, User.tenant_id == tenant_id)
+        )
+        for row in secondary.all():
+            if row[0]:
+                node_ids.add(row[0])
+        return list(node_ids)
+
+    @staticmethod
+    async def _get_node_member_ids(
+        db: AsyncSession, node_ids: List[int], tenant_id: UUID
+    ) -> List[int]:
+        """All active users who belong to any of the given nodes — counting both
+        the primary assignment (User.org_node_id) AND secondary ones
+        (UserOrgNode). Returns [] for an empty node set."""
+        if not node_ids:
+            return []
+        member_ids: set[int] = set()
+        primary = await db.execute(
+            select(User.id).where(
+                User.tenant_id == tenant_id,
+                User.org_node_id.in_(node_ids),
+                User.is_active == True,  # noqa: E712
+            )
+        )
+        for row in primary.all():
+            member_ids.add(row[0])
+        secondary = await db.execute(
+            select(UserOrgNode.user_id)
+            .join(User, User.id == UserOrgNode.user_id)
+            .where(
+                User.tenant_id == tenant_id,
+                UserOrgNode.org_node_id.in_(node_ids),
+                User.is_active == True,  # noqa: E712
+            )
+        )
+        for row in secondary.all():
+            member_ids.add(row[0])
+        return list(member_ids)
+
+    # Valid schedule-visibility modes. "inherit" means "use the parent node's
+    # effective mode" (and ultimately the tenant default at the root).
+    _VISIBILITY_MODES = {"own_node", "own_and_children", "own_and_parent", "all"}
+
+    @staticmethod
+    async def _effective_node_visibility(
+        db: AsyncSession, node_id: int, tenant_id: UUID, tenant_default: str
+    ) -> str:
+        """Resolve a node's effective visibility mode.
+
+        A node may set schedule_visibility to override; when unset (NULL /
+        'inherit') it walks up to the nearest ancestor that sets one, falling
+        back to the tenant-wide default at the root. A visited set bounds the
+        walk against corrupt cyclic parent links."""
+        visited: set[int] = set()
+        current: Optional[int] = node_id
+        while current is not None and current not in visited:
+            visited.add(current)
+            row = (
+                await db.execute(
+                    select(OrgNode.schedule_visibility, OrgNode.parent_id).where(
+                        OrgNode.id == current, OrgNode.tenant_id == tenant_id
+                    )
+                )
+            ).one_or_none()
+            if row is None:
+                break
+            mode, parent_id = row[0], row[1]
+            if mode and mode in ScheduleService._VISIBILITY_MODES:
+                return mode
+            current = parent_id
+        return tenant_default if tenant_default in ScheduleService._VISIBILITY_MODES else "own_node"
+
+    @staticmethod
     async def get_visible_employee_ids(
         db: AsyncSession,
         tenant_id: UUID,
@@ -83,13 +176,10 @@ class ScheduleService:
         # Always include self
         visible_ids: set = {current_user_id}
 
-        # Load current user's org_node_id
-        user_stmt = select(User.org_node_id).where(
-            User.id == current_user_id, User.tenant_id == tenant_id
+        # All nodes the user belongs to (primary + secondary assignments).
+        user_node_ids = await ScheduleService._get_user_node_ids(
+            db, current_user_id, tenant_id
         )
-        user_result = await db.execute(user_stmt)
-        user_row = user_result.one_or_none()
-        user_org_node_id = user_row[0] if user_row else None
 
         # ── Supervisor scope: nodes where user is head/deputy ─────────
         head_nodes_stmt = (
@@ -106,24 +196,17 @@ class ScheduleService:
         head_nodes_result = await db.execute(head_nodes_stmt)
         head_node_ids = [row[0] for row in head_nodes_result.all()]
 
-        is_supervisor = len(head_node_ids) > 0
-
-        if is_supervisor:
-            # Include all descendant nodes of headed nodes
+        if head_node_ids:
+            # A supervisor sees their whole subtree, members counted via primary
+            # AND secondary assignment.
             all_supervised_node_ids = await ScheduleService._get_descendant_node_ids(
                 db, head_node_ids, tenant_id
             )
-            members_stmt = (
-                select(User.id)
-                .where(
-                    User.tenant_id == tenant_id,
-                    User.org_node_id.in_(all_supervised_node_ids),
-                    User.is_active == True,
+            visible_ids.update(
+                await ScheduleService._get_node_member_ids(
+                    db, all_supervised_node_ids, tenant_id
                 )
             )
-            members_result = await db.execute(members_stmt)
-            for row in members_result.all():
-                visible_ids.add(row[0])
 
         # Also check explicit approver assignments
         approver_stmt = (
@@ -139,63 +222,69 @@ class ScheduleService:
         for row in approver_result.all():
             visible_ids.add(row[0])
 
-        # ── Regular employee scope (based on tenant setting) ──────────
-        if user_org_node_id:
-            if visibility == "all":
-                return None  # No filter
-
-            if visibility in ("own_node", "own_and_children", "own_and_parent"):
-                # Own node members
-                own_stmt = (
-                    select(User.id)
-                    .where(
-                        User.tenant_id == tenant_id,
-                        User.org_node_id == user_org_node_id,
-                        User.is_active == True,
+        # ── Explicit per-node grants ──────────────────────────────────
+        # An admin can grant a user visibility into a specific node's schedule
+        # (and, by default, its subtree) even when they don't head it.
+        grants_stmt = select(
+            NodeScheduleVisibility.org_node_id,
+            NodeScheduleVisibility.include_descendants,
+        ).where(
+            NodeScheduleVisibility.tenant_id == tenant_id,
+            NodeScheduleVisibility.user_id == current_user_id,
+        )
+        grants_result = await db.execute(grants_stmt)
+        granted_rows = grants_result.all()
+        if granted_rows:
+            granted_node_ids: set[int] = set()
+            roots_with_descendants = [r[0] for r in granted_rows if r[1]]
+            granted_node_ids.update(r[0] for r in granted_rows)
+            if roots_with_descendants:
+                granted_node_ids.update(
+                    await ScheduleService._get_descendant_node_ids(
+                        db, roots_with_descendants, tenant_id
                     )
                 )
-                own_result = await db.execute(own_stmt)
-                for row in own_result.all():
-                    visible_ids.add(row[0])
-
-            if visibility == "own_and_children":
-                child_node_ids = await ScheduleService._get_descendant_node_ids(
-                    db, [user_org_node_id], tenant_id
+            visible_ids.update(
+                await ScheduleService._get_node_member_ids(
+                    db, list(granted_node_ids), tenant_id
                 )
-                if child_node_ids:
-                    child_stmt = (
-                        select(User.id)
-                        .where(
-                            User.tenant_id == tenant_id,
-                            User.org_node_id.in_(child_node_ids),
-                            User.is_active == True,
+            )
+
+        # ── Regular employee scope ────────────────────────────────────
+        # Effective visibility mode is resolved PER NODE: a node may override the
+        # tenant-wide default (own_node / own_and_children / own_and_parent / all),
+        # inheriting from its ancestors when unset. Applied to every node the user
+        # belongs to (so multi-node staff get the union).
+        for node_id in user_node_ids:
+            mode = await ScheduleService._effective_node_visibility(
+                db, node_id, tenant_id, visibility
+            )
+            if mode == "all":
+                return None  # No filter — this node grants full visibility
+
+            scope_node_ids: set[int] = {node_id}
+            if mode == "own_and_children":
+                scope_node_ids.update(
+                    await ScheduleService._get_descendant_node_ids(
+                        db, [node_id], tenant_id
+                    )
+                )
+            elif mode == "own_and_parent":
+                parent_row = (
+                    await db.execute(
+                        select(OrgNode.parent_id).where(
+                            OrgNode.id == node_id, OrgNode.tenant_id == tenant_id
                         )
                     )
-                    child_result = await db.execute(child_stmt)
-                    for row in child_result.all():
-                        visible_ids.add(row[0])
+                ).one_or_none()
+                if parent_row and parent_row[0]:
+                    scope_node_ids.add(parent_row[0])
 
-            if visibility == "own_and_parent":
-                # Get parent node
-                parent_stmt = (
-                    select(OrgNode.parent_id)
-                    .where(OrgNode.id == user_org_node_id, OrgNode.tenant_id == tenant_id)
+            visible_ids.update(
+                await ScheduleService._get_node_member_ids(
+                    db, list(scope_node_ids), tenant_id
                 )
-                parent_result = await db.execute(parent_stmt)
-                parent_row = parent_result.one_or_none()
-                parent_node_id = parent_row[0] if parent_row else None
-                if parent_node_id:
-                    parent_members_stmt = (
-                        select(User.id)
-                        .where(
-                            User.tenant_id == tenant_id,
-                            User.org_node_id == parent_node_id,
-                            User.is_active == True,
-                        )
-                    )
-                    parent_members_result = await db.execute(parent_members_stmt)
-                    for row in parent_members_result.all():
-                        visible_ids.add(row[0])
+            )
 
         return list(visible_ids)
 

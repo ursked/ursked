@@ -259,6 +259,7 @@ async def update_user(
 
     # Handle role updates separately
     role_codes = update_data.pop("role_codes", None)
+    roles_changed = False
     if role_codes is not None:
         # Remove existing non-employee roles, then assign new ones
         current_codes = set(user.role_codes)
@@ -268,6 +269,8 @@ async def update_user(
 
         _assert_may_assign_roles(current_user, list(new_codes - current_codes))
         _assert_may_revoke_roles(current_user, current_codes - new_codes)
+
+        roles_changed = new_codes != current_codes
 
         # Remove roles no longer assigned
         for code in current_codes - new_codes:
@@ -287,6 +290,18 @@ async def update_user(
 
     # Reload to get fresh role data
     user = await UserService.get_user_by_id(db, user.id, current_user.tenant_id)
+
+    # Notify the user their roles changed (fire-and-forget). Only when the set
+    # actually differs and it isn't the admin editing their own account.
+    if roles_changed and user.email and user.id != current_user.id:
+        role_labels = ", ".join(sorted(user.role_codes)) or "employee"
+        EmailService.fire_and_forget(
+            lambda db, email=user.email, first_name=user.first_name, labels=role_labels:
+                EmailService.send_roles_changed_email(
+                    db, to_email=email, first_name=first_name, role_labels=labels,
+                )
+        )
+
     return UserResponse.model_validate(user)
 
 
@@ -363,6 +378,7 @@ async def separate_employee(
 @router.post("/{user_id}/reinstate", response_model=UserResponse)
 async def reinstate_employee(
     user_id: int,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     _=Depends(require_role(["tenant_admin"])),
@@ -381,6 +397,17 @@ async def reinstate_employee(
     user.separation_reason = None
     user.separated_by = None
     await db.flush()
+
+    # Notify the reinstated user (fire-and-forget).
+    base_url = str(request.base_url).rstrip("/")
+    login_url = f"{base_url.replace(':8000', ':3000')}/auth/login"
+    if user.email:
+        EmailService.fire_and_forget(
+            lambda db, email=user.email, first_name=user.first_name, url=login_url:
+                EmailService.send_account_reinstated_email(
+                    db, to_email=email, first_name=first_name, login_url=url,
+                )
+        )
 
     user = await UserService.get_user_by_id(db, user_id, current_user.tenant_id)
     return UserResponse.model_validate(user)

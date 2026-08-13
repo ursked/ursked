@@ -11,7 +11,7 @@ class SiteSettings(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     # General
-    site_name = Column(String(200), nullable=False, default="SchedulePro")
+    site_name = Column(String(200), nullable=False, default="ursked")
     site_description = Column(Text, nullable=True)
     site_timezone = Column(String(100), nullable=False, default="UTC")
     primary_domain = Column(String(255), nullable=True)

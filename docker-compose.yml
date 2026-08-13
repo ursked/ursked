@@ -76,6 +76,16 @@ services:
       # trusted network. Never enable this internet-facing. See .env.example.
       ALLOW_INSECURE_TRANSPORT: "${ALLOW_INSECURE_TRANSPORT:-false}"
       EXPOSE_API_DOCS: "${EXPOSE_API_DOCS:-false}"
+      # Optional SMTP bootstrap (self-host email). If SMTP_HOST is set, seeds the
+      # mail config on first boot; admins can also manage it under Settings -> Email.
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_USE_TLS: "${SMTP_USE_TLS:-true}"
+      SMTP_USE_SSL: "${SMTP_USE_SSL:-false}"
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-ursked}
       # First-boot bootstrap (see backend/seed_ce.py). Consumed only when the
       # database has no users yet; ignored on every subsequent start.
       ORG_NAME: ${ORG_NAME:-My Organization}
@@ -84,6 +94,16 @@ services:
       ADMIN_FIRST_NAME: ${ADMIN_FIRST_NAME:-Admin}
       ADMIN_LAST_NAME: ${ADMIN_LAST_NAME:-}
       TZ: ${TZ:-UTC}
+      # Optional SMTP bootstrap (see .env.example). Seeds mail config on first
+      # boot; tenant admins can also manage it in-app under Settings > Email.
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_USE_TLS: "${SMTP_USE_TLS:-true}"
+      SMTP_USE_SSL: "${SMTP_USE_SSL:-false}"
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-ursked}
     # The image ENTRYPOINT runs the alembic migrations; this command then seeds
     # the single tenant + admin (idempotent) before starting the API server.
     command:

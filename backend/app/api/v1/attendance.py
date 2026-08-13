@@ -20,10 +20,39 @@ from app.schemas.attendance import (
     LeaveCreditAdjustmentCreate,
 )
 from app.services.attendance_service import AttendanceService
+from app.services.email_service import EmailService
 from app.services.overtime_service import OvertimeService
 from app.services.tardiness_service import TardinessService
 
 router = APIRouter(prefix="/attendance", tags=["attendance"])
+
+
+def _notify_overtime_decision(log, reviewer, decision: str, notes: str = "") -> None:
+    """Fire-and-forget an overtime decision email to the employee. Looks the
+    employee up in its own session so the request path stays fast."""
+    from app.models.user import User as UserModel
+
+    hours = f"{(log.overtime_minutes or 0) / 60:.2f}"
+    ot_date = log.date.isoformat() if log.date else ""
+    reviewer_name = f"{reviewer.first_name} {reviewer.last_name}"
+    emp_id = log.employee_id
+
+    async def _factory(db):
+        emp = await db.get(UserModel, emp_id)
+        if not emp or not emp.email:
+            return
+        await EmailService.send_overtime_decision_email(
+            db,
+            to_email=emp.email,
+            employee_name=f"{emp.first_name} {emp.last_name}",
+            decision=decision,
+            ot_date=ot_date,
+            hours=hours,
+            reviewer_name=reviewer_name,
+            notes=notes or "",
+        )
+
+    EmailService.fire_and_forget(_factory)
 
 
 # ── Helper to build response with employee name ───────────────────
@@ -149,6 +178,7 @@ async def approve_overtime(
     if not log:
         raise HTTPException(400, "Cannot approve: log not found or not in pending status")
     await db.commit()
+    _notify_overtime_decision(log, current_user, "approved", data.notes)
     return await _overtime_response(log, db)
 
 
@@ -165,6 +195,7 @@ async def reject_overtime(
     if not log:
         raise HTTPException(400, "Cannot reject: log not found or not in pending status")
     await db.commit()
+    _notify_overtime_decision(log, current_user, "rejected", data.notes)
     return await _overtime_response(log, db)
 
 
@@ -181,6 +212,7 @@ async def convert_overtime_to_leave(
     if not log:
         raise HTTPException(400, "Cannot convert: log not found or not in approved status")
     await db.commit()
+    _notify_overtime_decision(log, current_user, "converted", data.notes)
     return await _overtime_response(log, db)
 
 

@@ -1,12 +1,12 @@
 """
-HTML email templates for the SchedulePro platform.
+HTML email templates for the ursked platform.
 
 Each template function returns a tuple of (subject, html_body).
 All templates share a common base wrapper for consistent branding.
 """
 
 
-def _base_wrapper(content: str, site_name: str = "SchedulePro") -> str:
+def _base_wrapper(content: str, site_name: str = "ursked") -> str:
     """Wrap email content in a consistent HTML layout."""
     return f"""\
 <!DOCTYPE html>
@@ -82,7 +82,7 @@ def tenant_welcome_email(
     org_name: str,
     login_url: str,
     trial_days: int,
-    site_name: str = "SchedulePro",
+    site_name: str = "ursked",
 ) -> tuple[str, str]:
     content = f"""\
 <h2 style="margin:0 0 16px;color:#111827;font-size:22px;font-weight:700;">Welcome to {site_name}!</h2>
@@ -114,7 +114,7 @@ Here's what you can do next:
 
 def password_changed_email(
     first_name: str,
-    site_name: str = "SchedulePro",
+    site_name: str = "ursked",
 ) -> tuple[str, str]:
     content = f"""\
 <h2 style="margin:0 0 16px;color:#111827;font-size:22px;font-weight:700;">Password Changed</h2>
@@ -137,7 +137,7 @@ If you did not request this change, your account may be compromised. Contact you
 
 def two_factor_enabled_email(
     first_name: str,
-    site_name: str = "SchedulePro",
+    site_name: str = "ursked",
 ) -> tuple[str, str]:
     content = f"""\
 <h2 style="margin:0 0 16px;color:#111827;font-size:22px;font-weight:700;">Two-Factor Authentication Enabled</h2>
@@ -160,7 +160,7 @@ Your account is now more secure. Make sure to keep your authenticator app and re
 
 def account_deactivated_email(
     first_name: str,
-    site_name: str = "SchedulePro",
+    site_name: str = "ursked",
 ) -> tuple[str, str]:
     content = f"""\
 <h2 style="margin:0 0 16px;color:#111827;font-size:22px;font-weight:700;">Account Deactivated</h2>
@@ -188,7 +188,7 @@ def leave_request_email(
     end_date: str,
     days: float,
     reason: str,
-    site_name: str = "SchedulePro",
+    site_name: str = "ursked",
 ) -> tuple[str, str]:
     leave_type_display = leave_type.replace("_", " ").title()
     content = f"""\
@@ -223,7 +223,7 @@ def leave_approved_email(
     start_date: str,
     end_date: str,
     reviewer_name: str,
-    site_name: str = "SchedulePro",
+    site_name: str = "ursked",
 ) -> tuple[str, str]:
     leave_type_display = leave_type.replace("_", " ").title()
     content = f"""\
@@ -255,7 +255,7 @@ def leave_rejected_email(
     end_date: str,
     reviewer_name: str,
     reviewer_notes: str,
-    site_name: str = "SchedulePro",
+    site_name: str = "ursked",
 ) -> tuple[str, str]:
     leave_type_display = leave_type.replace("_", " ").title()
     notes_html = ""
@@ -293,7 +293,7 @@ Please contact your manager if you have questions.
 def schedule_change_email(
     employee_name: str,
     changes: str,
-    site_name: str = "SchedulePro",
+    site_name: str = "ursked",
 ) -> tuple[str, str]:
     content = f"""\
 <h2 style="margin:0 0 16px;color:#111827;font-size:22px;font-weight:700;">Schedule Update</h2>
@@ -319,7 +319,7 @@ def invite_email(
     first_name: str,
     tenant_name: str,
     activation_url: str,
-    site_name: str = "SchedulePro",
+    site_name: str = "ursked",
 ) -> tuple[str, str]:
     content = f"""\
 <h2 style="margin:0 0 16px;color:#111827;font-size:22px;font-weight:700;">You're Invited!</h2>
@@ -347,7 +347,7 @@ This invitation link will expire in 7 days. If it has expired, ask your administ
 def account_activated_email(
     first_name: str,
     login_url: str,
-    site_name: str = "SchedulePro",
+    site_name: str = "ursked",
 ) -> tuple[str, str]:
     content = f"""\
 <h2 style="margin:0 0 16px;color:#111827;font-size:22px;font-weight:700;">Account Activated!</h2>
@@ -365,11 +365,235 @@ If the button doesn't work, copy and paste this URL into your browser: {login_ur
     return subject, _base_wrapper(content, site_name)
 
 
+def overtime_decision_email(
+    employee_name: str,
+    decision: str,  # "approved" | "rejected" | "converted"
+    ot_date: str,
+    hours: str,
+    reviewer_name: str,
+    notes: str = "",
+    site_name: str = "ursked",
+) -> tuple[str, str]:
+    if decision == "approved":
+        heading, verb, color, bg, border = (
+            "Overtime Approved", "approved", "#059669", "#f0fdf4", "#bbf7d0",
+        )
+    elif decision == "converted":
+        heading, verb, color, bg, border = (
+            "Overtime Converted to Leave", "converted to leave credits",
+            "#059669", "#f0fdf4", "#bbf7d0",
+        )
+    else:
+        heading, verb, color, bg, border = (
+            "Overtime Rejected", "rejected", "#dc2626", "#fef2f2", "#fecaca",
+        )
+    notes_html = _info_row("Notes", notes) if notes else ""
+    content = f"""\
+<h2 style="margin:0 0 16px;color:#111827;font-size:22px;font-weight:700;">{heading}</h2>
+<p style="margin:0 0 16px;color:#374151;font-size:14px;line-height:1.6;">
+Hi {employee_name},
+</p>
+<p style="margin:0 0 16px;color:#374151;font-size:14px;line-height:1.6;">
+Your overtime has been <strong style="color:{color};">{verb}</strong>.
+</p>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:{bg};border:1px solid {border};border-radius:8px;padding:16px;margin:16px 0;">
+<tr><td>
+<table role="presentation" cellpadding="0" cellspacing="0" width="100%">
+{_info_row("Date", ot_date)}
+{_info_row("Hours", hours)}
+{_info_row("Reviewed By", reviewer_name)}
+{notes_html}
+</table>
+</td></tr>
+</table>"""
+    subject = f"[{site_name}] Your Overtime Has Been {heading.split()[1] if len(heading.split()) > 1 else 'Updated'}"
+    return subject, _base_wrapper(content, site_name)
+
+
+def schedule_change_request_email(
+    approver_name: str,
+    requester_name: str,
+    request_type: str,  # "swap" | "change"
+    req_date: str,
+    reason: str,
+    site_name: str = "ursked",
+) -> tuple[str, str]:
+    type_display = "Shift Swap" if request_type == "swap" else "Schedule Change"
+    content = f"""\
+<h2 style="margin:0 0 16px;color:#111827;font-size:22px;font-weight:700;">New {type_display} Request</h2>
+<p style="margin:0 0 16px;color:#374151;font-size:14px;line-height:1.6;">
+Hi {approver_name},
+</p>
+<p style="margin:0 0 16px;color:#374151;font-size:14px;line-height:1.6;">
+<strong>{requester_name}</strong> has submitted a {type_display.lower()} request that requires your review.
+</p>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f9fafb;border-radius:8px;padding:16px;margin:16px 0;">
+<tr><td>
+<table role="presentation" cellpadding="0" cellspacing="0" width="100%">
+{_info_row("Type", type_display)}
+{_info_row("Date", req_date)}
+{_info_row("Reason", reason or "—")}
+</table>
+</td></tr>
+</table>
+<p style="margin:0;color:#374151;font-size:14px;line-height:1.6;">
+Please sign in to review this request.
+</p>"""
+    subject = f"[{site_name}] {type_display} Request from {requester_name}"
+    return subject, _base_wrapper(content, site_name)
+
+
+def schedule_change_decision_email(
+    requester_name: str,
+    decision: str,  # "approved" | "rejected"
+    request_type: str,
+    req_date: str,
+    reviewer_name: str,
+    notes: str = "",
+    site_name: str = "ursked",
+) -> tuple[str, str]:
+    type_display = "Shift Swap" if request_type == "swap" else "Schedule Change"
+    if decision == "approved":
+        heading, verb, color, bg, border = (
+            "Request Approved", "approved", "#059669", "#f0fdf4", "#bbf7d0",
+        )
+    else:
+        heading, verb, color, bg, border = (
+            "Request Rejected", "rejected", "#dc2626", "#fef2f2", "#fecaca",
+        )
+    notes_html = _info_row("Notes", notes) if notes else ""
+    content = f"""\
+<h2 style="margin:0 0 16px;color:#111827;font-size:22px;font-weight:700;">{type_display} {heading.split()[1]}</h2>
+<p style="margin:0 0 16px;color:#374151;font-size:14px;line-height:1.6;">
+Hi {requester_name},
+</p>
+<p style="margin:0 0 16px;color:#374151;font-size:14px;line-height:1.6;">
+Your {type_display.lower()} request has been <strong style="color:{color};">{verb}</strong>.
+</p>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:{bg};border:1px solid {border};border-radius:8px;padding:16px;margin:16px 0;">
+<tr><td>
+<table role="presentation" cellpadding="0" cellspacing="0" width="100%">
+{_info_row("Type", type_display)}
+{_info_row("Date", req_date)}
+{_info_row("Reviewed By", reviewer_name)}
+{notes_html}
+</table>
+</td></tr>
+</table>"""
+    subject = f"[{site_name}] Your {type_display} Request Was {heading.split()[1]}"
+    return subject, _base_wrapper(content, site_name)
+
+
+def account_reinstated_email(
+    first_name: str,
+    login_url: str,
+    site_name: str = "ursked",
+) -> tuple[str, str]:
+    content = f"""\
+<h2 style="margin:0 0 16px;color:#111827;font-size:22px;font-weight:700;">Your Account Has Been Reinstated</h2>
+<p style="margin:0 0 16px;color:#374151;font-size:14px;line-height:1.6;">
+Hi {first_name},
+</p>
+<p style="margin:0 0 16px;color:#374151;font-size:14px;line-height:1.6;">
+Your account on {site_name} has been reinstated by an administrator. You can now sign in again with your existing credentials.
+</p>
+{_button(login_url, "Sign In")}
+<p style="margin:0;color:#9ca3af;font-size:12px;">
+If you have forgotten your password, use the "Forgot password?" link on the sign-in page.
+</p>"""
+    subject = f"[{site_name}] Your Account Has Been Reinstated"
+    return subject, _base_wrapper(content, site_name)
+
+
+def roles_changed_email(
+    first_name: str,
+    role_labels: str,
+    site_name: str = "ursked",
+) -> tuple[str, str]:
+    content = f"""\
+<h2 style="margin:0 0 16px;color:#111827;font-size:22px;font-weight:700;">Your Access Has Been Updated</h2>
+<p style="margin:0 0 16px;color:#374151;font-size:14px;line-height:1.6;">
+Hi {first_name},
+</p>
+<p style="margin:0 0 16px;color:#374151;font-size:14px;line-height:1.6;">
+An administrator has updated your roles on {site_name}. Your current roles are:
+</p>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:16px;margin:16px 0;">
+<tr><td>
+<p style="margin:0;color:#1e40af;font-size:14px;font-weight:600;">{role_labels}</p>
+</td></tr>
+</table>
+<p style="margin:0;color:#374151;font-size:14px;line-height:1.6;">
+For security, you have been signed out of all sessions. Please sign in again to continue.
+</p>"""
+    subject = f"[{site_name}] Your Account Roles Have Changed"
+    return subject, _base_wrapper(content, site_name)
+
+
+def password_reset_email(
+    first_name: str,
+    reset_url: str,
+    expiry_minutes: int,
+    site_name: str = "ursked",
+) -> tuple[str, str]:
+    content = f"""\
+<h2 style="margin:0 0 16px;color:#111827;font-size:22px;font-weight:700;">Reset Your Password</h2>
+<p style="margin:0 0 16px;color:#374151;font-size:14px;line-height:1.6;">
+Hi {first_name},
+</p>
+<p style="margin:0 0 16px;color:#374151;font-size:14px;line-height:1.6;">
+We received a request to reset the password for your {site_name} account. Click the button below to choose a new password.
+</p>
+{_button(reset_url, "Reset Password")}
+<p style="margin:0 0 16px;color:#9ca3af;font-size:12px;">
+If the button doesn't work, copy and paste this URL into your browser: {reset_url}
+</p>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:16px;margin:16px 0;">
+<tr><td>
+<p style="margin:0;color:#92400e;font-size:13px;">
+This link expires in {expiry_minutes} minutes and can be used only once. If you did not request a password reset, you can safely ignore this email — your password will not change.
+</p>
+</td></tr>
+</table>"""
+    subject = f"[{site_name}] Reset Your Password"
+    return subject, _base_wrapper(content, site_name)
+
+
+def security_alert_email(
+    first_name: str,
+    event: str,
+    ip_address: str,
+    when: str,
+    site_name: str = "ursked",
+) -> tuple[str, str]:
+    content = f"""\
+<h2 style="margin:0 0 16px;color:#111827;font-size:22px;font-weight:700;">Security Alert</h2>
+<p style="margin:0 0 16px;color:#374151;font-size:14px;line-height:1.6;">
+Hi {first_name},
+</p>
+<p style="margin:0 0 16px;color:#374151;font-size:14px;line-height:1.6;">
+{event}
+</p>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:16px;margin:16px 0;">
+<tr><td>
+<table role="presentation" cellpadding="0" cellspacing="0" width="100%">
+{_info_row("When", when)}
+{_info_row("IP Address", ip_address)}
+</table>
+</td></tr>
+</table>
+<p style="margin:0;color:#374151;font-size:14px;line-height:1.6;">
+If this was you, no action is needed. If not, reset your password and contact your administrator right away.
+</p>"""
+    subject = f"[{site_name}] Security Alert on Your Account"
+    return subject, _base_wrapper(content, site_name)
+
+
 def scheduled_export_email(
     config_name: str,
     schedule_type: str,
     row_count: int = 0,
-    site_name: str = "SchedulePro",
+    site_name: str = "ursked",
 ) -> tuple:
     """Email notification for a scheduled data export with CSV attachment."""
     freq_label = {"daily": "Daily", "weekly": "Weekly", "monthly": "Monthly"}.get(

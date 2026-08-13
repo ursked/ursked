@@ -58,6 +58,13 @@ async def lifespan(app: FastAPI):
         settings.ENVIRONMENT,
         settings.DEBUG,
     )
+    try:
+        from app.services.smtp_bootstrap import bootstrap_smtp_from_env
+        async with AsyncSessionLocal() as db:
+            await bootstrap_smtp_from_env(db)
+    except Exception:
+        logger.exception("SMTP env bootstrap failed")
+
     task = asyncio.create_task(_scheduler_loop())
     yield
     task.cancel()

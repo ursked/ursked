@@ -1,11 +1,11 @@
 from app.models.tenant import Tenant
-from app.models.user import User, UserTwoFactor, TrustedDevice
+from app.models.user import User, UserTwoFactor, TrustedDevice, PasswordResetToken
 from app.models.role import Role, UserRole, LeaveApprovalStep
 from app.models.organization import Department, Division, Section, Unit
 from app.models.schedule import Shift, DateRemark, ScheduleTemplate
 from app.models.leave import LeaveApplication, LeaveType, LeavePolicy, LeavePolicyEntitlement, OvertimeCategory, LeaveApproverAssignment
 from app.models.settings import TwoFactorSettings, EmailSettings, AppSettings, ShiftStatusType, UserPreferences
-from app.models.org_hierarchy import OrgLevel, OrgNode
+from app.models.org_hierarchy import OrgLevel, OrgNode, NodeScheduleVisibility
 from app.models.site_settings import SiteSettings, AuditLog
 from app.models.configurable_types import EmployeeType, ScheduleFormat, UserOrgNode
 from app.models.payroll import SalaryGrade, EmployeeSalary, DeductionType, DeductionBracket, PayrollPeriod, PayrollItem
@@ -17,12 +17,14 @@ from app.models.job_run import JobRun
 from app.models.compensation import PayoutSchedule, CompensationItem
 from app.models.salary_enrollment import SalaryEnrollment, SalaryEnrollmentRequest
 from app.models.notification import Notification
+from app.models.email_log import EmailLog
 
 __all__ = [
     "Tenant",
     "User",
     "UserTwoFactor",
     "TrustedDevice",
+    "PasswordResetToken",
     "Role",
     "UserRole",
     "LeaveApprovalStep",
@@ -46,6 +48,7 @@ __all__ = [
     "UserPreferences",
     "OrgLevel",
     "OrgNode",
+    "NodeScheduleVisibility",
     "SiteSettings",
     "AuditLog",
     "EmployeeType",
@@ -70,4 +73,5 @@ __all__ = [
     "SalaryEnrollment",
     "SalaryEnrollmentRequest",
     "Notification",
+    "EmailLog",
 ]

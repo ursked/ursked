@@ -261,6 +261,41 @@ export interface AppSettings {
   custom_settings?: Record<string, unknown>;
 }
 
+export interface SmtpSettings {
+  smtp_active: boolean;
+  smtp_host: string | null;
+  smtp_port: number;
+  smtp_use_ssl: boolean;
+  smtp_use_tls: boolean;
+  smtp_username: string | null;
+  has_password: boolean;
+  smtp_from_email: string | null;
+  smtp_from_name: string | null;
+}
+
+export interface SmtpSettingsUpdate {
+  smtp_active?: boolean;
+  smtp_host?: string | null;
+  smtp_port?: number;
+  smtp_use_ssl?: boolean;
+  smtp_use_tls?: boolean;
+  smtp_username?: string | null;
+  smtp_password?: string; // write-only; omit to keep current
+  smtp_from_email?: string | null;
+  smtp_from_name?: string | null;
+}
+
+export interface EmailLogEntry {
+  id: number;
+  type: string;
+  to_email: string;
+  subject: string;
+  status: 'pending' | 'sent' | 'failed';
+  error_message?: string | null;
+  sent_at?: string | null;
+  created_at?: string | null;
+}
+
 export interface ShiftStatusType {
   id: number;
   code: string;
@@ -319,6 +354,16 @@ export interface OrgTreeResponse {
   nodes: OrgTreeNode[];
 }
 
+export interface ScheduleVisibilityGrant {
+  id: number;
+  user_id: number;
+  user_name: string | null;
+  org_node_id: number;
+  org_node_name: string | null;
+  include_descendants: boolean;
+  created_at: string | null;
+}
+
 export interface OrgNodeDetail {
   id: number;
   parent_id: number | null;
@@ -334,6 +379,7 @@ export interface OrgNodeDetail {
   sort_order: number;
   is_active: boolean;
   member_count: number;
+  schedule_visibility: string | null;
 }
 
 export interface OrgNodeMember {
@@ -351,6 +397,19 @@ export interface OrgNodeMembersResponse {
   node_name: string;
   members: OrgNodeMember[];
   total: number;
+}
+
+export interface AccessibleNode {
+  id: number;
+  parent_id: number | null;
+  name: string;
+  code: string | null;
+  visible_member_count: number;
+}
+
+export interface AccessibleNodesResponse {
+  can_see_all: boolean;
+  nodes: AccessibleNode[];
 }
 
 export interface ApprovalChainStep {

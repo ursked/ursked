@@ -12,7 +12,7 @@ router = APIRouter(prefix="/site", tags=["Site"])
 class SiteStatusResponse(BaseModel):
     maintenance_mode: bool = False
     registration_enabled: bool = True
-    site_name: str = "SchedulePro"
+    site_name: str = "ursked"
 
 
 @router.get("/status", response_model=SiteStatusResponse)
