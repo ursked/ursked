@@ -5,10 +5,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_db
 from app.middleware.auth import get_current_user, require_role
 from app.models.tenant import Tenant
 from app.models.user import User
+from app.services.token_store import RateLimiter
 from app.schemas.user import (
     UserCreate,
     UserListResponse,
@@ -169,10 +171,10 @@ async def create_user(
 
     if send_invite:
         # Create invite token and send invite email
-        invite = await InviteService.create_invite_token(
+        invite, raw_token = await InviteService.create_invite_token(
             db, user.id, current_user.tenant_id, created_by=current_user.id
         )
-        activation_url = f"{frontend_base}/auth/activate?token={invite.token}"
+        activation_url = f"{frontend_base}/auth/activate?token={raw_token}"
 
         EmailService.fire_and_forget(
             lambda db, _email=data.email, _name=data.first_name,
@@ -428,7 +430,19 @@ async def resend_invite(
     if not user.must_change_password:
         raise HTTPException(status_code=400, detail="User has already activated their account")
 
-    invite = await InviteService.resend_invite(
+    # Cap resends per invitee so a repeated click (or a malicious admin) cannot
+    # mailbomb the target address. Keyed by target user, not the caller.
+    if await RateLimiter.hit(
+        f"invite-resend:{current_user.tenant_id}:{user.id}",
+        settings.INVITE_RESEND_RATE_LIMIT_ATTEMPTS,
+        settings.INVITE_RESEND_RATE_LIMIT_WINDOW_SECONDS,
+    ):
+        raise HTTPException(
+            status_code=429,
+            detail="Too many invite resends for this user. Please wait before trying again.",
+        )
+
+    invite, raw_token = await InviteService.resend_invite(
         db, user.id, current_user.tenant_id, created_by=current_user.id
     )
 
@@ -438,7 +452,7 @@ async def resend_invite(
     tenant_name = tenant_result.scalar() or "Your Organization"
     base_url = str(request.base_url).rstrip("/")
     frontend_base = base_url.replace(":8000", ":3000")
-    activation_url = f"{frontend_base}/auth/activate?token={invite.token}"
+    activation_url = f"{frontend_base}/auth/activate?token={raw_token}"
 
     EmailService.fire_and_forget(
         lambda db, _email=user.email, _name=user.first_name,

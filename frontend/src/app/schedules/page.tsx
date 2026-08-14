@@ -216,10 +216,18 @@ function SchedulesPageInner() {
   // Default to day view on mobile (only on initial load)
   const [mobileDefaultApplied, setMobileDefaultApplied] = useState(false);
   useEffect(() => {
-    if (isMobile && !mobileDefaultApplied && !searchParams.get('view')) {
+    if (!(isMobile && !mobileDefaultApplied && !searchParams.get('view'))) return;
+    let active = true;
+    // Defer so the initial view-mode update does not run synchronously in the
+    // effect body (react-hooks/set-state-in-effect).
+    void Promise.resolve().then(() => {
+      if (!active) return;
       setViewMode('day');
       setMobileDefaultApplied(true);
-    }
+    });
+    return () => {
+      active = false;
+    };
   }, [isMobile, mobileDefaultApplied, searchParams]);
 
   // Sync view state to URL (replace, not push, to avoid polluting history)
@@ -395,7 +403,9 @@ function SchedulesPageInner() {
 
   const isLoading = settingsLoading || gridLoading;
 
-  const employees = gridData?.employees ?? [];
+  // Memoized so the array reference is stable across renders (its identity feeds
+  // a useMemo below) — react-hooks/exhaustive-deps.
+  const employees = useMemo(() => gridData?.employees ?? [], [gridData]);
   const dates = gridData?.dates ?? [];
   const dateRemarks = gridData?.date_remarks ?? [];
   const stats = gridData?.stats ?? {

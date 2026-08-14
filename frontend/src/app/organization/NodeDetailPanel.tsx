@@ -50,7 +50,12 @@ export default function NodeDetailPanel({ nodeId, canEdit, onClose, onUpdated, o
   });
 
   useEffect(() => {
-    if (node) {
+    if (!node) return;
+    let active = true;
+    // Defer so state updates do not run synchronously in the effect body
+    // (react-hooks/set-state-in-effect).
+    void Promise.resolve().then(() => {
+      if (!active) return;
       setFormData({
         name: node.name,
         code: node.code || '',
@@ -59,7 +64,10 @@ export default function NodeDetailPanel({ nodeId, canEdit, onClose, onUpdated, o
       });
       setEditing(false);
       setConfirmDelete(false);
-    }
+    });
+    return () => {
+      active = false;
+    };
   }, [node]);
 
   const updateMutation = useMutation({

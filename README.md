@@ -141,17 +141,47 @@ generated password. Copy it now.
 
 ### Sign in
 
-By default the app serves on all interfaces, so open `http://<this-host>:3000`
-on your LAN, `http://127.0.0.1:3000` locally, or your proxied domain. Sign in
-with the admin email and that password. **You will be required to change the
-password on first sign-in.**
+By default the app serves on all interfaces on port **3000**, so open
+`http://<this-host>:3000` on your LAN, `http://127.0.0.1:3000` locally, or your
+proxied domain. Sign in with the admin email and that password. **You will be
+required to change the password on first sign-in.**
+
+> The host port is configurable — set `APP_PORT` in `.env` (default `3000`). If
+> port 3000 is already taken on your host, change it there.
+
+## Adding your team
+
+You sign in as the single administrator created on first boot. To add everyone
+else, go to **Employees → Add Employee**. Under **Account Setup** you choose one
+of two ways to set their credentials:
+
+1. **Set Password Manually (works with no email).** Type an initial password; the
+   account is usable immediately. Hand the password to the person out-of-band
+   (chat, in person). This is the simplest path for a first trial and needs no
+   mail server.
+
+2. **Send Invite Email (requires SMTP).** The person receives an activation link
+   to set their own password. This only works if email is configured — see below.
+
+> **Heads-up:** invites, password resets, and security alerts all go out by
+> email. **If you have not configured SMTP, those emails are silently dropped** —
+> an invited user will never get their activation link. If email isn't set up
+> yet, use option 1 above. On startup the backend logs a clear warning when SMTP
+> is unconfigured (`docker compose logs backend`).
+
+### Configuring email (SMTP)
+
+Either set the `SMTP_*` variables in `.env` before first boot (they seed the mail
+config once), **or** configure it in-app afterwards as the admin under
+**Settings → Email**, which takes precedence. Use *Send test email* there to
+confirm it works before relying on invites.
 
 ## Running behind HTTPS
 
 For production, keep `ENVIRONMENT=production` and `COOKIE_SECURE=true`, and put a
-TLS-terminating reverse proxy in front of the frontend's `:3000`. The browser
-only ever talks to the frontend origin; it proxies `/api/*` to the backend
-internally, so no CORS setup is needed.
+TLS-terminating reverse proxy in front of the frontend's published port
+(`APP_PORT`, default `3000`). The browser only ever talks to the frontend origin;
+it proxies `/api/*` to the backend internally, so no CORS setup is needed.
 
 ### Plain-HTTP trial (no proxy)
 
@@ -205,11 +235,50 @@ docker compose down               # stop (data is kept in named volumes)
 ## Backups
 
 Your data lives in the `postgres_data` Docker volume. Back it up with a standard
-`pg_dump`:
+`pg_dump` (run these from the directory holding your `.env`, so `$POSTGRES_USER`
+and `$POSTGRES_DB` are set):
 
 ```bash
-docker compose exec db pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" > backup.sql
+# Back up to a timestamped file
+docker compose exec -T db pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" \
+  > "backup-$(date +%F).sql"
 ```
+
+### Restoring
+
+Restore into a running stack. This **overwrites** existing data, so only do it on
+a fresh install or when you intend to replace what's there:
+
+```bash
+# Pipe a dump back in
+docker compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" < backup.sql
+```
+
+For a clean restore, stop the app, remove only the database volume, then bring it
+back up and load the dump:
+
+```bash
+docker compose down                     # keeps volumes
+docker volume rm ursked_postgres_data   # wipe DB only (name may be prefixed by your folder)
+docker compose up -d                    # migrations recreate the schema
+docker compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" < backup.sql
+```
+
+## Troubleshooting
+
+The app runs with `DEBUG=false`, so browser-side errors are intentionally generic
+(`Internal server error`) — the real detail is in the backend log. When something
+doesn't work, that log is the first place to look:
+
+```bash
+docker compose logs -f backend    # follow the API log live
+docker compose ps                 # are all services healthy?
+```
+
+Common first-boot issues: a missing required secret (`JWT_SECRET_KEY`,
+`POSTGRES_PASSWORD`, `REDIS_PASSWORD`) stops the stack with a clear message; over
+plain HTTP without `ALLOW_INSECURE_TRANSPORT=true` the backend refuses to start on
+purpose (see *Plain-HTTP trial* above).
 
 ## License
 

@@ -1,7 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  swcMinify: true,
   // Emit a self-contained server bundle so the runtime image does not need the
   // full node_modules tree (~1GB -> ~150MB) and can run as a non-root user.
   output: 'standalone',

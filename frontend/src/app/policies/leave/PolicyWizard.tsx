@@ -196,10 +196,18 @@ export default function PolicyWizard({ open, onOpenChange, policy }: Props) {
 
   // Initialize state when the modal opens and leave types are available.
   useEffect(() => {
-    if (open && activeLeaveTypes.length) {
+    if (!(open && activeLeaveTypes.length)) return
+    let active = true
+    // Defer so the init state updates do not run synchronously in the effect body
+    // (react-hooks/set-state-in-effect).
+    void Promise.resolve().then(() => {
+      if (!active) return
       setState(initialState(activeLeaveTypes, policy))
       wiz.goTo(0)
       setErrors({})
+    })
+    return () => {
+      active = false
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, policy, activeLeaveTypes.length])

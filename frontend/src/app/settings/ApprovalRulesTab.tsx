@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useMemo, type JSX } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { LeaveApproverAssignment, ApproverRole, User, PaginatedResponse, OrgTreeNode } from '@/types'
@@ -320,8 +320,10 @@ export default function ApprovalRulesTab() {
 
   const isMutating = createMutation.isPending || updateMutation.isPending || deleteMutation.isPending
 
-  // Rules come sorted by priority from the API
-  const sortedAssignments = assignments ?? []
+  // Rules come sorted by priority from the API. Memoized so the array reference is
+  // stable across renders (its identity feeds a useCallback below) —
+  // react-hooks/exhaustive-deps.
+  const sortedAssignments = useMemo(() => assignments ?? [], [assignments])
 
   // ── Drag and drop handlers ─────────────────────────────────────────
   const handleDragStart = useCallback((e: React.DragEvent<HTMLDivElement>, index: number) => {

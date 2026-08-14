@@ -80,6 +80,11 @@ export default function ShiftModal({
 
   useEffect(() => {
     if (!isOpen) return;
+    let active = true;
+    // Defer so the modal's form-reset state updates do not run synchronously in
+    // the effect body (react-hooks/set-state-in-effect).
+    void Promise.resolve().then(() => {
+    if (!active) return;
     if (shift) {
       setEmployeeId(shift.employee_id);
       setDate(shift.date);
@@ -114,6 +119,10 @@ export default function ShiftModal({
     setConflicts([]);
     setConflictHeading('');
     setConflictMode(null);
+    });
+    return () => {
+      active = false;
+    };
   }, [isOpen, shift, prefillEmployeeId, prefillDate]);
 
   if (!isOpen) return null;

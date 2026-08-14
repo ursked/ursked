@@ -77,6 +77,12 @@ class Settings(BaseSettings):
     PASSWORD_RESET_RATE_LIMIT_ATTEMPTS: int = 3
     PASSWORD_RESET_RATE_LIMIT_WINDOW_SECONDS: int = 900
 
+    # --- Invite resend ---
+    # Caps how often a single invitee can be re-emailed (mailbomb guard). The
+    # actor is an authenticated admin/HR, so this is per-target, not per-IP.
+    INVITE_RESEND_RATE_LIMIT_ATTEMPTS: int = 3
+    INVITE_RESEND_RATE_LIMIT_WINDOW_SECONDS: int = 900
+
     # --- Self-host SMTP bootstrap ---
     # Optional. When SMTP_HOST is set, a startup bootstrap seeds the single
     # SiteSettings SMTP config so a self-hosted (CE) install can send email

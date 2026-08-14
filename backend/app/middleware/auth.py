@@ -28,6 +28,19 @@ class TokenType:
     TWO_FACTOR = "2fa_pending"
 
 
+# Endpoints a user with must_change_password set is still allowed to reach, so the
+# forced-change gate in get_current_user does not lock them out of resolving it.
+# Matched by path suffix (the router is mounted under /api/v1/auth). Kept minimal:
+# change the password, read own identity (client bootstraps the redirect from it),
+# and sign out.
+_PASSWORD_CHANGE_ALLOWED_SUFFIXES = (
+    "/auth/change-password",
+    "/auth/me",
+    "/auth/logout",
+    "/auth/refresh",
+)
+
+
 # Precomputed hash of an unguessable value. Verified against when no user is
 # found so that the response time of a bad-username attempt matches that of a
 # bad-password attempt, closing the user-enumeration timing oracle.
@@ -219,6 +232,21 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Session expired, please sign in again",
         )
+
+    # Server-side enforcement of a forced password change. A user who is allowed
+    # in but still carries must_change_password (a self-hosted first admin, or an
+    # admin-forced reset) must not be able to exercise the API until they change
+    # it. The login response surfaces the flag so a well-behaved client redirects,
+    # but the gate cannot live only in the client: a direct API caller would
+    # bypass it. We block everything EXCEPT the few endpoints needed to resolve
+    # the state — change the password, read own identity, refresh, and log out.
+    if getattr(user, "must_change_password", False):
+        path = request.url.path
+        if not any(path.endswith(suffix) for suffix in _PASSWORD_CHANGE_ALLOWED_SUFFIXES):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Password change required before continuing.",
+            )
 
     request.state.token_payload = payload
     return user

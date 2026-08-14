@@ -2,12 +2,12 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 /**
- * Community Edition route guard.
+ * Community Edition route guard (Next.js proxy).
  *
  * Same UX guard as the SaaS build, with one addition: the Community build ships
  * no marketing landing page, so the root path is redirected server-side (a real
  * 307, no client-side flash) — to the dashboard when a session is present, and
- * to sign-in otherwise. This file is swapped in for src/middleware.ts by
+ * to sign-in otherwise. This file is swapped in for src/proxy.ts by
  * ce-export.sh.
  *
  * This is a UX guard, not an authorization boundary — real enforcement is
@@ -28,7 +28,7 @@ function isPublic(pathname: string): boolean {
   return PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
 
   const hasSession =

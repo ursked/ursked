@@ -21,9 +21,10 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-ursked}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    # Loopback only — the database is never exposed to the network.
+    # Loopback only — the database is never exposed to the network. Host port is
+    # configurable (DB_PORT) but rarely needs changing on a self-hosted box.
     ports:
-      - "127.0.0.1:5433:5432"
+      - "127.0.0.1:${DB_PORT:-5433}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
@@ -47,8 +48,10 @@ services:
       - "yes"
     volumes:
       - redis_data:/data
+    # Loopback only. Host port is configurable (REDIS_PORT); the default is fine
+    # for a standalone self-hosted install.
     ports:
-      - "127.0.0.1:6380:6379"
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
@@ -68,6 +71,9 @@ services:
       ENVIRONMENT: ${ENVIRONMENT:-production}
       DEBUG: "${DEBUG:-false}"
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY is required - generate with python3 -c "import secrets; print(secrets.token_urlsafe(64))"}
+      # Optional: separate key for encrypting the 2FA secret at rest. Blank -> the
+      # app derives one from JWT_SECRET_KEY. See .env.example.
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
       CORS_ORIGINS: ${CORS_ORIGINS:-[]}
       COOKIE_SECURE: "${COOKIE_SECURE:-true}"
       COOKIE_SAMESITE: ${COOKIE_SAMESITE:-lax}
@@ -128,10 +134,10 @@ services:
       API_INTERNAL_URL: http://backend:8000
     # Serves on all interfaces by default so the app is reachable on the LAN.
     # For production, put a TLS-terminating reverse proxy in front of this and
-    # keep COOKIE_SECURE=true. To restrict to loopback, change this to
-    # "127.0.0.1:3000:3000".
+    # keep COOKIE_SECURE=true. The host port is configurable (APP_PORT); to
+    # restrict to loopback, bind it, e.g. "127.0.0.1:${APP_PORT}:3000".
     ports:
-      - "3000:3000"
+      - "${APP_PORT:-3000}:3000"
     depends_on:
       backend:
         condition: service_healthy

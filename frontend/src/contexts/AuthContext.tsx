@@ -38,7 +38,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // whether it is logged in. Ask the server instead: /auth/me either returns
   // the user or 401s, and the cookie is sent automatically.
   useEffect(() => {
-    refreshUser().finally(() => setIsLoading(false));
+    let active = true;
+    // Defer so the loading-state update does not run synchronously inside the
+    // effect body (react-hooks/set-state-in-effect).
+    void Promise.resolve().then(() => {
+      if (!active) return;
+      refreshUser().finally(() => {
+        if (active) setIsLoading(false);
+      });
+    });
+    return () => {
+      active = false;
+    };
   }, [refreshUser]);
 
   // When a refresh attempt fails the session is unrecoverable; drop local state

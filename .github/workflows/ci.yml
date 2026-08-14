@@ -1,0 +1,117 @@
+# Community Edition — boot smoke test.
+#
+# Exported to .github/workflows/ci.yml in the public CE repo by ce-export.sh.
+#
+# Why this exists: CE is produced by DELETING backend/app/ee/. Any shared module
+# that imports from app.ee works in the private repo (ee/ is present) and crashes
+# for everyone who downloads CE (ee/ is gone). For a long time the only thing
+# catching that was a human booting the stack by hand. This job does it on every
+# push and pull request: it builds the CE images from source, boots the whole
+# stack, and fails unless the build behaves like Community — no landing page, no
+# signup, no cross-tenant admin API, a clean backend import graph, and a seeded
+# admin that is forced to change the password on first login.
+#
+# The assertions live in smoke.sh (exported alongside this file) so the exact
+# same check runs here AND in the pre-publish step on the maintainer's box.
+
+name: ci
+
+on:
+  push:
+  pull_request:
+
+# One run per ref; a newer push cancels an in-flight run for the same branch.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ce-boots:
+    name: CE builds, boots, and stays Community
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # A minimal but VALID .env. The compose file hard-requires POSTGRES_PASSWORD,
+      # REDIS_PASSWORD and JWT_SECRET_KEY (${VAR:?...}); everything else takes its
+      # documented default. ADMIN_PASSWORD is pinned to a known value so the smoke
+      # test can actually log in as the seeded admin. These are throwaway CI
+      # secrets for an ephemeral runner, never a real deployment.
+      - name: Write CI .env
+        run: |
+          cat > .env <<'EOF'
+          POSTGRES_USER=ursked
+          POSTGRES_PASSWORD=ci-postgres-pw-not-a-real-secret
+          POSTGRES_DB=ursked
+          REDIS_PASSWORD=ci-redis-pw-not-a-real-secret
+          JWT_SECRET_KEY=ci-jwt-secret-key-not-a-real-secret-000000000000000000000000
+          # Pin the frontend to 3000 on the runner (nothing else uses it there) so
+          # the health/smoke URLs below are unambiguous. The shipped default is 3100.
+          APP_PORT=3000
+          ENVIRONMENT=production
+          # Plain HTTP on the runner: opt out of the TLS-only cookie/CORS guards so
+          # the app boots as production over http://localhost without warnings
+          # becoming fatal.
+          ALLOW_INSECURE_TRANSPORT=true
+          COOKIE_SECURE=false
+          CORS_ORIGINS=[]
+          ORG_NAME=CI Org
+          ADMIN_EMAIL=admin@ci.local
+          ADMIN_PASSWORD=ci-admin-pw-Chang3Me!
+          TZ=UTC
+          EOF
+
+      - name: Build the CE stack from source
+        run: docker compose build
+
+      - name: Boot the stack
+        run: docker compose up -d
+
+      # Wait until the stack is ready by polling a PUBLIC BACKEND endpoint THROUGH
+      # the frontend proxy: GET /api/v1/site/status. A 200 there proves the whole
+      # chain — frontend serving, /api proxy reaching the backend, the backend's
+      # import graph loaded (a `from app.ee` leak crashes it here), and the DB
+      # connected. Do NOT probe /health through the frontend: the CE middleware
+      # redirects every non-/api, non-/auth path to /auth/login, so /health is a
+      # 307, never 200.
+      - name: Wait for the stack to come up
+        run: |
+          echo "Waiting for /api/v1/site/status via the frontend proxy..."
+          for i in $(seq 1 60); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/api/v1/site/status || true)
+            if [ "$code" = "200" ]; then
+              echo "Stack is ready (site/status 200) after ${i} attempt(s)."
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::Stack did not become ready in time." >&2
+          docker compose ps
+          docker compose logs --tail=200 backend
+          exit 1
+
+      # A booted stack is not enough: the whole point is that it behaves like
+      # Community. This is the assertion the human used to make by hand.
+      - name: Run the CE boot smoke test
+        run: |
+          chmod +x .github/workflows/smoke.sh
+          .github/workflows/smoke.sh http://localhost:3000 admin@ci.local 'ci-admin-pw-Chang3Me!'
+
+      # On any failure above, surface exactly why. `if: failure()` runs even after
+      # a failed step so the logs are in the run, not lost with the runner.
+      - name: Dump service logs on failure
+        if: failure()
+        run: |
+          echo "===== docker compose ps ====="
+          docker compose ps || true
+          echo "===== backend logs ====="
+          docker compose logs --tail=300 backend || true
+          echo "===== frontend logs ====="
+          docker compose logs --tail=200 frontend || true
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v || true

@@ -27,15 +27,25 @@ function ResetPasswordContent() {
   const canSubmit = passwordStrong && passwordsMatch && !submitting;
 
   useEffect(() => {
+    let active = true;
     if (!token) {
-      setState('invalid');
-      return;
+      // Defer so the state update does not run synchronously in the effect body
+      // (react-hooks/set-state-in-effect).
+      void Promise.resolve().then(() => {
+        if (active) setState('invalid');
+      });
+      return () => {
+        active = false;
+      };
     }
     api.validateResetToken(token).then((result) => {
-      setState(result.valid ? 'valid' : 'invalid');
+      if (active) setState(result.valid ? 'valid' : 'invalid');
     }).catch(() => {
-      setState('invalid');
+      if (active) setState('invalid');
     });
+    return () => {
+      active = false;
+    };
   }, [token]);
 
   const handleSubmit = async (e: React.FormEvent) => {

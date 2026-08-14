@@ -25,7 +25,9 @@ export default function MemberAssignModal({ nodeId, nodeName, existingMemberIds,
     staleTime: 30_000,
   });
 
-  const users: User[] = usersData?.items ?? [];
+  // Memoized so the array reference is stable across renders (its identity feeds
+  // the filteredUsers useMemo below) — react-hooks/exhaustive-deps.
+  const users: User[] = useMemo(() => usersData?.items ?? [], [usersData]);
 
   // Filter out already-assigned members and apply search
   const filteredUsers = useMemo(() => {

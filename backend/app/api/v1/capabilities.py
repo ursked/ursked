@@ -1,12 +1,13 @@
 """Deployment capabilities endpoint.
 
 Advertises what this ursked install can do so the frontend can render
-conditionally: the edition, the core modules present, and (once the plugin
-system lands in a later phase) the enabled plugins.
+conditionally: the edition, the core modules present, and the installed plugins.
 
 `edition` is computed at request time from the presence of the `app.ee`
 package — the same signal the API router gates on. It is NOT a stored flag:
-there is nothing to toggle, consistent with "absence is the gate".
+there is nothing to toggle, consistent with "absence is the gate". Plugins follow
+the same principle: they are discovered from the `app.plugins` package at request
+time (see app.services.plugin_registry), not tracked in a table.
 """
 import importlib.util
 from typing import List
@@ -44,6 +45,23 @@ def _edition() -> str:
     return "enterprise" if importlib.util.find_spec("app.ee") is not None else "community"
 
 
+def _discover_plugins() -> List[PluginInfo]:
+    """Read installed plugins from the registry. Never raises — a discovery
+    failure yields an empty list so this public endpoint stays up."""
+    try:
+        from app.services import plugin_registry
+
+        return [
+            PluginInfo(
+                name=m.name, version=m.version,
+                enabled=m.enabled, capabilities=m.capabilities,
+            )
+            for m in plugin_registry.discover()
+        ]
+    except Exception:  # noqa: BLE001
+        return []
+
+
 @router.get("", response_model=CapabilitiesResponse)
 async def get_capabilities(db: AsyncSession = Depends(get_db)):
     """Public: what this deployment offers (edition, core modules, plugins)."""
@@ -54,5 +72,5 @@ async def get_capabilities(db: AsyncSession = Depends(get_db)):
         version=app_settings.APP_VERSION,
         edition=_edition(),
         core_modules=list(VALID_MODULES),
-        plugins=[],  # populated once the plugin registry lands (Phase 3)
+        plugins=_discover_plugins(),
     )

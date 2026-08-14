@@ -33,12 +33,20 @@ function ActivateAccountContent() {
   const canSubmit = passwordStrong && passwordsMatch && !submitting;
 
   useEffect(() => {
+    let active = true;
     if (!token) {
-      setState('invalid');
-      return;
+      // Defer so the state update does not run synchronously in the effect body
+      // (react-hooks/set-state-in-effect).
+      void Promise.resolve().then(() => {
+        if (active) setState('invalid');
+      });
+      return () => {
+        active = false;
+      };
     }
 
     api.validateInviteToken(token).then((result) => {
+      if (!active) return;
       if (result.valid) {
         setEmail(result.email ?? '');
         setFirstName(result.first_name ?? '');
@@ -48,8 +56,11 @@ function ActivateAccountContent() {
         setState('invalid');
       }
     }).catch(() => {
-      setState('invalid');
+      if (active) setState('invalid');
     });
+    return () => {
+      active = false;
+    };
   }, [token]);
 
   const handleSubmit = async (e: React.FormEvent) => {

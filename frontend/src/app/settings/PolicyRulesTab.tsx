@@ -105,7 +105,6 @@ const EMPTY_FORM: FormData = {
 
 /** Flatten a stored condition tree into leaves + the top-level match mode for the
  *  simple builder. Nested groups are flattened (leaves kept). */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function flattenConditions(node: any): { mode: 'all' | 'any'; leaves: PolicyCondition[] } {
   const collect = (n: any): PolicyCondition[] => {
     if (Array.isArray(n)) return n.flatMap(collect)
@@ -144,7 +143,6 @@ function summarizeLeaf(c: { field?: string; operator?: string; value?: unknown }
 }
 
 /** Summarize a condition tree (leaf, or all/any/not group) into readable text. */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function summarizeConditions(node: any): string {
   if (Array.isArray(node)) {
     return node.map(summarizeConditions).join(' AND ') || '(no conditions)'

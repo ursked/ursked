@@ -43,10 +43,18 @@ export default function PayoutScheduleTab() {
   const [previewResult, setPreviewResult] = useState<string | null>(null)
 
   useEffect(() => {
-    if (active) {
+    if (!active) return
+    let alive = true
+    // Defer so state updates do not run synchronously in the effect body
+    // (react-hooks/set-state-in-effect).
+    void Promise.resolve().then(() => {
+      if (!alive) return
       setName(active.name)
       setAdjust(active.payout_day_adjust)
       setCutoffs(active.cutoffs)
+    })
+    return () => {
+      alive = false
     }
   }, [active])
 

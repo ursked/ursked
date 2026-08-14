@@ -81,7 +81,15 @@ export default function EmployeesPage() {
   }, [page, search, roleFilter, statusFilter, sortBy, sortOrder, showToast]);
 
   useEffect(() => {
-    fetchEmployees();
+    let active = true;
+    // Defer so fetchEmployees' loading-state update does not run synchronously in
+    // the effect body (react-hooks/set-state-in-effect).
+    void Promise.resolve().then(() => {
+      if (active) fetchEmployees();
+    });
+    return () => {
+      active = false;
+    };
   }, [fetchEmployees]);
 
   // Debounced search
@@ -138,7 +146,10 @@ export default function EmployeesPage() {
     setPage(1);
   };
 
-  const SortIcon = ({ column }: { column: string }) => {
+  // A render helper (not a component) so it is not re-created as a new component
+  // type on every render (react-hooks/static-components). Called as
+  // {renderSortIcon('name')} rather than <SortIcon column="name" />.
+  const renderSortIcon = (column: string) => {
     if (sortBy !== column) {
       return (
         <svg className="w-3.5 h-3.5 text-gray-400 ml-1 inline-block" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -266,17 +277,17 @@ export default function EmployeesPage() {
                 <tr className="bg-gray-50 border-b border-gray-100">
                   <th className="text-left py-3 px-4 font-medium text-gray-600">
                     <button onClick={() => handleSort('first_name')} className="inline-flex items-center hover:text-purple-600 transition-colors">
-                      Employee<SortIcon column="first_name" />
+                      Employee{renderSortIcon('first_name')}
                     </button>
                   </th>
                   <th className="text-left py-3 px-4 font-medium text-gray-600 hidden md:table-cell">
                     <button onClick={() => handleSort('personnel_number')} className="inline-flex items-center hover:text-purple-600 transition-colors">
-                      Personnel #<SortIcon column="personnel_number" />
+                      Personnel #{renderSortIcon('personnel_number')}
                     </button>
                   </th>
                   <th className="text-left py-3 px-4 font-medium text-gray-600 hidden lg:table-cell">
                     <button onClick={() => handleSort('job_title')} className="inline-flex items-center hover:text-purple-600 transition-colors">
-                      Job Title<SortIcon column="job_title" />
+                      Job Title{renderSortIcon('job_title')}
                     </button>
                   </th>
                   <th className="text-left py-3 px-4 font-medium text-gray-600 hidden lg:table-cell">Department</th>

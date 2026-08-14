@@ -8,6 +8,7 @@ from sqlalchemy.dialects.postgresql import JSON, UUID
 from sqlalchemy.orm import relationship
 
 from app.database import Base
+from app.services.crypto import EncryptedString
 
 
 class User(Base):
@@ -109,7 +110,9 @@ class UserTwoFactor(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
     status = Column(String(50), nullable=False, default="disabled")
     method = Column(String(50), nullable=False, default="totp")
-    totp_secret = Column(String(255), nullable=True)
+    # Encrypted at rest (recoverable — pyotp needs the secret verbatim). Legacy
+    # plaintext rows are read through unchanged and re-encrypted on next write.
+    totp_secret = Column(EncryptedString(255), nullable=True)
     totp_verified = Column(Boolean, default=False)
     backup_codes = Column(JSON, nullable=True)
     grace_period_ends_at = Column(DateTime(timezone=True), nullable=True)
@@ -142,7 +145,10 @@ class UserInviteToken(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
-    token = Column(String(255), nullable=False, unique=True, index=True)
+    # Only the SHA-256 hash of the raw token is stored, mirroring PasswordResetToken:
+    # a leaked table must not be a set of working activation links. The raw token
+    # lives only in the emailed activation URL.
+    token_hash = Column(String(64), nullable=False, unique=True, index=True)
     expires_at = Column(DateTime(timezone=True), nullable=False)
     used_at = Column(DateTime(timezone=True), nullable=True)
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)

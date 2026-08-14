@@ -38,7 +38,12 @@ export default function SmtpTab() {
   })
 
   useEffect(() => {
-    if (settings) {
+    if (!settings) return
+    let active = true
+    // Defer so state updates do not run synchronously in the effect body
+    // (react-hooks/set-state-in-effect).
+    void Promise.resolve().then(() => {
+      if (!active) return
       setForm({
         smtp_active: settings.smtp_active,
         smtp_host: settings.smtp_host ?? '',
@@ -51,6 +56,9 @@ export default function SmtpTab() {
         smtp_from_name: settings.smtp_from_name ?? '',
       })
       setHasPassword(settings.has_password)
+    })
+    return () => {
+      active = false
     }
   }, [settings])
 

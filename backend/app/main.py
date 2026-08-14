@@ -60,8 +60,21 @@ async def lifespan(app: FastAPI):
     )
     try:
         from app.services.smtp_bootstrap import bootstrap_smtp_from_env
+        from app.services.email_service import EmailService
         async with AsyncSessionLocal() as db:
             await bootstrap_smtp_from_env(db)
+            # Warn loudly, once, if email cannot be sent. Self-hosters routinely
+            # start with no SMTP; without this the failure is invisible (sends are
+            # best-effort and drop silently), so invited users never get their
+            # activation link and password resets go nowhere. Uses the same config
+            # source the send path checks, so the warning can't disagree with it.
+            if await EmailService._get_smtp_config(db) is None:
+                logger.warning(
+                    "Email (SMTP) is not configured — invitations, password resets "
+                    "and notification emails will NOT be sent. Configure SMTP via the "
+                    "SMTP_* env vars or in-app under Settings -> Email, or add users "
+                    "with the 'Set Password Manually' option instead of an emailed invite."
+                )
     except Exception:
         logger.exception("SMTP env bootstrap failed")
 

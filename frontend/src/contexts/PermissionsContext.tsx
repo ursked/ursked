@@ -50,7 +50,15 @@ export function PermissionsProvider({ children }: { children: React.ReactNode })
   }, [isAuthenticated, user])
 
   useEffect(() => {
-    fetchPermissions()
+    let active = true
+    // Defer to a microtask so the initial state resets in fetchPermissions do not
+    // run synchronously inside the effect body (react-hooks/set-state-in-effect).
+    void Promise.resolve().then(() => {
+      if (active) fetchPermissions()
+    })
+    return () => {
+      active = false
+    }
   }, [fetchPermissions])
 
   const hasPermission = useCallback(
