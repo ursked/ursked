@@ -16,10 +16,30 @@ from app.middleware.security import CSRFMiddleware, SecurityHeadersMiddleware
 from app.middleware.tenant import TenantMiddleware
 from app.services.token_store import close_redis, get_redis
 
-logging.basicConfig(
-    level=logging.DEBUG if settings.DEBUG else logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s %(message)s",
-)
+if settings.LOG_FORMAT == "json":
+    import json as _json
+
+    class _JsonFormatter(logging.Formatter):
+        def format(self, record):
+            return _json.dumps({
+                "ts": self.formatTime(record),
+                "level": record.levelname,
+                "logger": record.name,
+                "msg": record.getMessage(),
+                **({"exc": self.formatException(record.exc_info)} if record.exc_info else {}),
+            })
+
+    _handler = logging.StreamHandler()
+    _handler.setFormatter(_JsonFormatter())
+    logging.basicConfig(
+        level=logging.DEBUG if settings.DEBUG else logging.INFO,
+        handlers=[_handler],
+    )
+else:
+    logging.basicConfig(
+        level=logging.DEBUG if settings.DEBUG else logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    )
 logger = logging.getLogger(__name__)
 
 
@@ -173,10 +193,10 @@ async def health_check():
         logger.exception("Health check: redis unreachable")
         checks["redis"] = "error"
 
-    healthy = checks["database"] == "ok"  # Redis degrades gracefully; DB does not
+    healthy = all(v == "ok" for v in checks.values())
     return JSONResponse(
         status_code=200 if healthy else 503,
-        content={"status": "healthy" if healthy else "unhealthy", "checks": checks},
+        content={"status": "healthy" if healthy else "degraded", "checks": checks},
     )
 
 

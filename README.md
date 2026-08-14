@@ -97,7 +97,8 @@ configure for the default deployment.
 ## Requirements
 
 - A Linux host with **Docker** and the **Docker Compose plugin**.
-- ~2 GB RAM free.
+- **2 GB RAM** minimum (the compose memory limits total 2 GB; a 1 GB VPS will
+  not work). 4 GB recommended if you run other services on the same host.
 - Optionally, a reverse proxy (Caddy, nginx, Traefik) to terminate HTTPS in
   front of the app.
 
@@ -139,6 +140,30 @@ docker compose logs backend | grep -A6 "first-run setup complete"
 You will see a banner with your organization name, the admin email, and the
 generated password. Copy it now.
 
+### Lost your password?
+
+If the generated password is lost, reset it with the included script (the stack
+must be running):
+
+```bash
+./reset-admin-password.sh 'MyN3wP@ss!'
+```
+
+The script hashes the new password inside the backend container (same bcrypt
+parameters the app uses), updates the admin user, and forces a password change
+on next sign-in. If the stack is not running, the manual psql fallback is:
+
+```bash
+# Generate a bcrypt hash (replace YOUR_NEW_PASSWORD)
+docker compose run --rm -T backend python -c \
+  "import bcrypt; print(bcrypt.hashpw(b'YOUR_NEW_PASSWORD', bcrypt.gensalt()).decode())"
+
+# Paste the hash into the update (replace admin@localhost with your admin email)
+docker compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c \
+  "UPDATE users SET password_hash='<paste-hash-here>', must_change_password=true
+   WHERE id = (SELECT id FROM users ORDER BY id LIMIT 1);"
+```
+
 ### Sign in
 
 By default the app serves on all interfaces on port **3000**, so open
@@ -175,6 +200,22 @@ Either set the `SMTP_*` variables in `.env` before first boot (they seed the mai
 config once), **or** configure it in-app afterwards as the admin under
 **Settings → Email**, which takes precedence. Use *Send test email* there to
 confirm it works before relying on invites.
+
+### Notifications
+
+ursked has two notification channels:
+
+- **In-app** — schedule changes, leave decisions, and other events appear in the
+  notification bell inside the app. This works with no configuration and is
+  always on (controlled by **Settings → Notifications** in the admin panel).
+- **Email** — invitations, password resets, account-lockout alerts, and leave
+  decision confirmations are sent by email. **These require a working SMTP
+  configuration** (see above). Without it, email notifications are silently
+  dropped — no error is shown, and the recipient simply never receives them.
+
+There is no push notification (browser push, mobile) in the Community Edition.
+If you rely on email for any workflow, verify SMTP is configured and working
+before onboarding your team.
 
 ## Running behind HTTPS
 
@@ -215,6 +256,15 @@ front and leave it `false`.
 
 ## Updating
 
+**Before upgrading, always back up your database:**
+
+```bash
+docker compose exec -T db pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" \
+  > "backup-before-upgrade-$(date +%F).sql"
+```
+
+Then pull and rebuild:
+
 ```bash
 git pull
 docker compose build
@@ -223,6 +273,24 @@ docker compose up -d
 
 Migrations run automatically on start. The seed step is skipped once your
 organization exists, so your data is never touched.
+
+### If a migration fails
+
+The backend runs `alembic upgrade head` on every start. If a migration fails
+partway (the backend logs will show the error), the database may be in a
+partially-migrated state and the backend will crash-loop. To recover:
+
+1. Check the error: `docker compose logs backend | tail -50`
+2. Restore from your pre-upgrade backup:
+   ```bash
+   docker compose down
+   docker volume rm "$(docker volume ls -q | grep postgres_data)"
+   docker compose up -d
+   docker compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+     < backup-before-upgrade-YYYY-MM-DD.sql
+   ```
+3. Stay on the previous version (`git checkout v0.1.2`) until the issue is
+   resolved, and open an issue on GitHub with the migration error.
 
 ## Common commands
 

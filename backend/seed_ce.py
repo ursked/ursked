@@ -22,6 +22,8 @@ from sqlalchemy import func, select
 
 from app.database import AsyncSessionLocal
 from app.middleware.auth import get_password_hash
+from app.models.leave import LeavePolicy, LeavePolicyEntitlement, LeaveType
+from app.models.payroll import SalaryGrade
 from app.models.settings import AppSettings
 from app.models.site_settings import SiteSettings
 from app.models.tenant import Tenant
@@ -36,6 +38,16 @@ def env(name: str, default: str = "") -> str:
 
 def slugify(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-") or "org"
+
+
+def _password_strong(pw: str) -> bool:
+    """Match the UI's change-password rules: ≥8 chars, upper, lower, digit."""
+    return (
+        len(pw) >= 8
+        and bool(re.search(r"[A-Z]", pw))
+        and bool(re.search(r"[a-z]", pw))
+        and bool(re.search(r"\d", pw))
+    )
 
 
 async def seed() -> None:
@@ -55,6 +67,13 @@ async def seed() -> None:
         generated = not admin_password
         if generated:
             admin_password = secrets.token_urlsafe(12)
+        elif not _password_strong(admin_password):
+            print(
+                "[seed] WARNING: ADMIN_PASSWORD does not meet strength requirements "
+                "(min 8 chars, at least one uppercase, one lowercase, one digit). "
+                "The account will still be created, but you should change the "
+                "password on first sign-in."
+            )
 
         tenant = Tenant(
             name=org_name,
@@ -103,6 +122,58 @@ async def seed() -> None:
         # the public site-status endpoint report that, so the login page hides its
         # "Sign up" link (the signup route does not exist in this build anyway).
         db.add(SiteSettings(registration_enabled=False, maintenance_mode=False))
+        await db.flush()
+
+        # ── Leave types + default policy ─────────────────────────────────
+        # Seed three common leave types and a default policy with one
+        # approval level (employee → tenant_admin) so the leave module
+        # works out of the box.
+        leave_types = []
+        for code, name, export_code, credits in [
+            ("vacation", "Vacation", "VL", 15),
+            ("sick", "Sick Leave", "SL", 10),
+            ("personal", "Personal Leave", "PL", 5),
+        ]:
+            lt = LeaveType(
+                tenant_id=tenant.id, code=code, name=name,
+                export_code=export_code, is_system=True, sort_order=len(leave_types),
+            )
+            db.add(lt)
+            leave_types.append((lt, credits))
+        await db.flush()
+
+        policy = LeavePolicy(
+            tenant_id=tenant.id,
+            name="Default",
+            description="Standard leave policy seeded on first boot.",
+            accrual_method="annual",
+            pool_type="per_type",
+            is_default=True,
+            approval_mode="manual",
+            required_approval_levels=1,
+        )
+        db.add(policy)
+        await db.flush()
+
+        for lt, credits in leave_types:
+            db.add(LeavePolicyEntitlement(
+                policy_id=policy.id,
+                leave_type_id=lt.id,
+                annual_credits=credits,
+            ))
+        await db.flush()
+
+        # ── Default salary grade ─────────────────────────────────────────
+        # One grade so the payroll module isn't dead on arrival. Admins
+        # adjust the rate and add more grades as needed.
+        db.add(SalaryGrade(
+            tenant_id=tenant.id,
+            code="STD",
+            name="Standard",
+            description="Default salary grade seeded on first boot.",
+            monthly_rate=0,
+            is_active=True,
+        ))
         await db.flush()
 
         await db.commit()

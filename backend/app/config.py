@@ -97,6 +97,10 @@ class Settings(BaseSettings):
     SMTP_FROM_EMAIL: Optional[str] = None
     SMTP_FROM_NAME: Optional[str] = None
 
+    # --- Observability ---
+    # "text" (default, human-readable) or "json" (structured, for log aggregation).
+    LOG_FORMAT: str = "text"
+
     # --- API surface ---
     EXPOSE_API_DOCS: bool = False
 

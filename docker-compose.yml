@@ -30,7 +30,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-    mem_limit: 1g
+    mem_limit: 512m
     logging: &default_logging
       driver: json-file
       options:
@@ -57,7 +57,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-    mem_limit: 512m
+    mem_limit: 256m
     logging: *default_logging
 
   backend:
@@ -74,6 +74,7 @@ services:
       # Optional: separate key for encrypting the 2FA secret at rest. Blank -> the
       # app derives one from JWT_SECRET_KEY. See .env.example.
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
+      LOG_FORMAT: ${LOG_FORMAT:-text}
       CORS_ORIGINS: ${CORS_ORIGINS:-[]}
       COOKIE_SECURE: "${COOKIE_SECURE:-true}"
       COOKIE_SAMESITE: ${COOKIE_SAMESITE:-lax}
@@ -117,7 +118,7 @@ services:
         condition: service_healthy
     security_opt:
       - no-new-privileges:true
-    mem_limit: 2g
+    mem_limit: 768m
     logging: *default_logging
 
   frontend:
@@ -143,7 +144,7 @@ services:
         condition: service_healthy
     security_opt:
       - no-new-privileges:true
-    mem_limit: 1g
+    mem_limit: 512m
     logging: *default_logging
 
 volumes:
