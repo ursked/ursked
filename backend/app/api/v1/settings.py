@@ -1,16 +1,10 @@
-import asyncio
 import logging
-from datetime import datetime, timezone
 from typing import List, Optional
-from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import StreamingResponse
+from sqlalchemy import func, select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from sqlalchemy import func, select as sa_select
-
-from app.config import settings as app_settings
 from app.database import get_db
 from app.middleware.auth import get_current_user, require_role
 from app.models.site_settings import AuditLog
@@ -143,67 +137,6 @@ async def update_user_preferences(
     resp = UserPreferencesResponse.model_validate(prefs)
     resp.org_timezone = await SettingsService.get_tenant_timezone(db, current_user.tenant_id)
     return resp
-
-
-# ── Database Backup ──────────────────────────────────────────────────
-
-_backup_logger = logging.getLogger(__name__ + ".backup")
-
-
-@router.get("/backup")
-async def download_backup(
-    current_user: User = Depends(get_current_user),
-    _=Depends(require_role(["tenant_admin"])),
-):
-    """Stream a pg_dump of the database as a downloadable SQL file.
-
-    Tenant-admin only. Runs pg_dump inside the backend container (which ships
-    postgresql-client) and streams the output so the browser downloads it
-    without the full dump being held in memory.
-    """
-    parsed = urlparse(app_settings.DATABASE_URL.replace("+asyncpg", ""))
-    env = {
-        "PGPASSWORD": parsed.password or "",
-        "PATH": "/usr/bin:/usr/local/bin:/bin",
-    }
-    cmd = [
-        "pg_dump",
-        "-h", parsed.hostname or "db",
-        "-p", str(parsed.port or 5432),
-        "-U", parsed.username or "postgres",
-        "-d", (parsed.path or "/ursked").lstrip("/"),
-        "--no-owner",
-        "--no-privileges",
-    ]
-
-    process = await asyncio.create_subprocess_exec(
-        *cmd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-        env=env,
-    )
-
-    async def _stream():
-        try:
-            while True:
-                chunk = await process.stdout.read(64 * 1024)
-                if not chunk:
-                    break
-                yield chunk
-        finally:
-            await process.wait()
-            if process.returncode != 0:
-                err = await process.stderr.read()
-                _backup_logger.error("pg_dump failed (rc=%d): %s", process.returncode, err.decode()[:500])
-
-    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H%M%S")
-    filename = f"ursked-backup-{stamp}.sql"
-
-    return StreamingResponse(
-        _stream(),
-        media_type="application/sql",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
 
 
 # ── Audit Log ────────────────────────────────────────────────────────

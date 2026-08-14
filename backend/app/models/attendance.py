@@ -31,6 +31,9 @@ class AttendanceRecord(Base):
     status = Column(String(20), nullable=False, default="present")  # present, late, absent, half_day, excused
     notes = Column(Text, nullable=True)
     recorded_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    # True when the employee submitted their own hours (POST /attendance/my).
+    # Lets admins filter self-reported entries for review before payroll.
+    self_reported = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 

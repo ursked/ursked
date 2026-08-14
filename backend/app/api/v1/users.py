@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -523,8 +524,13 @@ async def import_users_csv(
         if not first:
             errors.append({"row": i, "email": email, "error": "first_name is required"})
             continue
-        if len(password) < 8:
-            errors.append({"row": i, "email": email, "error": "password must be at least 8 characters"})
+        if (
+            len(password) < 8
+            or not re.search(r"[A-Z]", password)
+            or not re.search(r"[a-z]", password)
+            or not re.search(r"\d", password)
+        ):
+            errors.append({"row": i, "email": email, "error": "password must be at least 8 characters with uppercase, lowercase, and a digit"})
             continue
 
         try:
@@ -537,7 +543,11 @@ async def import_users_csv(
                     "email": email,
                     "username": email,
                     "password": password,
-                    "send_invite": False,
+                    # send_invite=True so must_change_password is set: imported
+                    # users with admin-chosen passwords must change on first login.
+                    # No invite email is sent (SMTP not required for CSV import)
+                    # because the password was already provided.
+                    "send_invite": True,
                 },
                 role_codes=["employee"],
                 assigned_by=current_user.id,

@@ -358,6 +358,7 @@ async def submit_own_time(
             actual_end=data.actual_end_time,
             notes=data.notes,
             recorded_by=current_user.id,
+            self_reported=True,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

@@ -46,6 +46,7 @@ class AttendanceRecordResponse(BaseModel):
     status: str
     notes: Optional[str] = None
     recorded_by: Optional[int] = None
+    self_reported: bool = False
     employee_name: Optional[str] = None
     recorder_name: Optional[str] = None
     created_at: Optional[datetime] = None

@@ -49,6 +49,7 @@ class AttendanceService:
         actual_end: Optional[time],
         notes: Optional[str] = None,
         recorded_by: Optional[int] = None,
+        self_reported: bool = False,
     ) -> AttendanceRecord:
         """
         Record attendance for an employee on a given date.
@@ -104,6 +105,7 @@ class AttendanceService:
             status=metrics["status"],
             notes=notes,
             recorded_by=recorded_by,
+            self_reported=self_reported,
         )
         db.add(record)
         await db.flush()
