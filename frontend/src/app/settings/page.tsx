@@ -7,13 +7,13 @@ import { hasAnyRole } from '@/lib/roles'
 import { api } from '@/lib/api'
 import GeneralSettingsTab from './GeneralSettingsTab'
 import PermissionsTab from './PermissionsTab'
-import ScheduleVisibilityTab from './ScheduleVisibilityTab'
 import SmtpTab from './SmtpTab'
 
 // NOTE: "Employee Types" now lives under Employees, and "Schedule Formats" under
 // Policies — each next to the domain it configures. The tab components still
 // reside in this folder and are imported from those pages.
-type TabKey = 'general' | 'email' | 'permissions' | 'visibility'
+// Schedule Visibility is now merged into General > Schedule Settings (with an Advanced toggle).
+type TabKey = 'general' | 'email' | 'permissions'
 
 export default function SettingsPage() {
   const { user } = useAuth()
@@ -33,7 +33,6 @@ export default function SettingsPage() {
     { key: 'general', label: 'General' },
     ...(showEmailTab ? [{ key: 'email', label: 'Email' }] : []),
     { key: 'permissions', label: 'Permissions' },
-    { key: 'visibility', label: 'Schedule Visibility' },
   ] as const
 
   const isAdmin = user && hasAnyRole(user, ['tenant_admin'])
@@ -89,7 +88,6 @@ export default function SettingsPage() {
         {activeTab === 'general' && <GeneralSettingsTab />}
         {activeTab === 'email' && showEmailTab && <SmtpTab />}
         {activeTab === 'permissions' && <PermissionsTab />}
-        {activeTab === 'visibility' && <ScheduleVisibilityTab />}
       </div>
     </DashboardLayout>
   )

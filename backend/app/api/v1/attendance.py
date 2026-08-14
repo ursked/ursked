@@ -17,8 +17,6 @@ from app.schemas.attendance import (
     SelfTimeEntry,
     TardinessRecordResponse,
     TardinessResolveRequest,
-    LeaveCreditAdjustmentResponse,
-    LeaveCreditAdjustmentCreate,
 )
 from app.services.attendance_service import AttendanceService
 from app.services.email_service import EmailService

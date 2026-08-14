@@ -1,9 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
-import { AppSettings, ShiftStatusType, Tenant } from '@/types'
+import type { AppSettings, ShiftStatusType, Tenant, ScheduleVisibilityGrant, User, OrgTreeNode, OrgTreeResponse } from '@/types'
 import { useToast } from '@/components/ui/Toast'
 import { CURATED_CURRENCIES, normalizeCurrency, formatMoney } from '@/lib/currency'
 
@@ -14,11 +14,21 @@ const WEEK_START_OPTIONS = [
 ]
 
 const SCHEDULE_VISIBILITY_OPTIONS = [
-  { value: 'own_node', label: 'Same org unit only', description: 'Employees see only their own org node members' },
-  { value: 'own_and_children', label: 'Own unit + child units', description: 'Employees see their node and all descendant nodes' },
-  { value: 'own_and_parent', label: 'Own unit + parent unit', description: 'Employees see their node and the parent node' },
-  { value: 'all', label: 'Everyone (no restriction)', description: 'All employees can see the full schedule' },
+  { value: 'own_node', label: 'Same org unit only', description: 'Employees can only see schedules of people in their own org unit.' },
+  { value: 'own_and_children', label: 'Own unit + child units', description: 'Employees can see their own unit and any units below it.' },
+  { value: 'own_and_parent', label: 'Own unit + parent unit', description: 'Employees can see their own unit and one level above.' },
+  { value: 'all', label: 'Everyone (no restriction)', description: 'All employees can see the full organization schedule.' },
 ]
+
+type FlatNode = { id: number; label: string; depth: number }
+
+function flattenNodes(nodes: OrgTreeNode[], depth = 0, acc: FlatNode[] = []): FlatNode[] {
+  for (const n of nodes) {
+    acc.push({ id: n.id, label: n.name, depth })
+    if (n.children?.length) flattenNodes(n.children, depth + 1, acc)
+  }
+  return acc
+}
 
 const CATEGORY_OPTIONS = [
   { value: 'work', label: 'Work' },
@@ -60,12 +70,13 @@ export default function GeneralSettingsTab() {
   const [editingId, setEditingId] = useState<number | null>(null)
   const [formData, setFormData] = useState<StatusTypeFormData>(EMPTY_FORM)
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null)
-  // Currency picker: when the admin selects "Custom…" we reveal a free-text
-  // 3-letter code field so they can set any ISO 4217 currency themselves.
   const [currencyMode, setCurrencyMode] = useState<'curated' | 'custom'>('curated')
   const [customCurrency, setCustomCurrency] = useState('')
+  const [showAdvancedVisibility, setShowAdvancedVisibility] = useState(false)
+  const [grantUserId, setGrantUserId] = useState<number | ''>('')
+  const [grantNodeId, setGrantNodeId] = useState<number | ''>('')
+  const [grantIncludeDescendants, setGrantIncludeDescendants] = useState(true)
 
-  // ── Tenant query / mutation (for timezone) ────────────────────────
   const { data: tenant, isLoading: tenantLoading } = useQuery<Tenant>({
     queryKey: ['current-tenant'],
     queryFn: () => api.getCurrentTenant(),
@@ -80,7 +91,6 @@ export default function GeneralSettingsTab() {
     onError: (err: Error) => showToast(err.message, 'error'),
   })
 
-  // ── App Settings queries / mutations ────────────────────────────────
   const { data: appSettings, isLoading: settingsLoading } = useQuery<AppSettings>({
     queryKey: ['app-settings'],
     queryFn: () => api.getAppSettings(),
@@ -93,7 +103,56 @@ export default function GeneralSettingsTab() {
     },
   })
 
-  // ── Currency save ────────────────────────────────────────────────
+  const { data: orgTree } = useQuery<OrgTreeResponse>({
+    queryKey: ['org-tree'],
+    queryFn: () => api.getOrgTree(),
+    staleTime: 300_000,
+    enabled: showAdvancedVisibility,
+  })
+
+  const { data: usersPage } = useQuery({
+    queryKey: ['users', 'for-visibility'],
+    queryFn: () => api.getUsers({ limit: '500' }),
+    enabled: showAdvancedVisibility,
+  })
+
+  const { data: grants } = useQuery<ScheduleVisibilityGrant[]>({
+    queryKey: ['schedule-visibility'],
+    queryFn: () => api.getScheduleVisibilityGrants(),
+    enabled: showAdvancedVisibility,
+  })
+
+  const grantNodeOptions = useMemo(() => (orgTree ? flattenNodes(orgTree.nodes) : []), [orgTree])
+  const grantUsers: User[] = usersPage?.items ?? []
+
+  const createGrantMutation = useMutation({
+    mutationFn: () =>
+      api.createScheduleVisibilityGrant({
+        user_id: Number(grantUserId),
+        org_node_id: Number(grantNodeId),
+        include_descendants: grantIncludeDescendants,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['schedule-visibility'] })
+      showToast('Access granted', 'success')
+      setGrantUserId('')
+      setGrantNodeId('')
+      setGrantIncludeDescendants(true)
+    },
+    onError: () => showToast('Failed to grant access', 'error'),
+  })
+
+  const deleteGrantMutation = useMutation({
+    mutationFn: (id: number) => api.deleteScheduleVisibilityGrant(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['schedule-visibility'] })
+      showToast('Access removed', 'success')
+    },
+    onError: () => showToast('Failed to remove access', 'error'),
+  })
+
+  const canGrant = grantUserId !== '' && grantNodeId !== '' && !createGrantMutation.isPending
+
   const currentCurrency = normalizeCurrency(appSettings?.currency_code)
   const saveCurrency = (code: string) => {
     const normalized = code.trim().toUpperCase()
@@ -110,7 +169,6 @@ export default function GeneralSettingsTab() {
     )
   }
 
-  // ── Status Types queries / mutations ────────────────────────────────
   const { data: statusTypes, isLoading: statusTypesLoading } = useQuery<ShiftStatusType[]>({
     queryKey: ['status-types'],
     queryFn: () => api.getStatusTypes(),
@@ -141,7 +199,6 @@ export default function GeneralSettingsTab() {
     },
   })
 
-  // ── Helpers ─────────────────────────────────────────────────────────
   const resetForm = () => {
     setShowAddForm(false)
     setEditingId(null)
@@ -181,13 +238,11 @@ export default function GeneralSettingsTab() {
     updateStatusTypeMutation.isPending ||
     deleteStatusTypeMutation.isPending
 
-  // ── Status type form (shared between add & edit) ────────────────────
   const renderStatusTypeForm = () => (
     <form onSubmit={handleFormSubmit} className="bg-gray-50 border border-gray-200 rounded-lg p-6 space-y-4">
       <h4 className="text-sm font-semibold text-gray-900">
         {editingId !== null ? 'Edit Status Type' : 'New Status Type'}
       </h4>
-
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <div>
           <label htmlFor="status-code" className="block text-sm font-medium text-gray-700 mb-1">Code</label>
@@ -243,7 +298,6 @@ export default function GeneralSettingsTab() {
             className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-purple-500 focus:ring-purple-500 focus:outline-none" />
         </div>
       </div>
-
       <div className="flex items-center gap-3 pt-2">
         <button type="submit" disabled={isMutating}
           className="inline-flex items-center rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
@@ -356,7 +410,6 @@ export default function GeneralSettingsTab() {
                   disabled={updateSettingsMutation.isPending}
                   className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-purple-500 focus:ring-purple-500 focus:outline-none disabled:opacity-50"
                 >
-                  {/* Ensure the current (possibly custom) code is always selectable */}
                   {!CURATED_CURRENCIES.some((c) => c.code === currentCurrency) && currencyMode !== 'custom' && (
                     <option value={currentCurrency}>{currentCurrency}</option>
                   )}
@@ -409,11 +462,13 @@ export default function GeneralSettingsTab() {
         </div>
       </div>
 
-      {/* ── Section: Schedule Settings ───────────────────────────── */}
+      {/* ── Section: Schedule Settings + Visibility ───────────────── */}
       <div className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-xl">
         <div className="border-b border-gray-200 px-6 py-4">
           <h2 className="text-lg font-semibold text-gray-900">Schedule Settings</h2>
-          <p className="mt-1 text-sm text-gray-500">Configure how schedules are displayed across your organization.</p>
+          <p className="mt-1 text-sm text-gray-500">
+            Configure how schedules are displayed across your organization.
+          </p>
         </div>
         <div className="px-6 py-6">
           {settingsLoading ? (
@@ -422,42 +477,177 @@ export default function GeneralSettingsTab() {
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
               </svg>
-              Loading settings...
+              Loading...
             </div>
           ) : (
             <div className="space-y-6">
               <div className="max-w-md">
-                <label htmlFor="week-start" className="block text-sm font-medium text-gray-700 mb-1">Week starts on</label>
-                <select id="week-start" value={appSettings?.week_starts_on ?? 'monday'}
-                  onChange={(e) => updateSettingsMutation.mutate({ week_starts_on: e.target.value as 'monday' | 'sunday' | 'saturday' })}
+                <label htmlFor="week-starts-on" className="block text-sm font-medium text-gray-700 mb-1">Week starts on</label>
+                <select
+                  id="week-starts-on"
+                  value={appSettings?.week_starts_on ?? 'monday'}
+                  onChange={(e) => updateSettingsMutation.mutate(
+                    { week_starts_on: e.target.value as AppSettings['week_starts_on'] },
+                    { onSuccess: () => showToast('Week start day saved', 'success') },
+                  )}
                   disabled={updateSettingsMutation.isPending}
-                  className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-purple-500 focus:ring-purple-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed">
+                  className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-purple-500 focus:ring-purple-500 focus:outline-none disabled:opacity-50"
+                >
                   {WEEK_START_OPTIONS.map((opt) => (
                     <option key={opt.value} value={opt.value}>{opt.label}</option>
                   ))}
                 </select>
-                <p className="mt-2 text-xs text-gray-500">This controls the first day of the week in all schedule views.</p>
+                <p className="mt-2 text-xs text-gray-500">
+                  This controls the first day of the week in all schedule views.
+                </p>
               </div>
 
               <div className="max-w-md">
                 <label htmlFor="schedule-visibility" className="block text-sm font-medium text-gray-700 mb-1">Employee schedule visibility</label>
-                <select id="schedule-visibility" value={appSettings?.schedule_employee_visibility ?? 'own_node'}
-                  onChange={(e) => updateSettingsMutation.mutate({ schedule_employee_visibility: e.target.value as AppSettings['schedule_employee_visibility'] })}
+                <select
+                  id="schedule-visibility"
+                  value={appSettings?.schedule_employee_visibility ?? 'own_node'}
+                  onChange={(e) => updateSettingsMutation.mutate(
+                    { schedule_employee_visibility: e.target.value as AppSettings['schedule_employee_visibility'] },
+                    { onSuccess: () => showToast('Schedule visibility saved', 'success') },
+                  )}
                   disabled={updateSettingsMutation.isPending}
-                  className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-purple-500 focus:ring-purple-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed">
+                  className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-purple-500 focus:ring-purple-500 focus:outline-none disabled:opacity-50"
+                >
                   {SCHEDULE_VISIBILITY_OPTIONS.map((opt) => (
                     <option key={opt.value} value={opt.value}>{opt.label}</option>
                   ))}
                 </select>
                 <p className="mt-2 text-xs text-gray-500">
-                  {SCHEDULE_VISIBILITY_OPTIONS.find((o) => o.value === (appSettings?.schedule_employee_visibility ?? 'own_node'))?.description ?? ''}
+                  {SCHEDULE_VISIBILITY_OPTIONS.find((o) => o.value === (appSettings?.schedule_employee_visibility ?? 'own_node'))?.description}{' '}
+                  Admin, HR, and Schedule Editor roles always see all employees regardless of this setting.
                 </p>
-                <div className="mt-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
-                  <p className="text-xs text-blue-700">
-                    <strong>Note:</strong> Admin, HR, and Schedule Editor roles always see all employees. Supervisors (node heads/deputies and assigned approvers) also see their managed employees regardless of this setting.
-                  </p>
-                </div>
               </div>
+
+              <div className="border-t border-gray-200 pt-5">
+                <button
+                  type="button"
+                  onClick={() => setShowAdvancedVisibility(!showAdvancedVisibility)}
+                  className="flex items-center gap-2 text-sm font-medium text-purple-600 hover:text-purple-700 transition-colors"
+                >
+                  <svg
+                    className={`h-4 w-4 transition-transform ${showAdvancedVisibility ? 'rotate-90' : ''}`}
+                    fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                  </svg>
+                  Advanced: per-person visibility grants
+                </button>
+                <p className="mt-1 text-xs text-gray-500 ml-6">
+                  Grant individual people visibility into specific org units beyond what their role allows.
+                </p>
+              </div>
+
+              {showAdvancedVisibility && (
+                <div className="border border-gray-200 rounded-lg p-5 space-y-6 bg-gray-50">
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-900">Grant visibility</h4>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Give a person visibility into a specific part of the organization&apos;s schedule, beyond what their role or team already allows.
+                    </p>
+                    <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Person</label>
+                        <select
+                          className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-purple-500 focus:ring-purple-500 focus:outline-none"
+                          value={grantUserId}
+                          onChange={(e) => setGrantUserId(e.target.value ? Number(e.target.value) : '')}
+                        >
+                          <option value="">Select a person...</option>
+                          {grantUsers.map((u) => (
+                            <option key={u.id} value={u.id}>
+                              {u.first_name} {u.last_name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Org unit</label>
+                        <select
+                          className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-purple-500 focus:ring-purple-500 focus:outline-none"
+                          value={grantNodeId}
+                          onChange={(e) => setGrantNodeId(e.target.value ? Number(e.target.value) : '')}
+                        >
+                          <option value="">Select a unit...</option>
+                          {grantNodeOptions.map((n) => (
+                            <option key={n.id} value={n.id}>
+                              {'\u00A0'.repeat(n.depth * 2)}{n.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    <label className="mt-3 flex items-center gap-2 text-sm text-gray-700">
+                      <input
+                        type="checkbox"
+                        checked={grantIncludeDescendants}
+                        onChange={(e) => setGrantIncludeDescendants(e.target.checked)}
+                        className="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                      />
+                      Include everything below this unit (its whole subtree)
+                    </label>
+                    <div className="mt-4">
+                      <button
+                        type="button"
+                        onClick={() => createGrantMutation.mutate()}
+                        disabled={!canGrant}
+                        className="rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        {createGrantMutation.isPending ? 'Granting...' : 'Grant access'}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="border-t border-gray-200 pt-5">
+                    <h4 className="text-sm font-semibold text-gray-900">Current grants</h4>
+                    <div className="mt-3 overflow-x-auto">
+                      <table className="min-w-full divide-y divide-gray-200 text-sm">
+                        <thead>
+                          <tr className="text-left text-xs uppercase tracking-wide text-gray-500">
+                            <th className="py-2 pr-4">Person</th>
+                            <th className="py-2 pr-4">Unit</th>
+                            <th className="py-2 pr-4">Scope</th>
+                            <th className="py-2 pr-4"></th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {(grants ?? []).length === 0 && (
+                            <tr>
+                              <td colSpan={4} className="py-6 text-center text-gray-400">
+                                No visibility grants yet.
+                              </td>
+                            </tr>
+                          )}
+                          {(grants ?? []).map((g) => (
+                            <tr key={g.id}>
+                              <td className="py-2 pr-4 text-gray-700">{g.user_name ?? `#${g.user_id}`}</td>
+                              <td className="py-2 pr-4 text-gray-700">{g.org_node_name ?? `#${g.org_node_id}`}</td>
+                              <td className="py-2 pr-4 text-gray-500">
+                                {g.include_descendants ? 'Unit + subtree' : 'Unit only'}
+                              </td>
+                              <td className="py-2 pr-4 text-right">
+                                <button
+                                  type="button"
+                                  onClick={() => deleteGrantMutation.mutate(g.id)}
+                                  disabled={deleteGrantMutation.isPending}
+                                  className="text-sm font-medium text-red-600 hover:text-red-700 disabled:opacity-50"
+                                >
+                                  Remove
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {updateSettingsMutation.isPending && (
                 <p className="text-xs text-purple-600 flex items-center gap-1">
@@ -467,12 +657,6 @@ export default function GeneralSettingsTab() {
                   </svg>
                   Saving...
                 </p>
-              )}
-              {updateSettingsMutation.isSuccess && !updateSettingsMutation.isPending && (
-                <p className="text-xs text-green-600">Settings saved successfully.</p>
-              )}
-              {updateSettingsMutation.isError && (
-                <p className="text-xs text-red-600">Failed to save settings. Please try again.</p>
               )}
             </div>
           )}
@@ -498,7 +682,6 @@ export default function GeneralSettingsTab() {
             </div>
           ) : (
             <div className="space-y-6">
-              {/* Data Retention Policy */}
               <div className="max-w-md">
                 <label className="block text-sm font-medium text-gray-700 mb-2">Data Retention Policy</label>
                 <div className="space-y-3">
@@ -554,7 +737,6 @@ export default function GeneralSettingsTab() {
                 )}
               </div>
 
-              {/* Analytics Exclusion */}
               <div className="max-w-md">
                 <label htmlFor="analytics-exclusion" className="block text-sm font-medium text-gray-700 mb-1">
                   Analytics Exclusion Period
@@ -580,7 +762,6 @@ export default function GeneralSettingsTab() {
                 </p>
               </div>
 
-              {/* Info Box */}
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                 <div className="flex gap-3">
                   <svg className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
