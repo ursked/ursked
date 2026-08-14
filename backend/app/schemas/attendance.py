@@ -13,6 +13,16 @@ class AttendanceRecordCreate(BaseModel):
     actual_end_time: Optional[time] = None
     notes: Optional[str] = None
 
+
+class SelfTimeEntry(BaseModel):
+    """Employee self-service time entry (CE subset). No employee_id — forced
+    to the authenticated user. NOT a clock-in/kiosk; the employee fills in
+    their own hours after the fact."""
+    date: date
+    actual_start_time: Optional[time] = None
+    actual_end_time: Optional[time] = None
+    notes: Optional[str] = None
+
 class AttendanceRecordUpdate(BaseModel):
     actual_start_time: Optional[time] = None
     actual_end_time: Optional[time] = None

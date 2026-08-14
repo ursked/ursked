@@ -17,6 +17,7 @@ from app.middleware.auth import (
     dummy_verify_password,
     get_current_user,
     get_password_hash,
+    require_role,
     verify_password,
 )
 from app.middleware.security import (
@@ -35,12 +36,14 @@ from app.schemas.auth import (
     LoginResponse,
     PasswordChangeRequest,
     ResetPasswordRequest,
+    SessionResponse,
     TokenRefreshResponse,
     TwoFactorSetupResponse,
     TwoFactorVerifyRequest,
     ValidateTokenResponse,
 )
 from app.schemas.user import UserResponse
+from app.models.site_settings import AuditLog
 from app.services.auth_service import AuthService
 from app.services.email_service import EmailService
 from app.services.invite_service import InviteService
@@ -82,15 +85,41 @@ async def _frontend_base(db: AsyncSession, http_request: Request) -> str:
     return base.replace(":8000", ":3000")
 
 
-def _issue_session(response: Response, user: User) -> str:
-    """Mint an access/refresh pair as httpOnly cookies. Returns the CSRF token."""
+async def _issue_session(
+    response: Response,
+    user: User,
+    request: Request | None = None,
+    db: AsyncSession | None = None,
+) -> str:
+    """Mint an access/refresh pair as httpOnly cookies. Returns the CSRF token.
+
+    When *request* and *db* are provided, a persistent UserSession row is
+    recorded so the user can see active sessions and revoke individual ones.
+    """
     access_token = create_access_token(
         data={"sub": str(user.id), "tenant_id": str(user.tenant_id), "roles": user.role_codes}
     )
     refresh_token = create_refresh_token(
         data={"sub": str(user.id), "tenant_id": str(user.tenant_id)}
     )
-    return set_auth_cookies(response, access_token, refresh_token)
+    csrf = set_auth_cookies(response, access_token, refresh_token)
+
+    # Persist the session for the "Active sessions" profile card (CE).
+    if db is not None:
+        from app.models.user import UserSession
+        payload = decode_token(access_token, expected_type=TokenType.ACCESS)
+        db.add(UserSession(
+            user_id=user.id,
+            tenant_id=user.tenant_id,
+            jti=payload["jti"],
+            ip_address=_client_ip(request) if request else None,
+            user_agent=(request.headers.get("user-agent", "")[:500] if request else None),
+            login_at=datetime.now(timezone.utc),
+            expires_at=datetime.fromtimestamp(payload["exp"], tz=timezone.utc),
+        ))
+        await db.flush()
+
+    return csrf
 
 
 @router.post("/login", response_model=LoginResponse)
@@ -142,6 +171,17 @@ async def login(
     if not user or not verify_password(request.password, user.password_hash):
         just_locked = await AccountLockout.record_failure(identifier)
         logger.warning("Login failed for username=%s ip=%s", request.username, ip)
+        # Record the failed attempt in the audit log so a tenant admin can review.
+        db.add(AuditLog(
+            tenant_id=user.tenant_id if user else None,
+            user_id=user.id if user else None,
+            user_email=request.username,
+            action="login_failure",
+            ip_address=ip,
+            user_agent=http_request.headers.get("user-agent", "")[:500],
+            details={"reason": "invalid_credentials"},
+        ))
+        await db.flush()
         # If this failure just tripped the lockout AND the account exists, alert
         # the real owner. The send is fire-and-forget (off the response path), so
         # it does not add a timing oracle for account existence.
@@ -169,6 +209,17 @@ async def login(
 
     await AccountLockout.clear(identifier)
 
+    # Record successful login in the audit log.
+    db.add(AuditLog(
+        tenant_id=user.tenant_id,
+        user_id=user.id,
+        user_email=user.email,
+        action="login_success",
+        ip_address=ip,
+        user_agent=http_request.headers.get("user-agent", "")[:500],
+    ))
+    await db.flush()
+
     # NOTE: `must_change_password` is NOT a login gate. Invited users who have
     # never activated hold a random placeholder password (see
     # InviteService.generate_placeholder_password) that no one knows, so they
@@ -187,7 +238,7 @@ async def login(
         set_two_factor_cookie(response, challenge)
         return LoginResponse(expires_in=0, user=None, requires_2fa=True)
 
-    csrf_token = _issue_session(response, user)
+    csrf_token = await _issue_session(response, user, request=http_request, db=db)
     return LoginResponse(
         expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         user=UserResponse.model_validate(user),
@@ -379,7 +430,7 @@ async def verify_2fa(
     await TokenDenylist.revoke(payload.get("jti"), payload.get("exp"))
     response.delete_cookie(settings.TWO_FACTOR_COOKIE_NAME, path="/")
 
-    csrf_token = _issue_session(response, user)
+    csrf_token = await _issue_session(response, user, request=http_request, db=db)
     return LoginResponse(
         expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         user=UserResponse.model_validate(user),
@@ -428,7 +479,7 @@ async def refresh_token(
     # Rotation: the presented refresh token is single-use.
     await TokenDenylist.revoke(jti, payload.get("exp"))
 
-    csrf_token = _issue_session(response, user)
+    csrf_token = await _issue_session(response, user, request=http_request, db=db)
     return TokenRefreshResponse(
         expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         csrf_token=csrf_token,
@@ -436,8 +487,15 @@ async def refresh_token(
 
 
 @router.post("/logout")
-async def logout(http_request: Request, response: Response):
-    """Clear cookies and deny-list the presented tokens."""
+async def logout(
+    http_request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+):
+    """Clear cookies, deny-list the presented tokens, and mark the session revoked."""
+    from app.models.user import UserSession
+
+    now = datetime.now(timezone.utc)
     for cookie_name, expected in (
         (settings.ACCESS_COOKIE_NAME, TokenType.ACCESS),
         (settings.REFRESH_COOKIE_NAME, TokenType.REFRESH),
@@ -449,8 +507,18 @@ async def logout(http_request: Request, response: Response):
             payload = decode_token(raw, expected_type=expected)
         except HTTPException:
             continue  # already invalid; nothing to revoke
-        await TokenDenylist.revoke(payload.get("jti"), payload.get("exp"))
+        jti = payload.get("jti")
+        await TokenDenylist.revoke(jti, payload.get("exp"))
+        # Mark the persistent session row as revoked (if it exists).
+        if expected == TokenType.ACCESS and jti:
+            result = await db.execute(
+                select(UserSession).where(UserSession.jti == jti)
+            )
+            session = result.scalar_one_or_none()
+            if session:
+                session.revoked_at = now
 
+    await db.commit()
     clear_auth_cookies(response)
     return {"message": "Logged out"}
 
@@ -519,7 +587,7 @@ async def change_password(
     current_user.tokens_valid_from = datetime.now(timezone.utc)
     await db.flush()
 
-    csrf_token = _issue_session(response, current_user)
+    csrf_token = await _issue_session(response, current_user, db=db)
 
     # Send password changed confirmation email (fire-and-forget)
     EmailService.fire_and_forget(
@@ -531,3 +599,128 @@ async def change_password(
     )
 
     return {"message": "Password changed successfully", "csrf_token": csrf_token}
+
+
+# ── Sessions ─────────────────────────────────────────────────────────
+
+@router.get("/sessions", response_model=list[SessionResponse])
+async def list_sessions(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """List the current user's active (non-revoked, non-expired) sessions.
+
+    CE scope: users see their OWN sessions only. The session matching the
+    caller's current token is flagged `is_current=True`.
+    """
+    from app.models.user import UserSession
+
+    now = datetime.now(timezone.utc)
+    stmt = (
+        select(UserSession)
+        .where(
+            UserSession.user_id == current_user.id,
+            UserSession.revoked_at.is_(None),
+            UserSession.expires_at > now,
+        )
+        .order_by(UserSession.login_at.desc())
+    )
+    result = await db.execute(stmt)
+    rows = result.scalars().all()
+
+    current_jti = getattr(request.state, "token_payload", {}).get("jti")
+
+    return [
+        SessionResponse(
+            id=s.id,
+            ip_address=s.ip_address,
+            user_agent=s.user_agent,
+            login_at=s.login_at.isoformat() if s.login_at else None,
+            last_activity_at=s.last_activity_at.isoformat() if s.last_activity_at else None,
+            is_current=(s.jti == current_jti),
+        )
+        for s in rows
+    ]
+
+
+@router.delete("/sessions/{session_id}", status_code=204)
+async def revoke_session(
+    session_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Revoke a specific session (sign it out). Users can only revoke their own."""
+    from app.models.user import UserSession
+
+    stmt = select(UserSession).where(
+        UserSession.id == session_id,
+        UserSession.user_id == current_user.id,
+        UserSession.revoked_at.is_(None),
+    )
+    result = await db.execute(stmt)
+    session = result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    session.revoked_at = datetime.now(timezone.utc)
+    await db.flush()
+
+    # Also add the JTI to the Redis denylist so the token is immediately rejected
+    # even before the DB check.
+    exp = int(session.expires_at.timestamp()) if session.expires_at else None
+    await TokenDenylist.revoke(session.jti, exp)
+
+    await db.commit()
+
+
+# ── Login Events ─────────────────────────────────────────────────────
+
+@router.get("/login-events")
+async def list_login_events(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_role(["tenant_admin"])),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=200),
+):
+    """Recent login successes and failures for THIS tenant.
+
+    CE scope: tenant admins see their own tenant's login history.
+    EE scope (not built): cross-tenant security dashboard.
+    """
+    from sqlalchemy import func
+
+    base = select(AuditLog).where(
+        AuditLog.tenant_id == current_user.tenant_id,
+        AuditLog.action.in_(["login_success", "login_failure"]),
+    )
+
+    total = await db.scalar(select(func.count()).select_from(base.subquery()))
+
+    stmt = (
+        base
+        .order_by(AuditLog.created_at.desc())
+        .offset((page - 1) * per_page)
+        .limit(per_page)
+    )
+    result = await db.execute(stmt)
+    rows = result.scalars().all()
+
+    return {
+        "items": [
+            {
+                "id": r.id,
+                "user_email": r.user_email,
+                "action": r.action,
+                "ip_address": r.ip_address,
+                "user_agent": r.user_agent,
+                "details": r.details,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in rows
+        ],
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+    }

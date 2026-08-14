@@ -22,6 +22,9 @@ from app.api.v1.smtp_settings import router as smtp_settings_router
 from app.api.v1.users import router as users_router
 from app.api.v1.salary_enrollment import router as salary_enrollment_router
 from app.api.v1.notifications import router as notifications_router
+from app.api.v1.backup import router as backup_router
+from app.api.v1.audit import router as audit_router
+from app.api.v1.user_import import router as user_import_router
 
 # Enterprise routes live in app/ee/, a package the Community Edition build does not
 # contain. That absence IS the gate: no package, no import, no routes — there is no
@@ -57,6 +60,9 @@ api_router.include_router(policy_rules_router)
 api_router.include_router(data_export_router)
 api_router.include_router(salary_enrollment_router)
 api_router.include_router(notifications_router)
+api_router.include_router(backup_router)
+api_router.include_router(audit_router)
+api_router.include_router(user_import_router)
 
 if EE:
     api_router.include_router(tenants_router)

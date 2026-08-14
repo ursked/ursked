@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -467,3 +467,90 @@ async def resend_invite(
     )
 
     return {"message": "Invite resent successfully"}
+
+
+# ── CSV Import ───────────────────────────────────────────────────────
+
+@router.post("/import-csv")
+async def import_users_csv(
+    file: UploadFile,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_role(["tenant_admin", "hr"])),
+):
+    """Bulk-create employees from a CSV file.
+
+    CE subset: fixed columns only — first_name, last_name, email, password.
+    Each user is created with an admin-set password (no invite email needed).
+    Rows that fail validation are skipped and reported in the response; the
+    rest are committed so a partial import is usable.
+    """
+    import csv
+    import io
+
+    if not file.filename or not file.filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="File must be a .csv")
+
+    content = await file.read()
+    if len(content) > 2 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="CSV file too large (max 2 MB)")
+
+    try:
+        text = content.decode("utf-8-sig")  # handle BOM from Excel
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="File must be UTF-8 encoded")
+
+    reader = csv.DictReader(io.StringIO(text))
+    required = {"first_name", "last_name", "email", "password"}
+    if not reader.fieldnames or not required.issubset({f.strip().lower() for f in reader.fieldnames}):
+        raise HTTPException(
+            status_code=400,
+            detail=f"CSV must have these columns: {', '.join(sorted(required))}",
+        )
+
+    created = []
+    errors = []
+    for i, raw_row in enumerate(reader, start=2):  # row 1 is the header
+        row = {k.strip().lower(): (v or "").strip() for k, v in raw_row.items()}
+        first = row.get("first_name", "")
+        last = row.get("last_name", "")
+        email = row.get("email", "")
+        password = row.get("password", "")
+
+        if not email:
+            errors.append({"row": i, "error": "email is required"})
+            continue
+        if not first:
+            errors.append({"row": i, "email": email, "error": "first_name is required"})
+            continue
+        if len(password) < 8:
+            errors.append({"row": i, "email": email, "error": "password must be at least 8 characters"})
+            continue
+
+        try:
+            user = await UserService.create_user(
+                db,
+                tenant_id=current_user.tenant_id,
+                data={
+                    "first_name": first,
+                    "last_name": last,
+                    "email": email,
+                    "username": email,
+                    "password": password,
+                    "send_invite": False,
+                },
+                role_codes=["employee"],
+                assigned_by=current_user.id,
+            )
+            created.append({"row": i, "email": email, "id": user.id})
+        except Exception as e:
+            errors.append({"row": i, "email": email, "error": str(e)[:200]})
+
+    if created:
+        await db.commit()
+
+    return {
+        "created": len(created),
+        "failed": len(errors),
+        "errors": errors[:100],  # cap error list to keep response size sane
+    }

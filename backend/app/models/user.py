@@ -139,6 +139,32 @@ class TrustedDevice(Base):
     user = relationship("User", back_populates="trusted_devices")
 
 
+class UserSession(Base):
+    """Persistent login record.
+
+    Tracks active sessions so users can see where they are signed in and revoke
+    individual sessions. Linked to the JWT's JTI: revoking a session adds its
+    JTI to the Redis denylist AND marks `revoked_at` so it drops from the list.
+
+    CE scope: users see their OWN sessions only.
+    EE scope (not built): cross-tenant session analytics, admin-forced logout.
+    """
+    __tablename__ = "user_sessions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    jti = Column(String(64), nullable=False, unique=True, index=True)
+    ip_address = Column(String(50), nullable=True)
+    user_agent = Column(Text, nullable=True)
+    login_at = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
+    last_activity_at = Column(DateTime(timezone=True), nullable=True)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    revoked_at = Column(DateTime(timezone=True), nullable=True)
+
+    user = relationship("User", backref="sessions")
+
+
 class UserInviteToken(Base):
     __tablename__ = "user_invite_tokens"
 

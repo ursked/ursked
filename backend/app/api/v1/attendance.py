@@ -14,6 +14,7 @@ from app.schemas.attendance import (
     OvertimeLogResponse,
     OvertimeApproveRequest,
     OvertimeConvertRequest,
+    SelfTimeEntry,
     TardinessRecordResponse,
     TardinessResolveRequest,
     LeaveCreditAdjustmentResponse,
@@ -329,5 +330,36 @@ async def update_attendance(
     )
     if not record:
         raise HTTPException(404, "Attendance record not found")
+    await db.commit()
+    return await _attendance_response(record, db)
+
+
+# ── Self-service time entry ──────────────────────────────────────────
+
+@router.post("/my", response_model=AttendanceRecordResponse)
+async def submit_own_time(
+    data: SelfTimeEntry,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Employee submits their OWN start/end time for a date.
+
+    CE subset: any authenticated employee can record their own hours. NOT a
+    clock-in kiosk (no real-time punch, no biometric). The manager/admin can
+    still override via the regular attendance endpoints.
+    """
+    try:
+        record = await AttendanceService.record_attendance(
+            db,
+            tenant_id=current_user.tenant_id,
+            employee_id=current_user.id,
+            attendance_date=data.date,
+            actual_start=data.actual_start_time,
+            actual_end=data.actual_end_time,
+            notes=data.notes,
+            recorded_by=current_user.id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     await db.commit()
     return await _attendance_response(record, db)

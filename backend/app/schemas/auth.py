@@ -102,3 +102,15 @@ class ResetPasswordRequest(BaseModel):
     @classmethod
     def validate_password(cls, v: str) -> str:
         return _validate_strong_password(v)
+
+
+class SessionResponse(BaseModel):
+    """Active-session summary for the "Sessions" profile card."""
+    id: int
+    ip_address: Optional[str] = None
+    user_agent: Optional[str] = None
+    login_at: Optional[str] = None
+    last_activity_at: Optional[str] = None
+    is_current: bool = False
+
+    model_config = {"from_attributes": True}

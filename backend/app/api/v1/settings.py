@@ -1,10 +1,19 @@
-from typing import List
+import asyncio
+import logging
+from datetime import datetime, timezone
+from typing import List, Optional
+from urllib.parse import urlparse
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sqlalchemy import func, select as sa_select
+
+from app.config import settings as app_settings
 from app.database import get_db
 from app.middleware.auth import get_current_user, require_role
+from app.models.site_settings import AuditLog
 from app.models.user import User
 from app.schemas.settings import (
     AppSettingsResponse,
@@ -134,3 +143,117 @@ async def update_user_preferences(
     resp = UserPreferencesResponse.model_validate(prefs)
     resp.org_timezone = await SettingsService.get_tenant_timezone(db, current_user.tenant_id)
     return resp
+
+
+# ── Database Backup ──────────────────────────────────────────────────
+
+_backup_logger = logging.getLogger(__name__ + ".backup")
+
+
+@router.get("/backup")
+async def download_backup(
+    current_user: User = Depends(get_current_user),
+    _=Depends(require_role(["tenant_admin"])),
+):
+    """Stream a pg_dump of the database as a downloadable SQL file.
+
+    Tenant-admin only. Runs pg_dump inside the backend container (which ships
+    postgresql-client) and streams the output so the browser downloads it
+    without the full dump being held in memory.
+    """
+    parsed = urlparse(app_settings.DATABASE_URL.replace("+asyncpg", ""))
+    env = {
+        "PGPASSWORD": parsed.password or "",
+        "PATH": "/usr/bin:/usr/local/bin:/bin",
+    }
+    cmd = [
+        "pg_dump",
+        "-h", parsed.hostname or "db",
+        "-p", str(parsed.port or 5432),
+        "-U", parsed.username or "postgres",
+        "-d", (parsed.path or "/ursked").lstrip("/"),
+        "--no-owner",
+        "--no-privileges",
+    ]
+
+    process = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        env=env,
+    )
+
+    async def _stream():
+        try:
+            while True:
+                chunk = await process.stdout.read(64 * 1024)
+                if not chunk:
+                    break
+                yield chunk
+        finally:
+            await process.wait()
+            if process.returncode != 0:
+                err = await process.stderr.read()
+                _backup_logger.error("pg_dump failed (rc=%d): %s", process.returncode, err.decode()[:500])
+
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H%M%S")
+    filename = f"ursked-backup-{stamp}.sql"
+
+    return StreamingResponse(
+        _stream(),
+        media_type="application/sql",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+# ── Audit Log ────────────────────────────────────────────────────────
+
+@router.get("/audit-log")
+async def list_audit_log(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_role(["tenant_admin"])),
+    action: Optional[str] = Query(None, description="Filter by action (e.g. login_success, login_failure)"),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=200),
+):
+    """Read-only view of this tenant's own audit trail.
+
+    CE scope: tenant admins query their OWN tenant's audit_logs.
+    EE scope (not built): cross-tenant audit UI in the superadmin console.
+    """
+    base = sa_select(AuditLog).where(
+        AuditLog.tenant_id == current_user.tenant_id,
+    )
+    if action:
+        base = base.where(AuditLog.action == action)
+
+    total = await db.scalar(sa_select(func.count()).select_from(base.subquery()))
+
+    stmt = (
+        base
+        .order_by(AuditLog.created_at.desc())
+        .offset((page - 1) * per_page)
+        .limit(per_page)
+    )
+    result = await db.execute(stmt)
+    rows = result.scalars().all()
+
+    return {
+        "items": [
+            {
+                "id": r.id,
+                "user_email": r.user_email,
+                "action": r.action,
+                "resource_type": r.resource_type,
+                "resource_id": r.resource_id,
+                "details": r.details,
+                "ip_address": r.ip_address,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in rows
+        ],
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+    }
