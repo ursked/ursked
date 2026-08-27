@@ -31,6 +31,11 @@ SYSTEM_DEFAULTS = [
 ]
 
 
+# App-settings columns where NULL is a meaningful admin choice rather than
+# "leave unchanged". Keep this list minimal and deliberate.
+NULLABLE_APP_SETTINGS = {"data_retention_days"}
+
+
 class SettingsService:
     # ── App Settings ─────────────────────────────────────────────────
 
@@ -59,8 +64,16 @@ class SettingsService:
     ) -> AppSettings:
         settings = await SettingsService.get_or_create_app_settings(db, tenant_id)
         for key, value in data.items():
-            if value is not None and hasattr(settings, key):
-                setattr(settings, key, value)
+            if not hasattr(settings, key):
+                continue
+            # Callers pass exclude_unset=True, so a key being present means the
+            # client sent it. For most fields None still means "no change", but
+            # for NULLABLE_FIELDS None is a real value the admin chose (e.g.
+            # clearing the retention policy back to "keep records indefinitely"),
+            # and dropping it would make that choice impossible to save.
+            if value is None and key not in NULLABLE_APP_SETTINGS:
+                continue
+            setattr(settings, key, value)
         await db.flush()
         await db.refresh(settings)
         return settings

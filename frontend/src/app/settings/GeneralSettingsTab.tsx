@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
-import type { AppSettings, ShiftStatusType, Tenant, ScheduleVisibilityGrant, User, OrgTreeNode, OrgTreeResponse } from '@/types'
+import type { AppSettings, ShiftStatusType, ScheduleVisibilityGrant, User, OrgTreeNode, OrgTreeResponse } from '@/types'
 import { useToast } from '@/components/ui/Toast'
 import { CURATED_CURRENCIES, normalizeCurrency, formatMoney } from '@/lib/currency'
 
@@ -77,20 +77,6 @@ export default function GeneralSettingsTab() {
   const [grantNodeId, setGrantNodeId] = useState<number | ''>('')
   const [grantIncludeDescendants, setGrantIncludeDescendants] = useState(true)
 
-  const { data: tenant, isLoading: tenantLoading } = useQuery<Tenant>({
-    queryKey: ['current-tenant'],
-    queryFn: () => api.getCurrentTenant(),
-  })
-
-  const updateTenantMutation = useMutation({
-    mutationFn: (data: Record<string, unknown>) => api.updateTenant(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['current-tenant'] })
-      showToast('Tenant timezone saved', 'success')
-    },
-    onError: (err: Error) => showToast(err.message, 'error'),
-  })
-
   const { data: appSettings, isLoading: settingsLoading } = useQuery<AppSettings>({
     queryKey: ['app-settings'],
     queryFn: () => api.getAppSettings(),
@@ -112,7 +98,7 @@ export default function GeneralSettingsTab() {
 
   const { data: usersPage } = useQuery({
     queryKey: ['users', 'for-visibility'],
-    queryFn: () => api.getUsers({ limit: '500' }),
+    queryFn: () => api.getUsers({ per_page: '100' }),
     enabled: showAdvancedVisibility,
   })
 
@@ -322,7 +308,7 @@ export default function GeneralSettingsTab() {
           </p>
         </div>
         <div className="px-6 py-6">
-          {tenantLoading ? (
+          {settingsLoading ? (
             <div className="flex items-center gap-3 text-sm text-gray-500">
               <svg className="h-5 w-5 animate-spin text-purple-600" fill="none" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -333,9 +319,13 @@ export default function GeneralSettingsTab() {
           ) : (
             <div className="max-w-md">
               <label htmlFor="tenant-timezone" className="block text-sm font-medium text-gray-700 mb-1">Timezone</label>
-              <select id="tenant-timezone" value={tenant?.timezone || ''}
-                onChange={(e) => updateTenantMutation.mutate({ timezone: e.target.value })}
-                disabled={updateTenantMutation.isPending}
+              <select id="tenant-timezone" value={appSettings?.timezone || ''}
+                onChange={(e) => updateSettingsMutation.mutate(
+                  { timezone: e.target.value },
+                  { onSuccess: () => showToast('Organization timezone saved', 'success'),
+                    onError: (err: Error) => showToast(err.message, 'error') },
+                )}
+                disabled={updateSettingsMutation.isPending}
                 className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-purple-500 focus:ring-purple-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed">
                 <option value="">Select timezone</option>
                 <option value="Africa/Johannesburg">Africa/Johannesburg (SAST, UTC+2)</option>
@@ -362,9 +352,9 @@ export default function GeneralSettingsTab() {
                 <option value="UTC">UTC (UTC+0)</option>
               </select>
               <p className="mt-2 text-xs text-gray-500">
-                {tenant?.timezone ? `Current timezone: ${tenant.timezone}` : 'No timezone set. Select one to configure.'}
+                {appSettings?.timezone ? `Current timezone: ${appSettings.timezone}` : 'No timezone set. Select one to configure.'}
               </p>
-              {updateTenantMutation.isPending && (
+              {updateSettingsMutation.isPending && (
                 <p className="mt-2 text-xs text-purple-600 flex items-center gap-1">
                   <svg className="h-3 w-3 animate-spin" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -707,8 +697,8 @@ export default function GeneralSettingsTab() {
                       className="mt-1 h-4 w-4 text-purple-600 border-gray-300 focus:ring-purple-500"
                     />
                     <div>
-                      <p className="text-sm font-medium text-gray-900">Auto-delete after a set period</p>
-                      <p className="text-xs text-gray-500">Separated employee records will be permanently deleted after the specified number of days.</p>
+                      <p className="text-sm font-medium text-gray-900">Flag for deletion after a set period</p>
+                      <p className="text-xs text-gray-500">Records past this age are reported as due for deletion. Removal is performed manually by an administrator — nothing is deleted automatically.</p>
                     </div>
                   </label>
                 </div>
@@ -731,7 +721,7 @@ export default function GeneralSettingsTab() {
                       className="block w-32 rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-purple-500 focus:ring-purple-500 focus:outline-none"
                     />
                     <p className="mt-1 text-xs text-gray-500">
-                      Records will be permanently removed {appSettings?.data_retention_days} day{appSettings?.data_retention_days !== 1 ? 's' : ''} after separation date.
+                      Records are flagged as due for deletion {appSettings?.data_retention_days} day{appSettings?.data_retention_days !== 1 ? 's' : ''} after the separation date.
                     </p>
                   </div>
                 )}
@@ -773,8 +763,8 @@ export default function GeneralSettingsTab() {
                       <li>When an employee is marked as resigned or terminated, their account is deactivated.</li>
                       <li>Their historical data (schedules, attendance, leave records) remains intact for record-keeping.</li>
                       <li>After the analytics exclusion period, they are no longer included in computed analytics and reports.</li>
-                      <li>If auto-delete is enabled, the entire employee record is permanently removed after the retention period.</li>
-                      <li>Separated employees can be reinstated at any time before deletion.</li>
+                      <li>The retention period flags records as due for deletion. This build does not delete anything automatically — an administrator must remove records deliberately.</li>
+                      <li>Separated employees can be reinstated at any time.</li>
                     </ul>
                   </div>
                 </div>

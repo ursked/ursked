@@ -22,12 +22,28 @@ if [ ! -f .env ]; then
   exit 1
 fi
 
-# shellcheck source=/dev/null
-set -a; source .env; set +a
+# Read a single key out of .env WITHOUT letting the shell evaluate it.
+#
+# `source .env` is wrong here: docker compose parses .env literally, so values are
+# legitimately unquoted and may contain spaces (the shipped .env.example has
+# ORG_NAME=My Organization). Sourcing that makes bash try to run "Organization"
+# as a command and, under `set -e`, kills the script — which is how the recovery
+# tool for a locked-out admin ends up broken on a stock install. Read only the
+# keys we need, strip optional surrounding quotes, and never eval.
+env_get() {
+  local key="$1" line
+  line=$(grep -E "^[[:space:]]*${key}=" .env | tail -n 1) || return 0
+  line=${line#*=}
+  line=${line%$'\r'}                      # tolerate CRLF .env files
+  if [[ $line == \"*\" || $line == \'*\' ]]; then
+    line=${line:1:${#line}-2}
+  fi
+  printf '%s' "$line"
+}
 
-ADMIN=${ADMIN_EMAIL:-admin@localhost}
-PG_USER=${POSTGRES_USER:-ursked}
-PG_DB=${POSTGRES_DB:-ursked}
+ADMIN=$(env_get ADMIN_EMAIL); ADMIN=${ADMIN:-admin@localhost}
+PG_USER=$(env_get POSTGRES_USER); PG_USER=${PG_USER:-ursked}
+PG_DB=$(env_get POSTGRES_DB); PG_DB=${PG_DB:-ursked}
 
 if [ -n "${1:-}" ]; then
   PASSWORD="$1"

@@ -1,14 +1,15 @@
-from datetime import date as date_type
+from datetime import date as date_type, timedelta
 from typing import List, Optional
 from uuid import UUID
 
-from sqlalchemy import and_, case, func, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
 from app.models.attendance import AttendanceRecord, OvertimeLog
 from app.models.leave import LeaveApplication, LeaveType, OvertimeCategory
 from app.models.org_hierarchy import OrgNode
+from app.models.settings import AppSettings
 from app.models.user import User
 from app.schemas.analytics import (
     MONTH_LABELS,
@@ -380,12 +381,34 @@ class AnalyticsService:
         )
 
     @staticmethod
+    async def _analytics_user_filter(db: AsyncSession, tenant_id: UUID):
+        """Condition excluding long-separated employees from computed headcount.
+
+        AppSettings.analytics_exclusion_days is the grace window: a separated
+        employee keeps counting for that many days after their separation date,
+        then drops out of the metrics. 0 (the default) drops them immediately.
+        Employees with no separation date always count.
+        """
+        days = (await db.execute(
+            select(AppSettings.analytics_exclusion_days).where(
+                AppSettings.tenant_id == tenant_id
+            )
+        )).scalar()
+        cutoff = date_type.today() - timedelta(days=days or 0)
+        return or_(
+            User.separation_date.is_(None),
+            User.separation_date >= cutoff,
+        )
+
+    @staticmethod
     async def get_headcount_summary(
         db: AsyncSession,
         tenant_id: UUID,
     ) -> AnalyticsOverviewResponse:
+        not_excluded = await AnalyticsService._analytics_user_filter(db, tenant_id)
+
         total = (await db.execute(
-            select(func.count(User.id)).where(User.tenant_id == tenant_id)
+            select(func.count(User.id)).where(User.tenant_id == tenant_id, not_excluded)
         )).scalar() or 0
 
         active = (await db.execute(
@@ -407,8 +430,9 @@ class AnalyticsService:
         month_start = today.replace(day=1)
 
         # Employee counts
+        not_excluded = await AnalyticsService._analytics_user_filter(db, tenant_id)
         total_employees = (await db.execute(
-            select(func.count(User.id)).where(User.tenant_id == tenant_id)
+            select(func.count(User.id)).where(User.tenant_id == tenant_id, not_excluded)
         )).scalar() or 0
 
         active_employees = (await db.execute(

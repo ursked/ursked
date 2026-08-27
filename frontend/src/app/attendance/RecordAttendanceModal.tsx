@@ -27,7 +27,7 @@ export default function RecordAttendanceModal({ onClose, onSubmit, isPending }: 
   const { data: employees } = useQuery<User[]>({
     queryKey: ['employees-list'],
     queryFn: async () => {
-      const res = await api.getUsers({ skip: '0', limit: '500' })
+      const res = await api.getUsers({ per_page: '100' })
       return res.items
     },
   })

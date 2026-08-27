@@ -31,7 +31,10 @@ function LoginPageInner() {
   // 2FA state
   const [show2FA, setShow2FA] = useState(false);
   const [twoFactorCode, setTwoFactorCode] = useState('');
-  const [registrationEnabled, setRegistrationEnabled] = useState(true);
+  // Default closed: Community ships no /auth/signup route, so showing the link
+  // before (or instead of) the /site/status response is a link straight to a 404.
+  // Only reveal it once the server has actually said registration is open.
+  const [registrationEnabled, setRegistrationEnabled] = useState(false);
 
   const registered = searchParams.get('registered');
   // Set by the route-guard middleware so we return the user where they meant to

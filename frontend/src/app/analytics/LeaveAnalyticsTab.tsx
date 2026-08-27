@@ -19,7 +19,7 @@ interface Props {
 export default function LeaveAnalyticsTab({ year, startDate, endDate }: Props) {
   const [statusFilter, setStatusFilter] = useState<string>('approved');
 
-  const { data: trends, isLoading } = useQuery<LeaveTrendsResponse>({
+  const { data: trends, isLoading, isError, refetch } = useQuery<LeaveTrendsResponse>({
     queryKey: ['analytics', 'leave', 'trends', year, statusFilter, startDate, endDate],
     queryFn: () => api.getLeaveTrends({
       year,
@@ -103,6 +103,18 @@ export default function LeaveAnalyticsTab({ year, startDate, endDate }: Props) {
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
           </svg>
+        </div>
+      ) : isError ? (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-center">
+          <p className="text-sm font-medium text-red-800">Could not load leave analytics.</p>
+          <p className="mt-1 text-xs text-red-700">The server did not return data for this period.</p>
+          <button
+            type="button"
+            onClick={() => refetch()}
+            className="mt-4 rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
+          >
+            Retry
+          </button>
         </div>
       ) : (
         <>

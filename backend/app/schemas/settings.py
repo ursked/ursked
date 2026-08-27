@@ -25,6 +25,9 @@ class AppSettingsResponse(BaseModel):
     notify_on_leave_approval: bool
     notify_on_schedule_change: bool
     schedule_employee_visibility: str = "own_node"
+    # Separated-employee data lifecycle. null = retain indefinitely.
+    data_retention_days: Optional[int] = None
+    analytics_exclusion_days: int = 0
     custom_settings: Optional[Dict] = None
 
 
@@ -48,6 +51,9 @@ class AppSettingsUpdate(BaseModel):
     schedule_employee_visibility: Optional[str] = Field(
         None, pattern=r"^(all|own_node|own_and_children|own_and_parent)$"
     )
+    # null clears the retention policy (retain indefinitely); 1..3650 sets a window.
+    data_retention_days: Optional[int] = Field(None, ge=1, le=3650)
+    analytics_exclusion_days: Optional[int] = Field(None, ge=0, le=365)
     custom_settings: Optional[Dict] = None
 
 

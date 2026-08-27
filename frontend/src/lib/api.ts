@@ -744,7 +744,7 @@ class ApiClient {
   }
 
   async reviewLeaveApplication(id: number, data: unknown) {
-    return this.post(`/api/v1/leave/applications/${id}/approve`, data);
+    return this.post(`/api/v1/leave/applications/${id}/review`, data);
   }
 
   async getMyLeaveBalance(): Promise<LeaveBalance> {

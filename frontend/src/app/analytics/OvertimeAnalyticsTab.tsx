@@ -19,7 +19,7 @@ interface Props {
 export default function OvertimeAnalyticsTab({ year, startDate, endDate }: Props) {
   const [statusFilter, setStatusFilter] = useState<string>('approved');
 
-  const { data: trends, isLoading: trendsLoading } = useQuery<OvertimeTrendsResponse>({
+  const { data: trends, isLoading: trendsLoading, isError: trendsError, refetch: refetchTrends } = useQuery<OvertimeTrendsResponse>({
     queryKey: ['analytics', 'overtime', 'trends', year, statusFilter, startDate, endDate],
     queryFn: () => api.getOvertimeTrends({
       year,
@@ -29,7 +29,7 @@ export default function OvertimeAnalyticsTab({ year, startDate, endDate }: Props
     }),
   });
 
-  const { data: paidUnpaid, isLoading: puLoading } = useQuery<OvertimePaidUnpaidResponse>({
+  const { data: paidUnpaid, isLoading: puLoading, isError: puError, refetch: refetchPu } = useQuery<OvertimePaidUnpaidResponse>({
     queryKey: ['analytics', 'overtime', 'paid-unpaid', year, statusFilter, startDate, endDate],
     queryFn: () => api.getOvertimePaidUnpaid({
       year,
@@ -40,6 +40,7 @@ export default function OvertimeAnalyticsTab({ year, startDate, endDate }: Props
   });
 
   const isLoading = trendsLoading || puLoading;
+  const isError = trendsError || puError;
 
   // Transform for stacked bar: convert minutes to hours per category
   const stackedData = trends?.months.map((m) => {
@@ -114,6 +115,18 @@ export default function OvertimeAnalyticsTab({ year, startDate, endDate }: Props
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
           </svg>
+        </div>
+      ) : isError ? (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-center">
+          <p className="text-sm font-medium text-red-800">Could not load overtime analytics.</p>
+          <p className="mt-1 text-xs text-red-700">The server did not return data for this period.</p>
+          <button
+            type="button"
+            onClick={() => { refetchTrends(); refetchPu(); }}
+            className="mt-4 rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
+          >
+            Retry
+          </button>
         </div>
       ) : (
         <>
