@@ -1,3 +1,4 @@
+from datetime import time
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -25,6 +26,17 @@ class AppSettingsResponse(BaseModel):
     notify_on_leave_approval: bool
     notify_on_schedule_change: bool
     schedule_employee_visibility: str = "own_node"
+    # ── Payroll computation. Defaults are Philippine statutory rates; every
+    # install is expected to set these to its own jurisdiction / agreement.
+    working_days_per_month: int = 22
+    night_diff_multiplier: float = 1.10
+    night_shift_start: Optional[time] = None
+    night_shift_end: Optional[time] = None
+    holiday_worked_multiplier: float = 2.0
+    special_holiday_worked_multiplier: float = 1.3
+    # ── Schedule enforcement. 0 = rule disabled.
+    max_consecutive_work_days: int = 0
+    min_rest_days_per_week: int = 0
     # Separated-employee data lifecycle. null = retain indefinitely.
     data_retention_days: Optional[int] = None
     analytics_exclusion_days: int = 0
@@ -51,6 +63,18 @@ class AppSettingsUpdate(BaseModel):
     schedule_employee_visibility: Optional[str] = Field(
         None, pattern=r"^(all|own_node|own_and_children|own_and_parent)$"
     )
+    # ── Payroll computation ──
+    working_days_per_month: Optional[int] = Field(None, ge=1, le=31)
+    # Premiums are applied as hours x rate x (multiplier - 1), so anything below
+    # 1.0 would subtract pay. Floor at 1.0 (= no premium) rather than allow that.
+    night_diff_multiplier: Optional[float] = Field(None, ge=1.0, le=10.0)
+    night_shift_start: Optional[time] = None
+    night_shift_end: Optional[time] = None
+    holiday_worked_multiplier: Optional[float] = Field(None, ge=1.0, le=10.0)
+    special_holiday_worked_multiplier: Optional[float] = Field(None, ge=1.0, le=10.0)
+    # ── Schedule enforcement (0 disables the rule) ──
+    max_consecutive_work_days: Optional[int] = Field(None, ge=0, le=31)
+    min_rest_days_per_week: Optional[int] = Field(None, ge=0, le=7)
     # null clears the retention policy (retain indefinitely); 1..3650 sets a window.
     data_retention_days: Optional[int] = Field(None, ge=1, le=3650)
     analytics_exclusion_days: Optional[int] = Field(None, ge=0, le=365)

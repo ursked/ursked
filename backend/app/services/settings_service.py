@@ -33,7 +33,13 @@ SYSTEM_DEFAULTS = [
 
 # App-settings columns where NULL is a meaningful admin choice rather than
 # "leave unchanged". Keep this list minimal and deliberate.
-NULLABLE_APP_SETTINGS = {"data_retention_days"}
+#   data_retention_days     -> null = retain records indefinitely
+#   night_shift_start/_end  -> null = no night window, so no night differential
+NULLABLE_APP_SETTINGS = {
+    "data_retention_days",
+    "night_shift_start",
+    "night_shift_end",
+}
 
 
 class SettingsService:

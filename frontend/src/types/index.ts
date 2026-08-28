@@ -256,6 +256,16 @@ export interface AppSettings {
   notify_on_leave_approval: boolean;
   notify_on_schedule_change: boolean;
   schedule_employee_visibility: 'all' | 'own_node' | 'own_and_children' | 'own_and_parent';
+  // Payroll computation. Defaults are PH statutory; each install sets its own.
+  working_days_per_month?: number;
+  night_diff_multiplier?: number;
+  night_shift_start?: string | null;   // "HH:MM:SS"; null = no night window
+  night_shift_end?: string | null;
+  holiday_worked_multiplier?: number;
+  special_holiday_worked_multiplier?: number;
+  // Schedule enforcement. 0 = rule disabled.
+  max_consecutive_work_days?: number;
+  min_rest_days_per_week?: number;
   data_retention_days?: number | null;
   analytics_exclusion_days?: number;
   custom_settings?: Record<string, unknown>;

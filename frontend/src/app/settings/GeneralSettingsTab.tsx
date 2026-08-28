@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import type { AppSettings, ShiftStatusType, ScheduleVisibilityGrant, User, OrgTreeNode, OrgTreeResponse } from '@/types'
@@ -19,6 +19,65 @@ const SCHEDULE_VISIBILITY_OPTIONS = [
   { value: 'own_and_parent', label: 'Own unit + parent unit', description: 'Employees can see their own unit and one level above.' },
   { value: 'all', label: 'Everyone (no restriction)', description: 'All employees can see the full organization schedule.' },
 ]
+
+/**
+ * Numeric setting that commits on blur (or Enter) rather than on every keystroke.
+ *
+ * These fields feed payroll computation, so keystroke-level saving is wrong twice
+ * over: typing "1.25" would PATCH the intermediate values 1 and 1.2, and "1." is
+ * not a valid number at all. Hold a local draft, clamp to the field's bounds, and
+ * only save when the admin has finished typing and the value actually changed.
+ */
+function NumberSetting({
+  id, label, help, value, min, max, step = 1, disabled, onCommit,
+}: {
+  id: string
+  label: string
+  help?: string
+  value: number | undefined
+  min: number
+  max: number
+  step?: number
+  disabled?: boolean
+  onCommit: (n: number) => void
+}) {
+  const [draft, setDraft] = useState(String(value ?? ''))
+  useEffect(() => { setDraft(String(value ?? '')) }, [value])
+
+  const commit = () => {
+    const n = Number(draft)
+    if (draft.trim() === '' || Number.isNaN(n)) {
+      setDraft(String(value ?? ''))   // reject junk, restore the saved value
+      return
+    }
+    const clamped = Math.min(max, Math.max(min, n))
+    if (clamped !== n) setDraft(String(clamped))
+    if (clamped !== value) onCommit(clamped)
+  }
+
+  return (
+    <div>
+      <label htmlFor={id} className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+      <input
+        id={id}
+        type="number"
+        min={min}
+        max={max}
+        step={step}
+        value={draft}
+        disabled={disabled}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
+        className="block w-40 rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-purple-500 focus:ring-purple-500 focus:outline-none disabled:opacity-50"
+      />
+      {help && <p className="mt-1 text-xs text-gray-500">{help}</p>}
+    </div>
+  )
+}
+
+/** Backend sends "HH:MM:SS"; <input type="time"> wants "HH:MM". */
+const toTimeInput = (v?: string | null) => (v ? v.slice(0, 5) : '')
 
 type FlatNode = { id: number; label: string; depth: number }
 
@@ -648,6 +707,179 @@ export default function GeneralSettingsTab() {
                   Saving...
                 </p>
               )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Section: Payroll & Premium Rates ─────────────────────── */}
+      <div className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-xl">
+        <div className="border-b border-gray-200 px-6 py-4">
+          <h2 className="text-lg font-semibold text-gray-900">Payroll &amp; Premium Rates</h2>
+          <p className="mt-1 text-sm text-gray-500">
+            The rates used to compute pay. Set these to match your jurisdiction and any
+            collective agreement — the shipped values are Philippine statutory defaults
+            and are almost certainly not correct for your organization.
+          </p>
+        </div>
+        <div className="px-6 py-6">
+          {settingsLoading ? (
+            <div className="text-sm text-gray-500">Loading...</div>
+          ) : (
+            <div className="space-y-6">
+              <NumberSetting
+                id="working-days-per-month"
+                label="Working days per month"
+                help="Divides a monthly salary grade to derive the daily rate, which in turn derives the hourly rate."
+                value={appSettings?.working_days_per_month}
+                min={1} max={31}
+                disabled={updateSettingsMutation.isPending}
+                onCommit={(n) => updateSettingsMutation.mutate(
+                  { working_days_per_month: n },
+                  { onSuccess: () => showToast('Working days per month saved', 'success'),
+                    onError: (err: Error) => showToast(err.message, 'error') },
+                )}
+              />
+
+              <div className="border-t border-gray-200 pt-5 space-y-4">
+                <h3 className="text-sm font-semibold text-gray-900">Night differential</h3>
+                <NumberSetting
+                  id="night-diff-multiplier"
+                  label="Night differential multiplier"
+                  help="1.0 means no premium. 1.10 pays a 10% premium on hours inside the night window."
+                  value={appSettings?.night_diff_multiplier}
+                  min={1} max={10} step={0.01}
+                  disabled={updateSettingsMutation.isPending}
+                  onCommit={(n) => updateSettingsMutation.mutate(
+                    { night_diff_multiplier: n },
+                    { onSuccess: () => showToast('Night differential saved', 'success'),
+                      onError: (err: Error) => showToast(err.message, 'error') },
+                  )}
+                />
+                <div className="flex flex-wrap items-end gap-4">
+                  <div>
+                    <label htmlFor="night-start" className="block text-sm font-medium text-gray-700 mb-1">Night window starts</label>
+                    <input
+                      id="night-start" type="time"
+                      value={toTimeInput(appSettings?.night_shift_start)}
+                      disabled={updateSettingsMutation.isPending}
+                      onChange={(e) => updateSettingsMutation.mutate(
+                        { night_shift_start: e.target.value || null },
+                        { onSuccess: () => showToast('Night window saved', 'success'),
+                          onError: (err: Error) => showToast(err.message, 'error') },
+                      )}
+                      className="block w-40 rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-purple-500 focus:ring-purple-500 focus:outline-none disabled:opacity-50"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="night-end" className="block text-sm font-medium text-gray-700 mb-1">Night window ends</label>
+                    <input
+                      id="night-end" type="time"
+                      value={toTimeInput(appSettings?.night_shift_end)}
+                      disabled={updateSettingsMutation.isPending}
+                      onChange={(e) => updateSettingsMutation.mutate(
+                        { night_shift_end: e.target.value || null },
+                        { onSuccess: () => showToast('Night window saved', 'success'),
+                          onError: (err: Error) => showToast(err.message, 'error') },
+                      )}
+                      className="block w-40 rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-purple-500 focus:ring-purple-500 focus:outline-none disabled:opacity-50"
+                    />
+                  </div>
+                </div>
+                {(!appSettings?.night_shift_start || !appSettings?.night_shift_end) && (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+                    <p className="text-xs text-amber-800">
+                      No night window is set, so the night differential is never applied no
+                      matter what multiplier is configured. Set both a start and an end time
+                      to enable it. The window may cross midnight (e.g. 22:00 to 06:00).
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <div className="border-t border-gray-200 pt-5 space-y-4">
+                <h3 className="text-sm font-semibold text-gray-900">Holiday premiums</h3>
+                <NumberSetting
+                  id="holiday-mult"
+                  label="Regular holiday multiplier"
+                  help="Applied to hours worked on a regular holiday. 2.0 pays double."
+                  value={appSettings?.holiday_worked_multiplier}
+                  min={1} max={10} step={0.01}
+                  disabled={updateSettingsMutation.isPending}
+                  onCommit={(n) => updateSettingsMutation.mutate(
+                    { holiday_worked_multiplier: n },
+                    { onSuccess: () => showToast('Holiday multiplier saved', 'success'),
+                      onError: (err: Error) => showToast(err.message, 'error') },
+                  )}
+                />
+                <NumberSetting
+                  id="special-holiday-mult"
+                  label="Special holiday multiplier"
+                  help="Applied to hours worked on a special (non-regular) holiday."
+                  value={appSettings?.special_holiday_worked_multiplier}
+                  min={1} max={10} step={0.01}
+                  disabled={updateSettingsMutation.isPending}
+                  onCommit={(n) => updateSettingsMutation.mutate(
+                    { special_holiday_worked_multiplier: n },
+                    { onSuccess: () => showToast('Special holiday multiplier saved', 'success'),
+                      onError: (err: Error) => showToast(err.message, 'error') },
+                  )}
+                />
+              </div>
+
+              <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
+                <p className="text-xs text-blue-800">
+                  Premiums are paid as <span className="font-medium">hours &times; hourly rate &times; (multiplier &minus; 1)</span> on
+                  top of base pay, so a multiplier of 1.0 means no premium. Changes apply to
+                  payroll computed from now on; they do not retroactively alter payroll
+                  periods that have already been generated.
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Section: Schedule Enforcement ────────────────────────── */}
+      <div className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-xl">
+        <div className="border-b border-gray-200 px-6 py-4">
+          <h2 className="text-lg font-semibold text-gray-900">Schedule Enforcement</h2>
+          <p className="mt-1 text-sm text-gray-500">
+            Working-time limits checked when shifts are created. Set either to 0 to disable
+            that rule.
+          </p>
+        </div>
+        <div className="px-6 py-6">
+          {settingsLoading ? (
+            <div className="text-sm text-gray-500">Loading...</div>
+          ) : (
+            <div className="space-y-6">
+              <NumberSetting
+                id="max-consecutive-work-days"
+                label="Maximum consecutive work days"
+                help="Blocks scheduling a run of work days longer than this. 0 = no limit."
+                value={appSettings?.max_consecutive_work_days}
+                min={0} max={31}
+                disabled={updateSettingsMutation.isPending}
+                onCommit={(n) => updateSettingsMutation.mutate(
+                  { max_consecutive_work_days: n },
+                  { onSuccess: () => showToast('Consecutive work day limit saved', 'success'),
+                    onError: (err: Error) => showToast(err.message, 'error') },
+                )}
+              />
+              <NumberSetting
+                id="min-rest-days-per-week"
+                label="Minimum rest days per week"
+                help="Requires at least this many rest days in any rolling 7-day window. 0 = no requirement."
+                value={appSettings?.min_rest_days_per_week}
+                min={0} max={7}
+                disabled={updateSettingsMutation.isPending}
+                onCommit={(n) => updateSettingsMutation.mutate(
+                  { min_rest_days_per_week: n },
+                  { onSuccess: () => showToast('Rest day requirement saved', 'success'),
+                    onError: (err: Error) => showToast(err.message, 'error') },
+                )}
+              />
             </div>
           )}
         </div>
