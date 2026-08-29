@@ -1060,6 +1060,28 @@ async def create_leave_application(
 ):
     await _validate_leave_type(db, current_user.tenant_id, data.leave_type)
 
+    # Whose leave this is. Everything downstream — balance rules, the policy that
+    # applies, the approval chain — is a property of the employee taking the
+    # leave, not of whoever typed it in, so resolve the subject up front and use
+    # it consistently. Previously the body's employee_id was silently dropped
+    # and the application was always filed against the caller.
+    subject = current_user
+    if data.employee_id is not None and data.employee_id != current_user.id:
+        if not await _has_reviewer_role(current_user):
+            raise HTTPException(
+                status_code=403,
+                detail="You can only file leave for yourself.",
+            )
+        result = await db.execute(
+            select(User).where(
+                User.id == data.employee_id,
+                User.tenant_id == current_user.tenant_id,
+            )
+        )
+        subject = result.scalar_one_or_none()
+        if not subject:
+            raise HTTPException(status_code=404, detail="Employee not found")
+
     if data.end_date < data.start_date:
         raise HTTPException(status_code=400, detail="End date must be on or after start date")
 
@@ -1072,7 +1094,7 @@ async def create_leave_application(
     violations = await LeaveRuleService.evaluate(
         db,
         current_user.tenant_id,
-        current_user,
+        subject,
         leave_type=data.leave_type,
         start_date=data.start_date,
         end_date=data.end_date,
@@ -1091,7 +1113,7 @@ async def create_leave_application(
 
     app = LeaveApplication(
         tenant_id=current_user.tenant_id,
-        employee_id=current_user.id,
+        employee_id=subject.id,
         leave_type=data.leave_type,
         start_date=data.start_date,
         end_date=data.end_date,
@@ -1106,19 +1128,19 @@ async def create_leave_application(
 
     # Resolve approval chain and create steps
     policy = await LeaveService.get_policy_for_employee(
-        db, current_user.tenant_id, current_user.employee_type
+        db, current_user.tenant_id, subject.employee_type
     )
 
     chain = []
     if policy:
         chain = await LeaveApprovalService.resolve_approval_chain(
-            db, current_user.tenant_id, current_user.id, policy
+            db, current_user.tenant_id, subject.id, policy
         )
     else:
         # No policy covers this employee — still resolve a fallback approver
         # (line manager, then admin/HR) so the request isn't left unassigned.
         chain = await LeaveApprovalService._resolve_fallback(
-            db, current_user.tenant_id, current_user.id
+            db, current_user.tenant_id, subject.id
         )
 
     if chain:
@@ -1130,7 +1152,7 @@ async def create_leave_application(
         first_approver = first_approver_result.scalar_one_or_none()
 
         if first_approver:
-            employee_name = f"{current_user.first_name} {current_user.last_name}"
+            employee_name = f"{subject.first_name} {subject.last_name}"
             EmailService.fire_and_forget(
                 lambda db, a=first_approver: EmailService.send_leave_request_notification(
                     db,

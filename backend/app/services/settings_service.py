@@ -86,6 +86,67 @@ FALLBACK_PALETTE = [
 ]
 
 
+MAX_SHORT_LABEL = 10  # shift_status_types.short_label is VARCHAR(10)
+
+
+def _short_label_candidates(name: str, code: str, preferred: Optional[str]):
+    """Yield short-label options, best first.
+
+    "Sick Leave" and "Study Leave" both initialise to "SL", so a single
+    candidate is not enough — the grid badge exists to tell statuses apart and
+    two identical badges defeat it. Widen the first word one letter at a time
+    ("SL" -> "STL" -> "STUL") before falling back to numbering.
+    """
+    if preferred:
+        yield preferred[:MAX_SHORT_LABEL]
+
+    words = (name or code).replace("_", " ").split()
+
+    if len(words) > 1:
+        head, rest = words[0], words[1:]
+        tail = "".join(w[0] for w in rest).upper()
+        for i in range(1, len(head) + 1):
+            candidate = (head[:i] + tail).upper()[:MAX_SHORT_LABEL]
+            yield candidate
+            if len(head[:i]) + len(tail) >= MAX_SHORT_LABEL:
+                break
+    else:
+        word = words[0] if words else code
+        for i in range(4, MAX_SHORT_LABEL + 1):
+            yield word[:i]
+            if i >= len(word):
+                break
+
+
+def derive_short_label(
+    name: str,
+    code: str,
+    preferred: Optional[str],
+    taken: set,
+) -> str:
+    """Pick a short label for the grid badge that no other status is using.
+
+    `taken` is the tenant's existing short labels. Comparison is
+    case-insensitive: "SL" and "sl" are the same badge to a reader.
+    """
+    taken_ci = {t.casefold() for t in taken if t}
+
+    seen = set()
+    for candidate in _short_label_candidates(name, code, preferred):
+        if not candidate or candidate in seen:
+            continue
+        seen.add(candidate)
+        if candidate.casefold() not in taken_ci:
+            return candidate
+
+    # Everything readable is spoken for; number it. The admin can rename it.
+    base = (next(iter(seen), None) or code[:2] or "ST")[: MAX_SHORT_LABEL - 2]
+    n = 2
+    while f"{base}{n}".casefold() in taken_ci:
+        n += 1
+    return f"{base}{n}"[:MAX_SHORT_LABEL]
+
+
 # App-settings columns where NULL is a meaningful admin choice rather than
 # "leave unchanged". Keep this list minimal and deliberate.
 #   data_retention_days     -> null = retain records indefinitely
@@ -298,19 +359,14 @@ class SettingsService:
             color, bg_class = FALLBACK_PALETTE[idx]
             short = None
 
-        # short_label is NOT NULL and capped at 10 chars, and is what the grid
-        # badge shows. Prefer the tenant's own export_code (already the
-        # abbreviation they use on printed schedules); otherwise initialise a
-        # multi-word label ("Study Leave" -> "SL") rather than truncating it
-        # mid-word ("Study Leav"). Not required to be unique, and the admin can
-        # edit it under the status-type settings.
-        short_label = export_code or short
-        if not short_label:
-            words = (label or code).replace("_", " ").split()
-            if len(words) > 1:
-                short_label = "".join(w[0] for w in words).upper()[:10]
-            else:
-                short_label = (label or code)[:10]
+        taken = set((await db.execute(
+            select(ShiftStatusType.short_label).where(
+                ShiftStatusType.tenant_id == tenant_id
+            )
+        )).scalars().all())
+        short_label = derive_short_label(
+            label or code, code, export_code or short, taken
+        )
 
         status_type = ShiftStatusType(
             tenant_id=tenant_id,

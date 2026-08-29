@@ -9,7 +9,7 @@ Run automatically from docker-entrypoint.sh after the alembic upgrade.
 
 Environment:
   ORG_NAME        display name of the organization        (default "My Organization")
-  ADMIN_EMAIL     the administrator's login               (default "admin@localhost")
+  ADMIN_EMAIL     the administrator's login               (default "admin@example.com")
   ADMIN_PASSWORD  their initial password                  (generated if unset)
   TZ              organization timezone                   (default "UTC")
 """
@@ -17,6 +17,7 @@ import asyncio
 import os
 import re
 import secrets
+import sys
 
 from sqlalchemy import func, select
 
@@ -62,7 +63,27 @@ async def seed() -> None:
             return
 
         org_name = env("ORG_NAME", "My Organization")
-        admin_email = env("ADMIN_EMAIL", "admin@localhost")
+        admin_email = env("ADMIN_EMAIL", "admin@example.com")
+
+        # The seed writes straight to the database, bypassing the Pydantic
+        # EmailStr validation every API path applies. An address the API would
+        # reject (a bare host like "admin@localhost" has no dot after the @)
+        # therefore creates an administrator that cannot afterwards be saved
+        # through the user form — every update carrying the email field 422s.
+        # Fail here instead, while it is still one env var to change.
+        try:
+            from email_validator import validate_email
+            validate_email(admin_email, check_deliverability=False)
+        except ImportError:
+            pass
+        except Exception as exc:
+            print(
+                f"[seed] ADMIN_EMAIL={admin_email!r} is not a valid email address "
+                f"({exc}). The administrator account would be created but could "
+                f"not be edited afterwards. Set a valid address and start again.",
+                file=sys.stderr,
+            )
+            raise SystemExit(1)
         admin_password = env("ADMIN_PASSWORD")
         generated = not admin_password
         if generated:

@@ -96,7 +96,7 @@ services:
       # First-boot bootstrap (see backend/seed_ce.py). Consumed only when the
       # database has no users yet; ignored on every subsequent start.
       ORG_NAME: ${ORG_NAME:-My Organization}
-      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@localhost}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       ADMIN_FIRST_NAME: ${ADMIN_FIRST_NAME:-Admin}
       ADMIN_LAST_NAME: ${ADMIN_LAST_NAME:-}

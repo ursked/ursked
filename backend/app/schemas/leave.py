@@ -35,6 +35,11 @@ class LeaveApprovalStepResponse(BaseModel):
 
 
 class LeaveApplicationCreate(BaseModel):
+    # Reviewers (HR, managers, admins) may file on an employee's behalf — sick
+    # leave phoned in on the day is the common case. Omit it, or set it to your
+    # own id, to file for yourself. A non-reviewer supplying someone else's id
+    # is refused rather than silently redirected to their own record.
+    employee_id: Optional[int] = None
     leave_type: str = Field(..., min_length=1, max_length=50)
     start_date: date
     end_date: date

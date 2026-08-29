@@ -14,7 +14,7 @@
 #   4. Clears tokens_valid_from to sign out any existing sessions.
 #
 # The .env must be present (it supplies POSTGRES_USER, POSTGRES_DB, and
-# ADMIN_EMAIL). If ADMIN_EMAIL is unset, defaults to admin@localhost.
+# ADMIN_EMAIL). If ADMIN_EMAIL is unset, defaults to admin@example.com.
 set -euo pipefail
 
 if [ ! -f .env ]; then
@@ -41,7 +41,7 @@ env_get() {
   printf '%s' "$line"
 }
 
-ADMIN=$(env_get ADMIN_EMAIL); ADMIN=${ADMIN:-admin@localhost}
+ADMIN=$(env_get ADMIN_EMAIL); ADMIN=${ADMIN:-admin@example.com}
 PG_USER=$(env_get POSTGRES_USER); PG_USER=${PG_USER:-ursked}
 PG_DB=$(env_get POSTGRES_DB); PG_DB=${PG_DB:-ursked}
 
@@ -70,12 +70,24 @@ fi
 
 # Update the database. Escape single quotes in the hash (bcrypt hashes contain $
 # which is safe in single-quoted SQL, but the hash never contains single quotes).
-docker compose exec -T db psql -U "$PG_USER" -d "$PG_DB" -c "
+# RETURNING + a row count, so a typo in ADMIN_EMAIL is reported rather than
+# silently doing nothing. A recovery tool that prints "done" while changing no
+# rows is worse than one that fails.
+UPDATED=$(docker compose exec -T db psql -U "$PG_USER" -d "$PG_DB" -tAc "
   UPDATE users
   SET password_hash = '$HASH',
       must_change_password = true,
       tokens_valid_from = NOW()
-  WHERE email = '$ADMIN';
-" >/dev/null
+  WHERE email = '$ADMIN'
+  RETURNING email;
+" | tr -d '[:space:]')
+
+if [ -z "$UPDATED" ]; then
+  echo "Error: no user with email '$ADMIN'." >&2
+  echo "Set ADMIN_EMAIL in .env to the address you sign in with. Known accounts:" >&2
+  docker compose exec -T db psql -U "$PG_USER" -d "$PG_DB" -tAc \
+    "SELECT '  - ' || email FROM users ORDER BY id;" >&2
+  exit 1
+fi
 
 echo "Password reset for $ADMIN. They will be required to change it on next sign-in."
