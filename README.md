@@ -158,7 +158,8 @@ on next sign-in. If the stack is not running, the manual psql fallback is:
 docker compose run --rm -T backend python -c \
   "import bcrypt; print(bcrypt.hashpw(b'YOUR_NEW_PASSWORD', bcrypt.gensalt()).decode())"
 
-# Paste the hash into the update (replace admin@localhost with your admin email)
+# Paste the hash into the update. This targets the OLDEST user, which on a fresh
+# install is the seeded administrator — no email needed.
 docker compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c \
   "UPDATE users SET password_hash='<paste-hash-here>', must_change_password=true
    WHERE id = (SELECT id FROM users ORDER BY id LIMIT 1);"

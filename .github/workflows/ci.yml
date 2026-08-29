@@ -59,7 +59,12 @@ jobs:
           COOKIE_SECURE=false
           CORS_ORIGINS=[]
           ORG_NAME=CI Org
-          ADMIN_EMAIL=admin@ci.local
+          # Must be an address the app's OWN validator accepts. seed_ce.py refuses to
+          # bootstrap an administrator it could not afterwards edit, and special-use
+          # names (.local, .test, .invalid, a bare "localhost") are rejected — such an
+          # account exists but 422s on every save through the user form. example.com is
+          # reserved by RFC 2606 for exactly this. Do not "simplify" it to admin@ci.local.
+          ADMIN_EMAIL=admin@ci.example.com
           ADMIN_PASSWORD=ci-admin-pw-Chang3Me!
           TZ=UTC
           EOF
@@ -98,7 +103,7 @@ jobs:
       - name: Run the CE boot smoke test
         run: |
           chmod +x .github/workflows/smoke.sh
-          .github/workflows/smoke.sh http://localhost:3000 admin@ci.local 'ci-admin-pw-Chang3Me!'
+          .github/workflows/smoke.sh http://localhost:3000 admin@ci.example.com 'ci-admin-pw-Chang3Me!'
 
       # On any failure above, surface exactly why. `if: failure()` runs even after
       # a failed step so the logs are in the run, not lost with the runner.
