@@ -222,6 +222,26 @@ export default function ShiftCell({
             )}
           </div>
         ))}
+        {/* Add a SECOND shift to a day that already has one. Split shifts are a
+            first-class case — a morning at home and an afternoon on site is one
+            working day in two rows — and the model supports them via
+            sequence_number. Without this the only route was the toolbar's blank
+            "Add Shift", which makes you retype the employee and date you are
+            already pointing at. Sits bottom-left so it clears the warning badge
+            (top-right) and the Swap/Change row (below the card). */}
+        {hasShifts && onCellClick && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onCellClick(dateStr); }}
+            className="absolute bottom-0 left-0 z-20 hidden group-hover/cell:flex h-4 w-4 items-center justify-center rounded bg-purple-100 text-purple-700 hover:bg-purple-200 transition-colors"
+            title="Add another shift on this day (split shift)"
+          >
+            <svg className="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 4v16m8-8H4" />
+            </svg>
+            <span className="sr-only">Add another shift on {dateStr}</span>
+          </button>
+        )}
         {!hasShifts && hasClipboard && (
           <button
             type="button"

@@ -311,6 +311,11 @@ export default function LinearGridView({
 
                     const warnings = violationMap?.get(emp.employee_id)?.get(dateStr);
 
+                    // onCellClick is handed over only when the viewer may write.
+                    // ShiftCell keys its add affordances off that prop, so a
+                    // read-only user no longer sees a "+" the API would refuse.
+                    // canEdit was previously declared and destructured here but
+                    // never actually read.
                     return (
                       <ShiftCell
                         key={dateStr}
@@ -324,7 +329,9 @@ export default function LinearGridView({
                         isSelected={isCellSelected}
                         hasClipboard={!!clipboard}
                         onShiftClick={onShiftClick}
-                        onCellClick={() => onCellClick(emp.employee_id, dateStr)}
+                        {...(canEdit
+                          ? { onCellClick: () => onCellClick(emp.employee_id, dateStr) }
+                          : {})}
                         onCellSelect={onCellSelect}
                         onCopyShift={onCopyShift}
                         onPasteShift={onPasteShift}
