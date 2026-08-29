@@ -70,19 +70,22 @@ fi
 
 # Update the database. Escape single quotes in the hash (bcrypt hashes contain $
 # which is safe in single-quoted SQL, but the hash never contains single quotes).
-# RETURNING + a row count, so a typo in ADMIN_EMAIL is reported rather than
-# silently doing nothing. A recovery tool that prints "done" while changing no
-# rows is worse than one that fails.
-UPDATED=$(docker compose exec -T db psql -U "$PG_USER" -d "$PG_DB" -tAc "
+# Check how many rows actually changed, so a typo in ADMIN_EMAIL is reported
+# rather than silently doing nothing. A recovery tool that prints "done" while
+# changing no rows is worse than one that fails.
+#
+# psql prints the command tag ("UPDATE 0" / "UPDATE 1") even under -tAc, and it
+# prints it even with RETURNING — so testing for empty output always passes.
+# Read the count out of the tag instead.
+ROWS=$(docker compose exec -T db psql -U "$PG_USER" -d "$PG_DB" -tAc "
   UPDATE users
   SET password_hash = '$HASH',
       must_change_password = true,
       tokens_valid_from = NOW()
-  WHERE email = '$ADMIN'
-  RETURNING email;
-" | tr -d '[:space:]')
+  WHERE email = '$ADMIN';
+" | tail -n 1 | awk '{print $2}')
 
-if [ -z "$UPDATED" ]; then
+if [ "${ROWS:-0}" -eq 0 ] 2>/dev/null || [ -z "${ROWS:-}" ]; then
   echo "Error: no user with email '$ADMIN'." >&2
   echo "Set ADMIN_EMAIL in .env to the address you sign in with. Known accounts:" >&2
   docker compose exec -T db psql -U "$PG_USER" -d "$PG_DB" -tAc \
