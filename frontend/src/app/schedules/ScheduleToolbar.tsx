@@ -86,6 +86,11 @@ export default function ScheduleToolbar({
   onCopyWeek,
   onClearAll,
 }: ScheduleToolbarProps) {
+  // On a phone the toolbar was three stacked rows -- range, search, actions --
+  // which pushed the grid itself off the screen. Everything except date
+  // navigation now hides behind a disclosure. Desktop is unaffected: the wrapper
+  // uses display:contents at sm and up, so it disappears from the flex layout.
+  const [toolsOpen, setToolsOpen] = useState(false);
   const [showCustomPicker, setShowCustomPicker] = useState(false);
   const [showMore, setShowMore] = useState(false);
   const moreRef = useRef<HTMLDivElement>(null);
@@ -134,7 +139,25 @@ export default function ScheduleToolbar({
         </div>
 
         {/* Date label */}
-        <h2 className="text-sm font-semibold text-gray-900 min-w-[140px]">{dateLabel}</h2>
+        <h2 className="text-sm font-semibold text-gray-900 min-w-0 sm:min-w-[140px] truncate">{dateLabel}</h2>
+
+        {/* Phone-only disclosure for everything that is not date navigation. */}
+        <button
+          type="button"
+          onClick={() => setToolsOpen((v) => !v)}
+          aria-expanded={toolsOpen}
+          className="sm:hidden ml-auto inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+        >
+          {toolsOpen ? 'Hide' : 'Tools'}
+          <svg
+            className={`w-3.5 h-3.5 transition-transform ${toolsOpen ? 'rotate-180' : ''}`}
+            fill="none" viewBox="0 0 24 24" stroke="currentColor"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+
+        <div className={`${toolsOpen ? 'contents' : 'hidden'} sm:contents`}>
 
         {/* Range selector */}
         <div className="flex bg-gray-100 rounded-lg p-0.5 relative" ref={customRef}>
@@ -449,6 +472,7 @@ export default function ScheduleToolbar({
             Add Shift
           </button>
         )}
+        </div>
       </div>
     </div>
   );

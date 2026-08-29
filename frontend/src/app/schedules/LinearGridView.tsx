@@ -33,6 +33,18 @@ interface LinearGridViewProps {
 }
 
 const DAY_NAMES_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+/** "Christopher Bryan O. Grey" -> "CGr". First initial plus two letters of the
+ *  surname. Plain two-letter initials are not enough on a real roster: "Rey Mark
+ *  C. Clemente" and "Rhenzo P. De La Cruz" both reduce to "RC". Single-letter
+ *  fragments ("P.", "O.") are dropped as noise; the full name stays in a title. */
+function initialsOf(name: string): string {
+  const parts = (name || '').split(/\s+/).filter((p) => p.replace(/\./g, '').length > 1);
+  if (parts.length === 0) return (name || '?').slice(0, 3).toUpperCase();
+  if (parts.length === 1) return parts[0].slice(0, 3).toUpperCase();
+  const last = parts[parts.length - 1].replace(/\./g, '');
+  return (parts[0][0] + last.slice(0, 2)).replace(/[^A-Za-z]/g, '');
+}
 const ROW_DRAG_TYPE = 'application/x-row-reorder';
 
 export default function LinearGridView({
@@ -197,12 +209,19 @@ export default function LinearGridView({
     );
   }
 
+  // The wrapper deliberately carries no overflow-hidden: it would create a
+  // second, non-scrolling scrollport around the real one, and WebKit then
+  // resolves the sticky cells against the wrong box -- which is what made the
+  // pinned header slide down the card on iOS. Rounding moves to the scroller.
   return (
-    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+    <div className="bg-white rounded-xl border border-gray-200">
       {/* Own scroll viewport: the grid scrolls internally (both axes) instead of
           growing the whole page, and the date-header row + employee column stay
-          pinned so you never lose which day / whose row you're on. */}
-      <div className="overflow-auto max-h-[70vh] sm:max-h-[calc(100vh-320px)]">
+          pinned so you never lose which day / whose row you're on.
+          Height is DEFINITE on phones (h-, not max-h): sticky needs a resolved
+          scrollport height, and with max-h iOS falls back to positioning against
+          the page, so the header drifted by however far the page was scrolled. */}
+      <div className="overflow-auto rounded-xl h-[70vh] sm:h-auto sm:max-h-[calc(100vh-320px)]">
         {/* border-separate, NOT border-collapse. position:sticky on a th/td is
             ignored by WebKit when the table collapses its borders, so on iOS the
             pinned header and employee column detach and drift as you scroll.
@@ -211,8 +230,9 @@ export default function LinearGridView({
           <thead>
             <tr>
               {/* Employee column header — pinned top AND left (corner cell) */}
-              <th className="sticky top-0 left-0 z-40 bg-gray-50 border-b border-r border-gray-200 px-2 sm:px-4 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider min-w-[124px] sm:min-w-[200px]">
-                Employee
+              <th className="sticky top-0 left-0 z-40 bg-gray-50 border-b border-r border-gray-200 px-2 sm:px-4 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-[52px] min-w-[52px] sm:w-auto sm:min-w-[200px]">
+                <span className="sm:hidden">Emp</span>
+                <span className="hidden sm:inline">Employee</span>
               </th>
               {dates.map((dateStr) => {
                 const d = new Date(dateStr + 'T00:00:00');
@@ -295,9 +315,19 @@ export default function LinearGridView({
                         {emp.employee_name.split(' ').map(n => n[0]).join('').substring(0, 2)}
                       </div>
                       <div className="min-w-0">
-                        <p className="text-xs font-medium text-gray-900 truncate">{emp.employee_name}</p>
+                        {/* Phones get initials only: a frozen column wide enough for
+                            "Christopher Bryan O. Grey" leaves no room for the days,
+                            which is the part of the grid worth seeing. The full name
+                            stays in the title attribute and returns at sm. */}
+                        <p
+                          className="sm:hidden text-xs font-semibold text-gray-900 tracking-wide"
+                          title={emp.employee_name}
+                        >
+                          {initialsOf(emp.employee_name)}
+                        </p>
+                        <p className="hidden sm:block text-xs font-medium text-gray-900 truncate">{emp.employee_name}</p>
                         {emp.section_name && (
-                          <p className="text-[10px] text-gray-400 truncate">{emp.section_name}</p>
+                          <p className="hidden sm:block text-[10px] text-gray-400 truncate">{emp.section_name}</p>
                         )}
                       </div>
                     </div>
