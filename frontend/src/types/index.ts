@@ -213,11 +213,23 @@ export interface ScheduleStats {
   rest_day_count: number;
 }
 
+export interface ShiftActuals {
+  employee_id: number;
+  date: string;
+  /** present | late | absent | half_day | excused */
+  attendance_status?: string | null;
+  tardiness_minutes: number;
+  /** Approved overtime only. */
+  overtime_minutes: number;
+}
+
 export interface ScheduleGrid {
   employees: ScheduleEmployee[];
   dates: string[];
   date_remarks: DateRemark[];
   stats: ScheduleStats;
+  /** Empty unless the request set include_actuals=true. */
+  actuals?: ShiftActuals[];
 }
 
 export interface DateRemark {
@@ -266,6 +278,7 @@ export interface AppSettings {
   // Schedule enforcement. 0 = rule disabled.
   max_consecutive_work_days?: number;
   min_rest_days_per_week?: number;
+  auto_create_holiday_off?: boolean;
   data_retention_days?: number | null;
   analytics_exclusion_days?: number;
   custom_settings?: Record<string, unknown>;
@@ -1486,6 +1499,6 @@ export interface NotificationList {
 export interface ScheduleLintViolation {
   employee_id: number;
   date: string;
-  type: 'max_consecutive_work_days' | 'min_rest_days_per_week' | 'approved_leave';
+  type: 'max_consecutive_work_days' | 'min_rest_days_per_week' | 'approved_leave' | 'holiday';
   message: string;
 }

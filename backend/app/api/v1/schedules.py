@@ -93,6 +93,14 @@ async def get_schedule_grid(
     org_node_id: Optional[int] = None,
     search: Optional[str] = None,
     published_only: Optional[bool] = None,
+    include_actuals: bool = Query(
+        False,
+        description=(
+            "Overlay what actually happened (attendance outcome, approved "
+            "overtime) on top of the planned schedule. Off by default: the grid "
+            "is a planning view and actuals only exist for days already worked."
+        ),
+    ),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -121,6 +129,7 @@ async def get_schedule_grid(
         search=search,
         visible_employee_ids=visible_ids,
         published_only=effective_published_only,
+        include_actuals=include_actuals,
     )
     return result
 
@@ -306,6 +315,24 @@ async def create_date_remark(
     db: AsyncSession = Depends(get_db),
     _=Depends(require_role(EDITOR_ROLES)),
 ):
+    # One remark per date (uq_date_remark_tenant_date). Check first so a repeat
+    # submission gets a clear 409 naming the existing entry, rather than the
+    # database raising IntegrityError and the caller seeing an opaque 500.
+    existing = await ScheduleService.get_date_remarks(
+        db,
+        tenant_id=current_user.tenant_id,
+        start_date=data.date,
+        end_date=data.date,
+    )
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"{data.date.isoformat()} already has a remark "
+                f"(\"{existing[0].title}\"). Edit or delete it instead."
+            ),
+        )
+
     remark = await ScheduleService.create_date_remark(
         db,
         tenant_id=current_user.tenant_id,

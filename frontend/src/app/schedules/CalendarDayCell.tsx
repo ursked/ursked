@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Shift, DateRemark } from '@/types';
-import { getStatusColor, getStatusShort } from './scheduleHelpers';
+import { resolveStatus, type StatusMaps } from './scheduleHelpers';
 
 interface CalendarDayCellProps {
   date: Date;
@@ -12,6 +12,7 @@ interface CalendarDayCellProps {
   isToday: boolean;
   isCurrentMonth: boolean;
   onClick: (dateStr: string) => void;
+  statusMaps?: StatusMaps;
 }
 
 export default function CalendarDayCell({
@@ -22,6 +23,7 @@ export default function CalendarDayCell({
   isToday,
   isCurrentMonth,
   onClick,
+  statusMaps,
 }: CalendarDayCellProps) {
   const isWeekend = date.getDay() === 0 || date.getDay() === 6;
   const dayNum = date.getDate();
@@ -41,7 +43,13 @@ export default function CalendarDayCell({
       className={`relative w-full border border-gray-100 rounded-lg p-2 text-left transition-all hover:shadow-md hover:border-purple-200 min-h-[100px] flex flex-col ${
         !isCurrentMonth ? 'opacity-40' : ''
       } ${isToday ? 'ring-2 ring-purple-400 ring-offset-1 bg-purple-50/30' : 'bg-white'} ${
-        remark?.is_holiday ? 'bg-red-50/40' : isWeekend && isCurrentMonth ? 'bg-gray-50/50' : ''
+        remark?.is_holiday
+          ? remark.is_special
+            ? 'bg-amber-50/50'
+            : 'bg-red-50/40'
+          : isWeekend && isCurrentMonth
+          ? 'bg-gray-50/50'
+          : ''
       }`}
     >
       {/* Day number */}
@@ -64,7 +72,11 @@ export default function CalendarDayCell({
       {remark && (
         <div
           className={`text-[10px] truncate mb-1 px-1 py-0.5 rounded ${
-            remark.is_holiday ? 'bg-red-100 text-red-700 font-medium' : 'bg-blue-50 text-blue-600'
+            remark.is_holiday
+              ? remark.is_special
+                ? 'bg-amber-100 text-amber-800 font-medium'
+                : 'bg-red-100 text-red-700 font-medium'
+              : 'bg-blue-50 text-blue-600'
           }`}
         >
           {remark.title}
@@ -73,14 +85,26 @@ export default function CalendarDayCell({
 
       {/* Status dots */}
       <div className="flex-1 flex flex-col gap-0.5 mt-auto">
-        {statusEntries.map(([status, count]) => (
-          <div key={status} className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: getStatusColor(status) }} />
-            <span className="text-[10px] text-gray-600 truncate">
-              {count} {getStatusShort(status)}
-            </span>
-          </div>
-        ))}
+        {statusEntries.map(([status, count]) => {
+          const resolved = resolveStatus(status, statusMaps);
+          return (
+            <div
+              key={status}
+              className="flex items-center gap-1"
+              title={resolved.known ? resolved.label : `Unrecognised status "${status}"`}
+            >
+              <span
+                className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                  resolved.known ? '' : 'ring-1 ring-dashed ring-slate-400'
+                }`}
+                style={{ backgroundColor: resolved.color }}
+              />
+              <span className="text-[10px] text-gray-600 truncate">
+                {count} {resolved.short}
+              </span>
+            </div>
+          );
+        })}
         {Object.keys(statusCounts).length > 4 && (
           <span className="text-[9px] text-gray-400">+{Object.keys(statusCounts).length - 4} more</span>
         )}

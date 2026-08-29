@@ -69,6 +69,11 @@ class AppSettings(Base):
     # unless the editor explicitly forces it.
     max_consecutive_work_days = Column(Integer, default=0)
     min_rest_days_per_week = Column(Integer, default=0)
+    # When true, marking a date as a holiday generates 'holiday_off' shifts for
+    # employees who have nothing scheduled that day. Default false: many
+    # organisations operate on holidays, and writing a row onto every employee's
+    # calendar is not something to do without being asked.
+    auto_create_holiday_off = Column(Boolean, default=False)
     # ── Payroll computation settings (Stage 1 payroll engine) ──
     # Used to derive daily/hourly rate from a monthly salary grade.
     working_days_per_month = Column(Integer, default=22)

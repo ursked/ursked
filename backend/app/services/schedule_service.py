@@ -13,6 +13,7 @@ from app.models.schedule import DateRemark, ScheduleSnapshot, ScheduleTemplate, 
 from app.models.settings import AppSettings, ShiftStatusType
 from app.models.org_hierarchy import NodeScheduleVisibility, OrgNode
 from app.models.configurable_types import UserOrgNode
+from app.models.attendance import AttendanceRecord, OvertimeLog
 from app.models.leave import LeaveApplication, LeaveApproverAssignment
 from app.models.user import User
 
@@ -302,6 +303,7 @@ class ScheduleService:
         search: Optional[str] = None,
         visible_employee_ids: Optional[List[int]] = None,
         published_only: bool = False,
+        include_actuals: bool = False,
     ) -> dict:
         """
         Fetch the schedule grid: employees with their shifts in the given
@@ -458,12 +460,88 @@ class ScheduleService:
                 "is_recurring": r.is_recurring,
             })
 
+        # 8. Actuals (opt-in). Left empty otherwise, so the planning payload is
+        # unchanged for callers that do not ask for them.
+        actuals: List[dict] = []
+        if include_actuals and employee_ids:
+            actuals = await ScheduleService._load_actuals(
+                db, tenant_id, employee_ids, start_date, end_date
+            )
+
         return {
             "employees": employees,
             "dates": dates,
             "date_remarks": remark_dicts,
             "stats": stats,
+            "actuals": actuals,
         }
+
+    @staticmethod
+    async def _load_actuals(
+        db: AsyncSession,
+        tenant_id: UUID,
+        employee_ids: List[int],
+        start_date: date,
+        end_date: date,
+    ) -> List[dict]:
+        """Attendance outcome and approved overtime per (employee, date).
+
+        Only *approved* (or already converted) overtime is reported. A pending
+        overtime log is a claim awaiting a decision; showing it on the schedule
+        alongside approved hours would present the two as equally settled.
+        """
+        att_rows = (await db.execute(
+            select(
+                AttendanceRecord.employee_id,
+                AttendanceRecord.date,
+                AttendanceRecord.status,
+                AttendanceRecord.tardiness_minutes,
+            ).where(
+                AttendanceRecord.tenant_id == tenant_id,
+                AttendanceRecord.employee_id.in_(employee_ids),
+                AttendanceRecord.date >= start_date,
+                AttendanceRecord.date <= end_date,
+            )
+        )).all()
+
+        ot_rows = (await db.execute(
+            select(
+                OvertimeLog.employee_id,
+                OvertimeLog.date,
+                func.sum(OvertimeLog.overtime_minutes),
+            ).where(
+                OvertimeLog.tenant_id == tenant_id,
+                OvertimeLog.employee_id.in_(employee_ids),
+                OvertimeLog.date >= start_date,
+                OvertimeLog.date <= end_date,
+                OvertimeLog.status.in_(["approved", "converted"]),
+            ).group_by(OvertimeLog.employee_id, OvertimeLog.date)
+        )).all()
+
+        merged: Dict[tuple, dict] = {}
+        for emp_id, d, status, tardiness in att_rows:
+            merged[(emp_id, d)] = {
+                "employee_id": emp_id,
+                "date": d.isoformat(),
+                "attendance_status": status,
+                "tardiness_minutes": tardiness or 0,
+                "overtime_minutes": 0,
+            }
+        for emp_id, d, minutes in ot_rows:
+            entry = merged.get((emp_id, d))
+            if entry is None:
+                # Overtime can exist on a day with no attendance row.
+                entry = {
+                    "employee_id": emp_id,
+                    "date": d.isoformat(),
+                    "attendance_status": None,
+                    "tardiness_minutes": 0,
+                    "overtime_minutes": 0,
+                }
+                merged[(emp_id, d)] = entry
+            entry["overtime_minutes"] = int(minutes or 0)
+
+        return list(merged.values())
 
     # ── Helpers ───────────────────────────────────────────────────────
 
@@ -970,7 +1048,12 @@ class ScheduleService:
         tenant_id: UUID,
         data: dict,
     ) -> DateRemark:
-        """Create a new date remark."""
+        """Create a new date remark.
+
+        If it is a holiday and the tenant has `auto_create_holiday_off` enabled,
+        also generate 'holiday_off' shifts for employees with nothing scheduled
+        that day (see `_generate_holiday_off_shifts`).
+        """
         remark = DateRemark(
             tenant_id=tenant_id,
             date=data["date"],
@@ -982,8 +1065,70 @@ class ScheduleService:
         )
         db.add(remark)
         await db.flush()
+
+        if remark.is_holiday:
+            settings = (await db.execute(
+                select(AppSettings).where(AppSettings.tenant_id == tenant_id)
+            )).scalar_one_or_none()
+            if getattr(settings, "auto_create_holiday_off", False):
+                await ScheduleService._generate_holiday_off_shifts(
+                    db, tenant_id, remark.date
+                )
+
         await db.refresh(remark)
         return remark
+
+    @staticmethod
+    async def _generate_holiday_off_shifts(
+        db: AsyncSession,
+        tenant_id: UUID,
+        on_date: date,
+    ) -> int:
+        """Give employees with an empty calendar on `on_date` a 'holiday_off' shift.
+
+        Deliberately additive only. An employee who already has *any* shift that
+        day is skipped entirely, so this can never overwrite a planned working
+        shift, a rest day, or a day already claimed by approved leave. That makes
+        it safe to re-run, and undoing it is just deleting the generated rows.
+
+        Returns the number of shifts created.
+        """
+        employee_rows = (await db.execute(
+            select(User.id).where(
+                User.tenant_id == tenant_id,
+                User.is_active == True,  # noqa: E712
+            )
+        )).all()
+        employee_ids = [r[0] for r in employee_rows]
+        if not employee_ids:
+            return 0
+
+        busy_rows = (await db.execute(
+            select(Shift.employee_id).where(
+                Shift.tenant_id == tenant_id,
+                Shift.date == on_date,
+                Shift.employee_id.in_(employee_ids),
+            )
+        )).all()
+        busy = {r[0] for r in busy_rows}
+
+        created = 0
+        for emp_id in employee_ids:
+            if emp_id in busy:
+                continue
+            db.add(Shift(
+                tenant_id=tenant_id,
+                employee_id=emp_id,
+                date=on_date,
+                start_time=None,
+                end_time=None,
+                sequence_number=1,
+                status="holiday_off",
+            ))
+            created += 1
+
+        await db.flush()
+        return created
 
     @staticmethod
     async def update_date_remark(
@@ -1263,6 +1408,54 @@ class ScheduleService:
 
         await db.flush()
         return conflicts
+
+    @staticmethod
+    async def revert_leave_overlay(
+        db: AsyncSession,
+        tenant_id: UUID,
+        leave_application_id: int,
+    ) -> Dict[str, int]:
+        """Undo `overlay_leave_on_shifts` for one leave application.
+
+        The overlay did one of two things to each date, and which one is
+        recoverable from the row itself:
+
+        * It **modified** an existing shift, first snapshotting the previous
+          values into `original_status` / `original_start_time` /
+          `original_end_time`. Those rows are restored and the snapshot cleared.
+        * It **created** a shift where the employee had none. Those rows carry no
+          snapshot (`original_status IS NULL`) and are deleted — "restoring" them
+          would invent a working shift that never existed.
+
+        Leave balances need no adjustment: `LeaveService` derives used/pending
+        days by summing applications by status, so moving the application out of
+        "approved" releases the days by itself.
+        """
+        stmt = select(Shift).where(
+            Shift.tenant_id == tenant_id,
+            Shift.leave_application_id == leave_application_id,
+        )
+        result = await db.execute(stmt)
+        shifts = list(result.scalars().all())
+
+        restored = 0
+        deleted = 0
+        for shift in shifts:
+            if shift.original_status is not None:
+                shift.status = shift.original_status
+                shift.start_time = shift.original_start_time
+                shift.end_time = shift.original_end_time
+                shift.original_status = None
+                shift.original_start_time = None
+                shift.original_end_time = None
+                shift.leave_application_id = None
+                restored += 1
+            else:
+                await db.delete(shift)
+                deleted += 1
+
+        await db.flush()
+        return {"restored": restored, "deleted": deleted}
 
     # ── CSV Export ──────────────────────────────────────────────────────
 
@@ -2053,7 +2246,11 @@ class ScheduleService:
             the tenant limit;
           - min_rest_days_per_week: the rolling 7-day window starting on the date
             has fewer than the required rest days;
-          - approved_leave: a WORK shift sits on an approved-leave day.
+          - approved_leave: a WORK shift sits on an approved-leave day;
+          - holiday: a WORK shift sits on a holiday. Advisory only — plenty of
+            organisations legitimately operate on holidays, and holiday work is
+            paid at a premium rather than forbidden. The point is that the
+            scheduler should not do it without noticing.
         Returns [{employee_id, date, type, message}]."""
         settings = (await db.execute(
             select(AppSettings).where(AppSettings.tenant_id == tenant_id)
@@ -2062,6 +2259,20 @@ class ScheduleService:
         min_rest = getattr(settings, "min_rest_days_per_week", 0) or 0
 
         category_map = await ScheduleService._get_category_map(db, tenant_id)
+
+        # Holidays in range, loaded once for all employees rather than per
+        # employee. is_special is carried through because the two kinds pay at
+        # different multipliers (see AppSettings.holiday_worked_multiplier vs
+        # special_holiday_worked_multiplier), so the message names which it is.
+        holiday_rows = (await db.execute(
+            select(DateRemark.date, DateRemark.title, DateRemark.is_special).where(
+                DateRemark.tenant_id == tenant_id,
+                DateRemark.is_holiday == True,  # noqa: E712
+                DateRemark.date >= start_date,
+                DateRemark.date <= end_date,
+            )
+        )).all()
+        holidays = {d: (title, is_special) for d, title, is_special in holiday_rows}
 
         # Pad the window so runs that straddle the range edges are counted.
         window_start = start_date - timedelta(days=7)
@@ -2128,6 +2339,18 @@ class ScheduleService:
                         "date": d.isoformat(),
                         "type": "approved_leave",
                         "message": "Work shift on an approved-leave day.",
+                    })
+                if d in holidays:
+                    title, is_special = holidays[d]
+                    kind = "special (non-working)" if is_special else "regular"
+                    violations.append({
+                        "employee_id": emp_id,
+                        "date": d.isoformat(),
+                        "type": "holiday",
+                        "message": (
+                            f"Work shift on a {kind} holiday ({title}). "
+                            "Hours are paid at the holiday premium."
+                        ),
                     })
 
         return violations

@@ -31,6 +31,9 @@ interface ScheduleToolbarProps {
   onExport: () => void;
   onExportXlsx?: () => void;
   canEdit: boolean;
+  /** Overlay recorded attendance + approved overtime on the planning grid. */
+  showActuals?: boolean;
+  onShowActualsChange?: (v: boolean) => void;
   clipboard?: ClipboardShift | null;
   onClearClipboard?: () => void;
   rowOrderDirty?: boolean;
@@ -68,6 +71,8 @@ export default function ScheduleToolbar({
   onExport,
   onExportXlsx,
   canEdit,
+  showActuals,
+  onShowActualsChange,
   clipboard,
   onClearClipboard,
   rowOrderDirty,
@@ -396,6 +401,27 @@ export default function ScheduleToolbar({
               </div>
             )}
           </div>
+        )}
+
+        {/* Actuals overlay. Off by default: the grid is a plan, and actuals
+            only exist for days already worked. */}
+        {onShowActualsChange && (
+          <button
+            type="button"
+            onClick={() => onShowActualsChange(!showActuals)}
+            aria-pressed={!!showActuals}
+            title="Overlay recorded attendance and approved overtime on the schedule"
+            className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors flex items-center gap-1.5 ${
+              showActuals
+                ? 'bg-indigo-50 border-indigo-300 text-indigo-700'
+                : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            Actuals
+          </button>
         )}
 
         {/* Export (non-editor fallback) */}

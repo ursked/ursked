@@ -142,6 +142,16 @@ async def seed() -> None:
             leave_types.append((lt, credits))
         await db.flush()
 
+        # Give each leave type a matching shift status type. Approving leave
+        # writes the leave *code* into Shift.status, and the schedule grid
+        # resolves colour/label from shift_status_types — without these rows an
+        # approved sick leave renders as an unrecognised grey cell.
+        for lt, _credits in leave_types:
+            await SettingsService.ensure_status_type_for_leave_type(
+                db, tenant.id, code=lt.code, label=lt.name, export_code=lt.export_code,
+            )
+        await db.flush()
+
         policy = LeavePolicy(
             tenant_id=tenant.id,
             name="Default",

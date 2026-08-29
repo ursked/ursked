@@ -200,8 +200,75 @@ export function formatShiftTime(startTime?: string | null, endTime?: string | nu
   return '';
 }
 
+// ── Status resolution ────────────────────────────────────────────────
+//
+// One place decides how a status code is presented. Everything else in the
+// grid reads through it.
+//
+// This exists because the three sources of truth had drifted: the backend
+// writes a leave type's own code into Shift.status on approval, while the grid
+// only knew the long-form codes ('sick_leave'), and the tenant's
+// shift_status_types table only carried 'scheduled' and 'rest_day'. Both
+// lookups missed and every approved leave silently fell back to grey with a
+// four-character truncation of its code.
+//
+// Resolution order:
+//   1. the tenant's own shift_status_types (authoritative, admin-editable)
+//   2. the built-in constants (tenants seeded before the backfill migration)
+//   3. an explicitly "unknown" presentation
+//
+// Step 3 is the important one. The old fallback was indistinguishable from a
+// legitimately grey status, so a broken mapping looked like a working one. An
+// unresolved code now renders as visibly unrecognised instead.
+
+export const UNKNOWN_STATUS_COLOR = '#94a3b8'; // slate-400
+export const UNKNOWN_STATUS_BG = 'bg-slate-100 text-slate-700';
+
+export interface ResolvedStatus {
+  code: string;
+  label: string;
+  short: string;
+  color: string;
+  bgClass: string;
+  category: string;
+  /** False when neither the tenant's types nor the built-ins knew this code. */
+  known: boolean;
+}
+
+export function resolveStatus(status: string, maps?: StatusMaps): ResolvedStatus {
+  const known =
+    maps?.colors?.[status] !== undefined || SHIFT_STATUS_COLORS[status] !== undefined;
+
+  return {
+    code: status,
+    label:
+      maps?.labels?.[status] ??
+      SHIFT_STATUS_LABELS[status] ??
+      status.replace(/_/g, ' '),
+    short:
+      maps?.short?.[status] ??
+      SHIFT_STATUS_SHORT[status] ??
+      // Initialise a multi-word code ("study_leave" -> "SL") rather than
+      // slicing it mid-word ("stud"), matching how the backend derives
+      // short_label when it provisions a status type.
+      (status.includes('_')
+        ? status.split('_').map((w) => w[0]).join('').toUpperCase().slice(0, 4)
+        : status.slice(0, 4)),
+    color: maps?.colors?.[status] ?? SHIFT_STATUS_COLORS[status] ?? UNKNOWN_STATUS_COLOR,
+    bgClass: maps?.bgClasses?.[status] ?? SHIFT_STATUS_BG[status] ?? UNKNOWN_STATUS_BG,
+    // Unknown codes count as leave, matching the backend's stats fallback in
+    // schedule_service.get_schedule_grid.
+    category: maps?.categories?.[status] ?? 'leave',
+    known,
+  };
+}
+
+// The four accessors below are kept so existing call sites keep working, but
+// they are now thin views over resolveStatus rather than independent lookups.
+// Prefer resolveStatus directly when you need more than one field.
+
 export function getStatusColor(status: string, dynamicColors?: Record<string, string>): string {
-  return dynamicColors?.[status] ?? SHIFT_STATUS_COLORS[status] ?? '#9ca3af';
+  return dynamicColors?.[status] ?? SHIFT_STATUS_COLORS[status] ?? UNKNOWN_STATUS_COLOR;
 }
 
 export function getStatusLabel(status: string, dynamicLabels?: Record<string, string>): string {
@@ -209,9 +276,9 @@ export function getStatusLabel(status: string, dynamicLabels?: Record<string, st
 }
 
 export function getStatusShort(status: string, dynamicShort?: Record<string, string>): string {
-  return dynamicShort?.[status] ?? SHIFT_STATUS_SHORT[status] ?? status.substring(0, 4);
+  return resolveStatus(status, dynamicShort ? ({ short: dynamicShort } as StatusMaps) : undefined).short;
 }
 
 export function getStatusBgClass(status: string, dynamicBg?: Record<string, string>): string {
-  return dynamicBg?.[status] ?? SHIFT_STATUS_BG[status] ?? 'bg-gray-100 text-gray-600';
+  return dynamicBg?.[status] ?? SHIFT_STATUS_BG[status] ?? UNKNOWN_STATUS_BG;
 }

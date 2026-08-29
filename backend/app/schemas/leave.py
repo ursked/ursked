@@ -69,6 +69,21 @@ class LeaveReviewRequest(BaseModel):
     notes: Optional[str] = None
 
 
+class LeaveRevokeRequest(BaseModel):
+    """Undo a decision on an already-approved application.
+
+    "unapprove" returns it to the approval queue (status -> pending) — the right
+    action when the approval itself was the mistake. "reject" refuses it outright
+    (status -> rejected) — the right action when the leave should not stand.
+
+    Either way the schedule overlay is reverted, so the employee goes back on the
+    roster. A reason is required: this reverses a decision the employee was
+    already notified about.
+    """
+    action: Literal["unapprove", "reject"]
+    notes: str = Field(min_length=1)
+
+
 class LeaveApplicationResponse(BaseModel):
     id: int
     employee_id: int

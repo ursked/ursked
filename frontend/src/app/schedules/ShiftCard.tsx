@@ -2,7 +2,12 @@
 
 import React from 'react';
 import { Shift } from '@/types';
-import { getStatusColor, getStatusShort, formatShiftTime, WORK_ARRANGEMENT_LABELS } from './scheduleHelpers';
+import {
+  resolveStatus,
+  formatShiftTime,
+  WORK_ARRANGEMENT_LABELS,
+  type StatusMaps,
+} from './scheduleHelpers';
 
 interface ShiftCardProps {
   shift: Shift;
@@ -11,23 +16,39 @@ interface ShiftCardProps {
   compact?: boolean;
   draggable?: boolean;
   onDragStart?: (e: React.DragEvent, shift: Shift) => void;
+  /**
+   * The tenant's own status types. Without these the card falls back to the
+   * built-in codes only, which is how tenant-configured colours used to be
+   * ignored on the grid entirely.
+   */
+  statusMaps?: StatusMaps;
 }
 
-export default function ShiftCard({ shift, onClick, onCopy, compact, draggable: isDraggable, onDragStart }: ShiftCardProps) {
-  const bgColor = shift.color || getStatusColor(shift.status);
+export default function ShiftCard({
+  shift, onClick, onCopy, compact, draggable: isDraggable, onDragStart, statusMaps,
+}: ShiftCardProps) {
+  const status = resolveStatus(shift.status, statusMaps);
+  // An explicit per-shift colour still wins: it is a deliberate override.
+  const bgColor = shift.color || status.color;
   const timeStr = formatShiftTime(shift.start_time, shift.end_time);
-  const shortLabel = getStatusShort(shift.status);
+  const shortLabel = status.short;
   const waLabel = shift.work_arrangement ? WORK_ARRANGEMENT_LABELS[shift.work_arrangement] : null;
   const isDraft = shift.is_published === false;
+
+  const unknownHint = status.known
+    ? undefined
+    : `Unrecognised status "${shift.status}" — no matching entry under Settings > status types.`;
 
   if (compact) {
     return (
       <button
         type="button"
         onClick={() => onClick?.(shift)}
-        className="w-full h-6 rounded text-[10px] font-medium text-white truncate px-1 leading-6 text-left transition-opacity hover:opacity-80"
+        className={`w-full h-6 rounded text-[10px] font-medium text-white truncate px-1 leading-6 text-left transition-opacity hover:opacity-80 ${
+          status.known ? '' : 'ring-1 ring-dashed ring-slate-400'
+        }`}
         style={{ backgroundColor: bgColor }}
-        title={`${shortLabel}${timeStr ? ` ${timeStr}` : ''}${waLabel ? ` (${waLabel})` : ''}`}
+        title={unknownHint ?? `${status.label}${timeStr ? ` ${timeStr}` : ''}${waLabel ? ` (${waLabel})` : ''}`}
       >
         {shortLabel}{timeStr ? ` ${timeStr}` : ''}
       </button>
@@ -53,15 +74,23 @@ export default function ShiftCard({ shift, onClick, onCopy, compact, draggable: 
         onClick={() => onClick?.(shift)}
         className={`w-full rounded-md text-left transition-all hover:shadow-md hover:scale-[1.02] cursor-pointer ${
           isDraft ? 'border border-dashed border-gray-400 opacity-80' : ''
-        }`}
+        } ${status.known ? '' : 'ring-1 ring-dashed ring-slate-400'}`}
         style={{ backgroundColor: bgColor + '18', borderLeft: `3px solid ${bgColor}` }}
-        title={isDraft ? 'Draft — not yet published to the employee' : undefined}
+        title={
+          unknownHint ??
+          (isDraft ? 'Draft — not yet published to the employee' : status.label)
+        }
       >
         <div className="px-2 py-1">
           <div className="flex items-center gap-1">
             <span className="text-[11px] font-semibold" style={{ color: bgColor }}>
               {shortLabel}
             </span>
+            {!status.known && (
+              <span className="text-[8px] px-1 py-0.5 rounded bg-slate-200 text-slate-700 font-semibold uppercase tracking-wide">
+                ?
+              </span>
+            )}
             {isDraft && (
               <span className="text-[8px] px-1 py-0.5 rounded bg-gray-200 text-gray-600 font-semibold uppercase tracking-wide">
                 Draft

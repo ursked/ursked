@@ -1,3 +1,4 @@
+import zlib
 from typing import List, Optional
 from uuid import UUID
 
@@ -28,6 +29,60 @@ SYSTEM_DEFAULTS = [
         "is_system": True,
         "sort_order": 1,
     },
+    {
+        # A holiday the employee does not work. Categorised as "rest", not
+        # "leave": it consumes no leave credit, so counting it under leave would
+        # overstate leave usage in the grid stats.
+        "code": "holiday_off",
+        "label": "Holiday Off",
+        "short_label": "HO",
+        "color": "#10b981",
+        "bg_class": "bg-emerald-100 text-emerald-800",
+        "category": "rest",
+        "is_system": True,
+        "sort_order": 2,
+    },
+]
+
+
+# Presentation for status codes the product has always shipped, mirrored from
+# the frontend's SHIFT_STATUS_COLORS / SHIFT_STATUS_BG so a tenant that gets a
+# status type provisioned for one of these codes sees the colour the UI has
+# always used for it.
+KNOWN_STATUS_PRESENTATION = {
+    "sick_leave": ("#ef4444", "bg-red-100 text-red-800", "SL"),
+    "personal_leave": ("#f59e0b", "bg-amber-100 text-amber-800", "PL"),
+    "emergency_leave": ("#dc2626", "bg-red-100 text-red-800", "EL"),
+    "annual_vacation": ("#3b82f6", "bg-blue-100 text-blue-800", "AV"),
+    "offset": ("#8b5cf6", "bg-violet-100 text-violet-800", "OFF"),
+    "bereavement_leave": ("#374151", "bg-gray-200 text-gray-800", "BL"),
+    "paternity_leave": ("#0ea5e9", "bg-sky-100 text-sky-800", "PatL"),
+    "maternity_leave": ("#ec4899", "bg-pink-100 text-pink-800", "MatL"),
+    "union_leave": ("#14b8a6", "bg-teal-100 text-teal-800", "UL"),
+    "fire_calamity_leave": ("#f97316", "bg-orange-100 text-orange-800", "FCL"),
+    "solo_parent_leave": ("#a855f7", "bg-purple-100 text-purple-800", "SPL"),
+    "special_leave_women": ("#d946ef", "bg-fuchsia-100 text-fuchsia-800", "SLW"),
+    "vawc_leave": ("#e11d48", "bg-rose-100 text-rose-800", "VAWC"),
+    # Codes the CE first-boot seed uses (seed_ce.py). Same presentation as their
+    # long-form equivalents above so both vocabularies look identical on screen.
+    "sick": ("#ef4444", "bg-red-100 text-red-800", "SL"),
+    "personal": ("#f59e0b", "bg-amber-100 text-amber-800", "PL"),
+    "vacation": ("#3b82f6", "bg-blue-100 text-blue-800", "VL"),
+}
+
+# Colours for leave codes we have never seen (tenant-defined types). Chosen to
+# be distinguishable from each other and from the system defaults. Assignment is
+# by CRC of the code, so a given code always lands on the same colour on every
+# install — Python's built-in hash() is salted per process and would not.
+FALLBACK_PALETTE = [
+    ("#0891b2", "bg-cyan-100 text-cyan-800"),
+    ("#65a30d", "bg-lime-100 text-lime-800"),
+    ("#c026d3", "bg-fuchsia-100 text-fuchsia-800"),
+    ("#ea580c", "bg-orange-100 text-orange-800"),
+    ("#4f46e5", "bg-indigo-100 text-indigo-800"),
+    ("#be123c", "bg-rose-100 text-rose-800"),
+    ("#0d9488", "bg-teal-100 text-teal-800"),
+    ("#7c2d12", "bg-amber-100 text-amber-900"),
 ]
 
 
@@ -195,11 +250,82 @@ class SettingsService:
         db: AsyncSession,
         tenant_id: UUID,
     ) -> None:
-        """Seed 'scheduled' and 'rest_day' system types for a new tenant."""
+        """Seed the system status types ('scheduled', 'rest_day', 'holiday_off')."""
         for d in SYSTEM_DEFAULTS:
             status_type = ShiftStatusType(tenant_id=tenant_id, **d)
             db.add(status_type)
         await db.flush()
+
+    @staticmethod
+    async def ensure_status_type_for_leave_type(
+        db: AsyncSession,
+        tenant_id: UUID,
+        code: str,
+        label: str,
+        export_code: Optional[str] = None,
+    ) -> Optional[ShiftStatusType]:
+        """Guarantee the schedule grid can render a leave type.
+
+        When a leave is approved, `overlay_leave_on_shifts` writes the leave
+        type's *code* into `Shift.status`. The grid resolves colour and label by
+        looking that code up in `shift_status_types`. Without a matching row the
+        lookup misses and the cell falls back to grey with a truncated label, so
+        approved sick leave was indistinguishable from an unknown status.
+
+        Provisioning here rather than hardcoding a code translation keeps the two
+        tables in step for tenant-defined leave types too, and routes all
+        presentation through the existing admin UI so it stays editable.
+
+        Idempotent: an existing row for the code is returned untouched, so an
+        admin's colour choices are never overwritten and the
+        `uq_tenant_status_code` constraint is never violated.
+        """
+        existing = await db.execute(
+            select(ShiftStatusType).where(
+                ShiftStatusType.tenant_id == tenant_id,
+                ShiftStatusType.code == code,
+            )
+        )
+        found = existing.scalar_one_or_none()
+        if found:
+            return found
+
+        known = KNOWN_STATUS_PRESENTATION.get(code)
+        if known:
+            color, bg_class, short = known
+        else:
+            idx = zlib.crc32(code.encode()) % len(FALLBACK_PALETTE)
+            color, bg_class = FALLBACK_PALETTE[idx]
+            short = None
+
+        # short_label is NOT NULL and capped at 10 chars, and is what the grid
+        # badge shows. Prefer the tenant's own export_code (already the
+        # abbreviation they use on printed schedules); otherwise initialise a
+        # multi-word label ("Study Leave" -> "SL") rather than truncating it
+        # mid-word ("Study Leav"). Not required to be unique, and the admin can
+        # edit it under the status-type settings.
+        short_label = export_code or short
+        if not short_label:
+            words = (label or code).replace("_", " ").split()
+            if len(words) > 1:
+                short_label = "".join(w[0] for w in words).upper()[:10]
+            else:
+                short_label = (label or code)[:10]
+
+        status_type = ShiftStatusType(
+            tenant_id=tenant_id,
+            code=code,
+            label=label or code,
+            short_label=short_label,
+            color=color,
+            bg_class=bg_class,
+            category="leave",
+            is_system=False,
+            sort_order=50,
+        )
+        db.add(status_type)
+        await db.flush()
+        return status_type
 
     # ── User Preferences ──────────────────────────────────────────
 

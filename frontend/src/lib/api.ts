@@ -747,6 +747,15 @@ class ApiClient {
     return this.post(`/api/v1/leave/applications/${id}/review`, data);
   }
 
+  /**
+   * Undo the approval of an already-approved application.
+   * `action` is "unapprove" (back to pending, for re-review) or "reject".
+   * Either way the schedule overlay is reverted and `notes` is required.
+   */
+  async revokeLeaveApplication(id: number, data: { action: 'unapprove' | 'reject'; notes: string }) {
+    return this.post(`/api/v1/leave/applications/${id}/revoke`, data);
+  }
+
   async getMyLeaveBalance(): Promise<LeaveBalance> {
     return this.get('/api/v1/leave/balance') as Promise<LeaveBalance>;
   }

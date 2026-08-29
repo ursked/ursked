@@ -44,6 +44,7 @@ from app.schemas.leave import (
     LeavePrecheckResponse,
     PolicyCompleteness,
     LeaveReviewRequest,
+    LeaveRevokeRequest,
     LeaveTypeCreate,
     LeaveTypeResponse,
     LeaveTypeUpdate,
@@ -57,6 +58,7 @@ from app.services.leave_approval_service import LeaveApprovalService
 from app.services.leave_rule_service import LeaveRuleService
 from app.services.leave_service import LeaveService
 from app.services.schedule_service import ScheduleService
+from app.services.settings_service import SettingsService
 from app.services.user_service import UserService
 
 router = APIRouter(prefix="/leave", tags=["Leave"])
@@ -318,6 +320,18 @@ async def create_leave_type(
     )
     db.add(leave_type)
     await db.flush()
+
+    # Approving leave writes this code into Shift.status, and the schedule grid
+    # resolves presentation from shift_status_types. Provision the matching row
+    # now so a custom leave type is renderable the first time it is approved,
+    # rather than showing as an unrecognised grey cell.
+    await SettingsService.ensure_status_type_for_leave_type(
+        db,
+        current_user.tenant_id,
+        code=leave_type.code,
+        label=leave_type.name,
+        export_code=leave_type.export_code,
+    )
     return LeaveTypeResponse.model_validate(leave_type)
 
 
@@ -1506,6 +1520,131 @@ async def cancel_leave_application(
         raise HTTPException(status_code=400, detail="Can only cancel pending applications")
 
     app.status = "cancelled"
+    await db.flush()
+
+    stmt = (
+        select(LeaveApplication)
+        .options(*_load_options())
+        .where(LeaveApplication.id == app.id)
+    )
+    result = await db.execute(stmt)
+    app = result.scalar_one()
+
+    return _to_response(app)
+
+
+@router.post("/applications/{application_id}/revoke", response_model=LeaveApplicationResponse)
+async def revoke_leave_application(
+    application_id: int,
+    data: LeaveRevokeRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_role(REVIEWER_ROLES)),
+):
+    """Undo the approval of an already-approved leave application.
+
+    Without this, approval was terminal — `/cancel`, `PATCH` and `/review` all
+    guard on `status == "pending"` — so an approval made in error could not be
+    withdrawn and an employee returning early could not be put back on the
+    roster.
+
+    Both actions revert the schedule overlay. They differ in where the
+    application lands: "unapprove" returns it to `pending` so the approval chain
+    can run again, "reject" refuses it outright.
+
+    Leave balances are derived from application status by `LeaveService`, so the
+    days are released by the status change itself — there is no credit ledger to
+    adjust and therefore no double-refund to guard against.
+    """
+    from app.services.notification_service import NotificationService
+
+    stmt = (
+        select(LeaveApplication)
+        .options(*_load_options())
+        .where(
+            LeaveApplication.id == application_id,
+            LeaveApplication.tenant_id == current_user.tenant_id,
+        )
+    )
+    result = await db.execute(stmt)
+    app = result.scalar_one_or_none()
+    if not app:
+        raise HTTPException(status_code=404, detail="Leave application not found")
+
+    if app.status != "approved":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Only an approved application can be revoked (this one is {app.status})",
+        )
+
+    # Put the employee back on the roster before changing status, so a failure
+    # here does not leave an application that says "pending" while the schedule
+    # still shows leave.
+    reverted = await ScheduleService.revert_leave_overlay(
+        db, tenant_id=current_user.tenant_id, leave_application_id=app.id
+    )
+
+    new_status = "pending" if data.action == "unapprove" else "rejected"
+    app.status = new_status
+    app.reviewer_notes = data.notes
+
+    if data.action == "unapprove":
+        # Back into the queue: clear the decision and reopen every step so the
+        # chain can be walked again from the start.
+        app.reviewed_by = None
+        app.reviewed_at = None
+        for step in (app.approval_steps or []):
+            step.status = "pending"
+            step.decided_at = None
+            step.notes = None
+    else:
+        app.reviewed_by = current_user.id
+        app.reviewed_at = datetime.utcnow()
+
+    await db.flush()
+
+    reviewer_name = f"{current_user.first_name} {current_user.last_name}".strip()
+    if data.action == "unapprove":
+        title = "Your approved leave was returned for review"
+        body = (
+            f"{reviewer_name} withdrew the approval of your "
+            f"{app.leave_type.replace('_', ' ')} leave for {app.start_date} to "
+            f"{app.end_date}. It is pending review again. Reason: {data.notes}"
+        )
+    else:
+        title = "Your approved leave was rejected"
+        body = (
+            f"{reviewer_name} rejected your previously approved "
+            f"{app.leave_type.replace('_', ' ')} leave for {app.start_date} to "
+            f"{app.end_date}. Reason: {data.notes}"
+        )
+    await NotificationService.notify(
+        db,
+        current_user.tenant_id,
+        app.employee_id,
+        type="leave_revoked",
+        title=title,
+        body=body,
+        action_type="leave_application",
+        action_ref_id=app.id,
+    )
+
+    # Record what happened to the schedule so a reviewer can see it rather than
+    # having to diff the grid.
+    warnings = list(app.rule_warnings or [])
+    # mode is "warn" because that is the only non-blocking value rule_warnings
+    # accepts, and it matches the existing "schedule_overlay_conflict" entry.
+    warnings.append({
+        "rule": "leave_overlay_reverted",
+        "mode": "warn",
+        "message": (
+            f"Approval revoked; schedule restored: {reverted['restored']} shift(s) "
+            f"returned to their previous status, {reverted['deleted']} generated "
+            f"shift(s) removed."
+        ),
+        "details": reverted,
+    })
+    app.rule_warnings = warnings
     await db.flush()
 
     stmt = (

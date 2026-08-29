@@ -8,7 +8,7 @@ import DashboardLayout from '@/components/layout/DashboardLayout';
 import { useAuth } from '@/contexts/AuthContext';
 import { hasAnyRole } from '@/lib/roles';
 import { api } from '@/lib/api';
-import { ScheduleGrid, Shift, AppSettings, ShiftStatusType, UserPreferences, OrgTreeNode } from '@/types';
+import { ScheduleGrid, Shift, AppSettings, ShiftStatusType, UserPreferences, OrgTreeNode, ShiftActuals } from '@/types';
 import { buildStatusMaps, toLocalDateStr } from './scheduleHelpers';
 import { useToast } from '@/components/ui/Toast';
 
@@ -169,6 +169,10 @@ function SchedulesPageInner() {
     [statusTypes],
   );
 
+  // Overlay what actually happened (attendance, approved overtime) on top of
+  // the plan. Off by default so the planning grid stays uncluttered.
+  const [showActuals, setShowActuals] = useState(false);
+
   // Detect mobile for default view
   const [isMobile, setIsMobile] = useState(false);
   useEffect(() => {
@@ -323,8 +327,11 @@ function SchedulesPageInner() {
       end_date: formatDate(end),
       ...(search ? { search } : {}),
       ...(orgNodeId ? { org_node_id: String(orgNodeId) } : {}),
+      // Only ask for actuals when the toggle is on. The grid is a planning
+      // view; attendance and overtime only exist for days already worked.
+      ...(showActuals ? { include_actuals: 'true' } : {}),
     }),
-    [start, end, search, orgNodeId],
+    [start, end, search, orgNodeId, showActuals],
   );
 
   const { data: gridData, isLoading: gridLoading } = useQuery<ScheduleGrid>({
@@ -337,6 +344,12 @@ function SchedulesPageInner() {
   // Org tree for the "narrow the roster" filter. The grid endpoint filters
   // server-side by org_node_id (including the node's whole subtree), so picking
   // a Division/Department/Section trims the visible rows to that unit.
+  const actualsMap = useMemo(() => {
+    const m = new Map<string, ShiftActuals>();
+    for (const a of gridData?.actuals ?? []) m.set(`${a.employee_id}:${a.date}`, a);
+    return m;
+  }, [gridData]);
+
   const { data: orgTree } = useQuery({
     queryKey: ['org-tree'],
     queryFn: () => api.getOrgTree(),
@@ -656,6 +669,8 @@ function SchedulesPageInner() {
 
         {/* Toolbar */}
         <ScheduleToolbar
+          showActuals={showActuals}
+          onShowActualsChange={setShowActuals}
           viewMode={viewMode}
           onViewModeChange={setViewMode}
           rangeMode={rangeMode}
@@ -777,7 +792,7 @@ function SchedulesPageInner() {
             onShiftClick={handleShiftClick}
             onCellClick={handleCellClick}
             canEdit={canEdit}
-            statusTypes={statusTypes}
+            statusMaps={statusMaps}
             currentUserId={user?.id}
             onSwapRequest={handleSwapRequest}
             onChangeRequest={handleChangeRequest}
@@ -805,6 +820,8 @@ function SchedulesPageInner() {
             currentUserId={user?.id}
             onSwapRequest={handleSwapRequest}
             onChangeRequest={handleChangeRequest}
+            statusMaps={statusMaps}
+            actualsMap={actualsMap}
           />
         )}
 
@@ -819,6 +836,7 @@ function SchedulesPageInner() {
             canEdit={canEdit}
             weekStartDay={weekStartDay}
             statusTypes={statusTypes}
+            statusMaps={statusMaps}
             currentUserId={user?.id}
             onSwapRequest={handleSwapRequest}
             onChangeRequest={handleChangeRequest}

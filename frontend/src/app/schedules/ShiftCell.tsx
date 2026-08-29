@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useState, useRef } from 'react';
-import { Shift, DateRemark } from '@/types';
+import { Shift, DateRemark, ShiftActuals } from '@/types';
 import ShiftCard from './ShiftCard';
+import type { StatusMaps } from './scheduleHelpers';
 
 interface ShiftCellProps {
   shifts: Shift[];
@@ -24,6 +25,10 @@ interface ShiftCellProps {
   isOwnShift?: boolean;
   onSwapRequest?: (shift: Shift) => void;
   onChangeRequest?: (shift: Shift) => void;
+  /** Tenant status types, so cells honour admin-configured colours. */
+  statusMaps?: StatusMaps;
+  /** What actually happened here. Only present when "Show actuals" is on. */
+  actuals?: ShiftActuals;
 }
 
 export default function ShiftCell({
@@ -43,6 +48,8 @@ export default function ShiftCell({
   onPasteShift,
   onMoveShift,
   isOwnShift,
+  statusMaps,
+  actuals,
   onSwapRequest,
   onChangeRequest,
 }: ShiftCellProps) {
@@ -126,7 +133,13 @@ export default function ShiftCell({
     <td
       className={`border-r border-b border-gray-100 p-0.5 align-top min-w-[100px] max-w-[120px] transition-colors cursor-pointer ${
         isToday ? 'bg-purple-50/50' : isWeekend ? 'bg-gray-50/50' : 'bg-white'
-      } ${remark?.is_holiday ? 'bg-red-50/40' : ''} ${
+      } ${
+        remark?.is_holiday
+          ? remark.is_special
+            ? 'bg-amber-50/50'
+            : 'bg-red-50/40'
+          : ''
+      } ${
         isSelected ? 'ring-2 ring-inset ring-purple-500' : ''
       } ${isDragOver ? 'ring-2 ring-inset ring-blue-400 bg-blue-50/60' : 'hover:bg-gray-50'}`}
       onClick={handleClick}
@@ -146,10 +159,41 @@ export default function ShiftCell({
             </svg>
           </span>
         )}
+        {actuals && (actuals.attendance_status || actuals.overtime_minutes > 0) && (
+          <div className="flex items-center gap-1 flex-wrap">
+            {actuals.attendance_status && actuals.attendance_status !== 'present' && (
+              <span
+                className={`text-[8px] px-1 py-0.5 rounded font-semibold uppercase tracking-wide ${
+                  actuals.attendance_status === 'absent'
+                    ? 'bg-red-100 text-red-700'
+                    : actuals.attendance_status === 'late'
+                    ? 'bg-amber-100 text-amber-800'
+                    : 'bg-gray-100 text-gray-600'
+                }`}
+                title={
+                  actuals.attendance_status === 'late' && actuals.tardiness_minutes
+                    ? `Late by ${actuals.tardiness_minutes} min (recorded attendance)`
+                    : `Recorded attendance: ${actuals.attendance_status}`
+                }
+              >
+                {actuals.attendance_status}
+              </span>
+            )}
+            {actuals.overtime_minutes > 0 && (
+              <span
+                className="text-[8px] px-1 py-0.5 rounded bg-indigo-100 text-indigo-700 font-semibold"
+                title={`${actuals.overtime_minutes} minutes of approved overtime`}
+              >
+                +{(actuals.overtime_minutes / 60).toFixed(1)}h OT
+              </span>
+            )}
+          </div>
+        )}
         {shifts.map((shift) => (
           <div key={shift.id} className="relative">
             <ShiftCard
               shift={shift}
+              statusMaps={statusMaps}
               onClick={onShiftClick}
               onCopy={onCopyShift}
               draggable={!!onMoveShift}

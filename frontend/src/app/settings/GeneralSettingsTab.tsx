@@ -880,6 +880,33 @@ export default function GeneralSettingsTab() {
                     onError: (err: Error) => showToast(err.message, 'error') },
                 )}
               />
+
+              <div className="border-t border-gray-200 pt-5">
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={!!appSettings?.auto_create_holiday_off}
+                    disabled={updateSettingsMutation.isPending}
+                    onChange={(e) => updateSettingsMutation.mutate(
+                      { auto_create_holiday_off: e.target.checked },
+                      { onSuccess: () => showToast('Holiday setting saved', 'success'),
+                        onError: (err: Error) => showToast(err.message, 'error') },
+                    )}
+                    className="mt-0.5 h-4 w-4 rounded text-purple-600 border-gray-300 focus:ring-purple-500"
+                  />
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">
+                      Mark employees off automatically on holidays
+                    </p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      When a date is marked as a holiday, employees with nothing scheduled
+                      that day get a &quot;Holiday Off&quot; entry. Anyone who already has a
+                      shift, a rest day, or approved leave is left untouched. Leave this off
+                      if your organization operates on holidays.
+                    </p>
+                  </div>
+                </label>
+              </div>
             </div>
           )}
         </div>

@@ -172,11 +172,31 @@ class ScheduleEmployeeResponse(BaseModel):
     shifts: List[ShiftResponse] = []
 
 
+class ShiftActuals(BaseModel):
+    """What actually happened on a cell, as opposed to what was planned.
+
+    Kept in a list parallel to the shifts rather than folded into
+    `ShiftResponse` for two reasons: attendance and overtime are keyed on
+    (employee, date) and can exist on a day with no shift row at all, and
+    keeping them separate leaves the planning payload untouched when the caller
+    does not ask for actuals.
+    """
+    employee_id: int
+    date: str
+    # present | late | absent | half_day | excused
+    attendance_status: Optional[str] = None
+    tardiness_minutes: int = 0
+    # Approved overtime only — pending overtime is a claim, not yet a fact.
+    overtime_minutes: int = 0
+
+
 class ScheduleGridResponse(BaseModel):
     employees: List[ScheduleEmployeeResponse] = []
     dates: List[str] = []
     date_remarks: List[DateRemarkResponse] = []
     stats: ScheduleStatsResponse = ScheduleStatsResponse()
+    # Empty unless the request set include_actuals=true.
+    actuals: List[ShiftActuals] = []
 
 
 # ── Schedule Change Request Schemas ──────────────────────────────────

@@ -37,6 +37,8 @@ class AppSettingsResponse(BaseModel):
     # ── Schedule enforcement. 0 = rule disabled.
     max_consecutive_work_days: int = 0
     min_rest_days_per_week: int = 0
+    # Generate 'holiday_off' shifts for otherwise-empty calendars on a holiday.
+    auto_create_holiday_off: bool = False
     # Separated-employee data lifecycle. null = retain indefinitely.
     data_retention_days: Optional[int] = None
     analytics_exclusion_days: int = 0
@@ -75,6 +77,7 @@ class AppSettingsUpdate(BaseModel):
     # ── Schedule enforcement (0 disables the rule) ──
     max_consecutive_work_days: Optional[int] = Field(None, ge=0, le=31)
     min_rest_days_per_week: Optional[int] = Field(None, ge=0, le=7)
+    auto_create_holiday_off: Optional[bool] = None
     # null clears the retention policy (retain indefinitely); 1..3650 sets a window.
     data_retention_days: Optional[int] = Field(None, ge=1, le=3650)
     analytics_exclusion_days: Optional[int] = Field(None, ge=0, le=365)

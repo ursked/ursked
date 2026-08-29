@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
-import { ScheduleEmployee, Shift, DateRemark, ShiftStatusType } from '@/types';
-import { getStatusLabel, getStatusBgClass, formatShiftTime, WORK_ARRANGEMENT_LABELS } from './scheduleHelpers';
+import { ScheduleEmployee, Shift, DateRemark } from '@/types';
+import { resolveStatus, formatShiftTime, WORK_ARRANGEMENT_LABELS, type StatusMaps } from './scheduleHelpers';
 
 interface DayViewProps {
   employees: ScheduleEmployee[];
@@ -11,7 +11,7 @@ interface DayViewProps {
   onShiftClick: (shift: Shift) => void;
   onCellClick: (employeeId: number, dateStr: string) => void;
   canEdit: boolean;
-  statusTypes?: ShiftStatusType[];
+  statusMaps?: StatusMaps;
   currentUserId?: number;
   onSwapRequest?: (shift: Shift) => void;
   onChangeRequest?: (shift: Shift) => void;
@@ -49,6 +49,7 @@ export default function DayView({
   currentUserId,
   onSwapRequest,
   onChangeRequest,
+  statusMaps,
 }: DayViewProps) {
   const [teamExpanded, setTeamExpanded] = useState(false);
 
@@ -148,8 +149,8 @@ export default function DayView({
                   className="w-full text-left bg-white/10 hover:bg-white/15 rounded-xl p-4 transition-colors"
                 >
                   <div className="flex items-center justify-between mb-2">
-                    <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${getStatusBgClass(shift.status)}`}>
-                      {getStatusLabel(shift.status)}
+                    <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${resolveStatus(shift.status, statusMaps).bgClass}`}>
+                      {resolveStatus(shift.status, statusMaps).label}
                     </span>
                     {shift.work_arrangement && (
                       <span className="text-xs text-purple-200 bg-white/10 px-2 py-0.5 rounded-full">
@@ -250,8 +251,8 @@ export default function DayView({
             <div className="space-y-2">
               {myTomorrowShifts.map((shift) => (
                 <div key={shift.id} className="flex items-center gap-3 py-2 px-3 bg-gray-50 rounded-xl">
-                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${getStatusBgClass(shift.status)}`}>
-                    {getStatusLabel(shift.status)}
+                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${resolveStatus(shift.status, statusMaps).bgClass}`}>
+                    {resolveStatus(shift.status, statusMaps).label}
                   </span>
                   <div className="flex-1 min-w-0">
                     {formatShiftTime(shift.start_time, shift.end_time) ? (
@@ -328,8 +329,8 @@ export default function DayView({
                               onClick={() => onShiftClick(shift)}
                               className="inline-flex items-center gap-1 text-xs"
                             >
-                              <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${getStatusBgClass(shift.status)}`}>
-                                {getStatusLabel(shift.status)}
+                              <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${resolveStatus(shift.status, statusMaps).bgClass}`}>
+                                {resolveStatus(shift.status, statusMaps).label}
                               </span>
                               {formatShiftTime(shift.start_time, shift.end_time) && (
                                 <span className="text-gray-500">{formatShiftTime(shift.start_time, shift.end_time)}</span>

@@ -1,9 +1,9 @@
 'use client';
 
 import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
-import { ScheduleEmployee, Shift, DateRemark } from '@/types';
+import { ScheduleEmployee, Shift, DateRemark, ShiftActuals } from '@/types';
 import { ClipboardShift, SelectedCell } from './page';
-import { toLocalDateStr } from './scheduleHelpers';
+import { toLocalDateStr, type StatusMaps } from './scheduleHelpers';
 import ShiftCell from './ShiftCell';
 
 interface LinearGridViewProps {
@@ -26,6 +26,10 @@ interface LinearGridViewProps {
   currentUserId?: number;
   onSwapRequest?: (shift: Shift) => void;
   onChangeRequest?: (shift: Shift) => void;
+  /** Tenant status types, so the grid honours admin-configured colours. */
+  statusMaps?: StatusMaps;
+  /** Attendance/overtime keyed "employeeId:date". Empty unless actuals are on. */
+  actualsMap?: Map<string, ShiftActuals>;
 }
 
 const DAY_NAMES_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -50,6 +54,8 @@ export default function LinearGridView({
   currentUserId,
   onSwapRequest,
   onChangeRequest,
+  statusMaps,
+  actualsMap,
 }: LinearGridViewProps) {
   const today = useMemo(() => toLocalDateStr(new Date()), []);
 
@@ -224,9 +230,20 @@ export default function LinearGridView({
                       {dayNum}
                     </div>
                     {remark && (
-                      <div className={`text-[9px] truncate px-1 mt-0.5 rounded ${
-                        remark.is_holiday ? 'text-red-600 font-medium' : 'text-blue-500'
-                      }`}>
+                      <div
+                        className={`text-[9px] truncate px-1 mt-0.5 rounded ${
+                          remark.is_holiday
+                            ? remark.is_special
+                              ? 'text-amber-700 font-medium'
+                              : 'text-red-600 font-medium'
+                            : 'text-blue-500'
+                        }`}
+                        title={
+                          remark.is_holiday
+                            ? `${remark.title} — ${remark.is_special ? 'special (non-working)' : 'regular'} holiday`
+                            : remark.title
+                        }
+                      >
                         {remark.title}
                       </div>
                     )}
@@ -315,6 +332,8 @@ export default function LinearGridView({
                         isOwnShift={currentUserId === emp.employee_id}
                         onSwapRequest={onSwapRequest}
                         onChangeRequest={onChangeRequest}
+                        statusMaps={statusMaps}
+                        actuals={actualsMap?.get(`${emp.employee_id}:${dateStr}`)}
                       />
                     );
                   })}

@@ -4,6 +4,7 @@ import React, { useMemo, useState } from 'react';
 import { ScheduleEmployee, Shift, DateRemark, ShiftStatusType } from '@/types';
 import { toLocalDateStr } from './scheduleHelpers';
 import CalendarDayCell from './CalendarDayCell';
+import type { StatusMaps } from './scheduleHelpers';
 import DayDetailPanel from './DayDetailPanel';
 
 interface CalendarViewProps {
@@ -16,6 +17,7 @@ interface CalendarViewProps {
   canEdit: boolean;
   weekStartDay?: 'monday' | 'sunday' | 'saturday';
   statusTypes?: ShiftStatusType[];
+  statusMaps?: StatusMaps;
   currentUserId?: number;
   onSwapRequest?: (shift: Shift) => void;
   onChangeRequest?: (shift: Shift) => void;
@@ -35,6 +37,7 @@ export default function CalendarView({
   canEdit,
   weekStartDay = 'monday',
   statusTypes,
+  statusMaps,
   currentUserId,
   onSwapRequest,
   onChangeRequest,
@@ -142,6 +145,7 @@ export default function CalendarView({
                 isToday={day.dateStr === today}
                 isCurrentMonth={day.isCurrentMonth}
                 onClick={(ds) => setSelectedDate(ds)}
+                statusMaps={statusMaps}
               />
             ))
           )}
@@ -157,9 +161,17 @@ export default function CalendarView({
                 { label: 'Rest Day', color: '#6b7280' },
                 { label: 'Leave', color: '#ef4444' },
                 { label: 'Vacation', color: '#3b82f6' },
-                { label: 'Holiday', color: '#10b981' },
+                { label: 'Holiday Off', color: '#10b981' },
               ]
-          ).map((item) => (
+          )
+            // Holidays are day markers rather than shift statuses, so they are
+            // never in shift_status_types — but they colour cells, and every
+            // colour on screen should be explained by the legend.
+            .concat([
+              { label: 'Regular holiday', color: '#fca5a5' },
+              { label: 'Special holiday', color: '#fcd34d' },
+            ])
+            .map((item) => (
             <div key={item.label} className="flex items-center gap-1">
               <span className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }} />
               <span>{item.label}</span>
