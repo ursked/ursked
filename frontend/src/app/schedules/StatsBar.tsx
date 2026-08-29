@@ -63,15 +63,18 @@ export default function StatsBar({ stats, loading }: StatsBarProps) {
   ];
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+    // Phones get all five across a single scrollable-free row of compact chips:
+    // five full-width cards pushed the grid itself below the fold, which is the
+    // one thing the page exists to show. The icon is decorative, so it goes.
+    <div className="grid grid-cols-3 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-3">
       {items.map((item) => (
-        <div key={item.label} className="bg-white rounded-xl border border-gray-200 px-4 py-3 flex items-center gap-3">
-          <div className={`p-2 rounded-lg ${item.color}`}>
+        <div key={item.label} className="bg-white rounded-xl border border-gray-200 px-2 py-2 sm:px-4 sm:py-3 flex items-center gap-0 sm:gap-3">
+          <div className={`hidden sm:block p-2 rounded-lg ${item.color}`}>
             {item.icon}
           </div>
-          <div>
-            <p className="text-xs text-gray-500">{item.label}</p>
-            <p className="text-lg font-semibold text-gray-900">
+          <div className="min-w-0">
+            <p className="text-[10px] sm:text-xs text-gray-500 truncate">{item.label}</p>
+            <p className="text-sm sm:text-lg font-semibold text-gray-900">
               {loading ? (
                 <span className="inline-block w-8 h-5 bg-gray-200 rounded animate-pulse" />
               ) : (

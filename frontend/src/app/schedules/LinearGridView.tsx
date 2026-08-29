@@ -202,12 +202,16 @@ export default function LinearGridView({
       {/* Own scroll viewport: the grid scrolls internally (both axes) instead of
           growing the whole page, and the date-header row + employee column stay
           pinned so you never lose which day / whose row you're on. */}
-      <div className="overflow-auto max-h-[calc(100vh-320px)]">
-        <table className="w-full border-collapse">
+      <div className="overflow-auto max-h-[70vh] sm:max-h-[calc(100vh-320px)]">
+        {/* border-separate, NOT border-collapse. position:sticky on a th/td is
+            ignored by WebKit when the table collapses its borders, so on iOS the
+            pinned header and employee column detach and drift as you scroll.
+            Cells carry their own border-b/border-r, so nothing doubles up. */}
+        <table className="w-full border-separate border-spacing-0">
           <thead>
             <tr>
               {/* Employee column header — pinned top AND left (corner cell) */}
-              <th className="sticky top-0 left-0 z-40 bg-gray-50 border-b border-r border-gray-200 px-4 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider min-w-[200px]">
+              <th className="sticky top-0 left-0 z-40 bg-gray-50 border-b border-r border-gray-200 px-2 sm:px-4 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider min-w-[124px] sm:min-w-[200px]">
                 Employee
               </th>
               {dates.map((dateStr) => {
@@ -221,7 +225,7 @@ export default function LinearGridView({
                 return (
                   <th
                     key={dateStr}
-                    className={`sticky top-0 z-30 border-b border-r border-gray-200 px-1 py-2 text-center min-w-[100px] max-w-[120px] ${
+                    className={`sticky top-0 z-30 border-b border-r border-gray-200 px-1 py-2 text-center min-w-[64px] sm:min-w-[100px] max-w-[120px] ${
                       isToday ? 'bg-purple-50' : isWeekend ? 'bg-gray-50' : 'bg-gray-100'
                     }`}
                   >
@@ -275,7 +279,7 @@ export default function LinearGridView({
                         draggable
                         onDragStart={(e) => handleRowDragStart(e, emp.employee_id)}
                         onDragEnd={handleRowDragEnd}
-                        className="flex-shrink-0 cursor-grab active:cursor-grabbing p-0.5 rounded hover:bg-gray-200 text-gray-300 hover:text-gray-500 transition-colors"
+                        className="hidden sm:block flex-shrink-0 cursor-grab active:cursor-grabbing p-0.5 rounded hover:bg-gray-200 text-gray-300 hover:text-gray-500 transition-colors"
                         title="Drag to reorder"
                       >
                         <svg className="w-4 h-4" viewBox="0 0 16 16" fill="currentColor">
@@ -287,7 +291,7 @@ export default function LinearGridView({
                           <circle cx="10.5" cy="12.5" r="1.5" />
                         </svg>
                       </div>
-                      <div className="w-7 h-7 rounded-full bg-gradient-to-br from-purple-400 to-purple-600 flex items-center justify-center text-white text-[10px] font-semibold flex-shrink-0">
+                      <div className="hidden sm:flex w-7 h-7 rounded-full bg-gradient-to-br from-purple-400 to-purple-600 items-center justify-center text-white text-[10px] font-semibold flex-shrink-0">
                         {emp.employee_name.split(' ').map(n => n[0]).join('').substring(0, 2)}
                       </div>
                       <div className="min-w-0">
