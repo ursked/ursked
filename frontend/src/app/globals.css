@@ -76,3 +76,21 @@
 ::-webkit-scrollbar-thumb:hover {
   background: hsl(var(--muted-foreground) / 0.5);
 }
+
+/* Touch devices: never let a swipe become a drag.
+ *
+ * Shift cards and the row-reorder grip carry the HTML5 draggable attribute so
+ * they can be moved with a mouse. On a touch screen there is no separate drag
+ * gesture — a swipe that happens to start on a card is captured as a drag, so
+ * the grid refuses to scroll and the cell appears to be pulled around instead.
+ * Reordering a roster by dragging is a desktop affordance anyway, so on a coarse
+ * pointer it is switched off entirely and the swipe goes back to scrolling.
+ *
+ * Keyed on (pointer: coarse) rather than a width breakpoint: what matters is the
+ * input device, not the size of the screen. */
+@media (pointer: coarse) {
+  [draggable='true'] {
+    -webkit-user-drag: none;
+    user-drag: none;
+  }
+}

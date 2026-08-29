@@ -221,7 +221,7 @@ export default function LinearGridView({
           Height is DEFINITE on phones (h-, not max-h): sticky needs a resolved
           scrollport height, and with max-h iOS falls back to positioning against
           the page, so the header drifted by however far the page was scrolled. */}
-      <div className="overflow-auto rounded-xl h-[70vh] sm:h-auto sm:max-h-[calc(100vh-320px)]">
+      <div className="overflow-auto rounded-xl touch-pan-x touch-pan-y h-[70vh] sm:h-auto sm:max-h-[calc(100vh-320px)]">
         {/* border-separate, NOT border-collapse. position:sticky on a th/td is
             ignored by WebKit when the table collapses its borders, so on iOS the
             pinned header and employee column detach and drift as you scroll.
