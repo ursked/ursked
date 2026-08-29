@@ -221,6 +221,12 @@ async def create_schedule_format(
     if existing.scalar_one_or_none():
         raise HTTPException(400, f"Schedule format code '{data.code}' already exists")
 
+    # The four break fields must be copied explicitly. They were previously omitted
+    # here while PATCH persisted them, so a format created through the API or the UI
+    # silently lost its break configuration and fell back to the column defaults
+    # (0 minutes). That is not cosmetic: the schedules export DERIVES the paid and
+    # unpaid break clock times from these, so every export came out with empty break
+    # columns until someone happened to re-save the format.
     sf = ScheduleFormat(
         tenant_id=current_user.tenant_id,
         code=data.code,
@@ -228,6 +234,10 @@ async def create_schedule_format(
         hours_per_day=data.hours_per_day,
         hours_per_week=data.hours_per_week,
         is_flexible=data.is_flexible,
+        paid_break_minutes=data.paid_break_minutes,
+        unpaid_break_minutes=data.unpaid_break_minutes,
+        paid_break_after_hours=data.paid_break_after_hours,
+        unpaid_break_after_hours=data.unpaid_break_after_hours,
         description=data.description,
         sort_order=data.sort_order,
     )

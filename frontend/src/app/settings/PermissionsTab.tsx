@@ -16,11 +16,38 @@ const MODULES: { key: PermissionModule; label: string }[] = [
   { key: 'reports', label: 'Reports' },
 ]
 
+// The four boxes sit in a row with nothing on them to say which is which, so the
+// column position was the only clue — unreadable. Each action now carries its own
+// colour, keyed to the legend: blue reads, green adds, amber changes, red destroys.
+// `swatch` paints the legend chip; `box` tints the checkbox itself. It uses
+// accent-* rather than text-*: @tailwindcss/forms is NOT installed here, so these
+// are native checkboxes and their checked fill comes from CSS accent-color. The
+// old text-purple-600 was inert — every box drew in the browser default.
 const ACTIONS = [
-  { key: 'can_view', label: 'V', title: 'View' },
-  { key: 'can_create', label: 'C', title: 'Create' },
-  { key: 'can_edit', label: 'E', title: 'Edit' },
-  { key: 'can_delete', label: 'D', title: 'Delete' },
+  {
+    key: 'can_view',
+    title: 'View',
+    swatch: 'bg-blue-600',
+    box: 'accent-blue-600 focus:ring-blue-500',
+  },
+  {
+    key: 'can_create',
+    title: 'Create',
+    swatch: 'bg-emerald-600',
+    box: 'accent-emerald-600 focus:ring-emerald-500',
+  },
+  {
+    key: 'can_edit',
+    title: 'Edit',
+    swatch: 'bg-amber-500',
+    box: 'accent-amber-500 focus:ring-amber-500',
+  },
+  {
+    key: 'can_delete',
+    title: 'Delete',
+    swatch: 'bg-red-600',
+    box: 'accent-red-600 focus:ring-red-500',
+  },
 ] as const
 
 type ActionKey = (typeof ACTIONS)[number]['key']
@@ -162,13 +189,20 @@ export default function PermissionsTab() {
 
         <div className="px-6 py-6">
           {/* Legend */}
-          <div className="flex items-center gap-4 mb-4 text-xs text-gray-500">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-4 text-xs text-gray-500">
             <span className="font-medium text-gray-700">Legend:</span>
             {ACTIONS.map((a) => (
-              <span key={a.key}>
-                <span className="font-semibold text-gray-700">{a.label}</span> = {a.title}
+              <span key={a.key} className="inline-flex items-center gap-1.5">
+                <span
+                  aria-hidden="true"
+                  className={`inline-block h-3 w-3 rounded-sm ${a.swatch}`}
+                />
+                <span className="font-semibold text-gray-700">{a.title}</span>
               </span>
             ))}
+            <span className="text-gray-400">
+              Boxes are in this order, left to right, in every column.
+            </span>
           </div>
 
           <div className="overflow-x-auto">
@@ -221,7 +255,7 @@ export default function PermissionsTab() {
                                       checked={checked}
                                       disabled={isTenantAdmin}
                                       onChange={() => toggleAction(entry.role_id, mod.key, action.key)}
-                                      className="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                                      className={`h-4 w-4 rounded border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed ${action.box}`}
                                     />
                                     <span className="sr-only">
                                       {action.title} {mod.label}

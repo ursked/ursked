@@ -670,7 +670,7 @@ async def publish_schedule_range(
     await db.commit()
     # Also email each affected employee (fire-and-forget), respecting the
     # tenant's schedule-change notification preference.
-    if affected and await _should_notify_schedule_change(db, current_user.tenant_id):
+    if affected and await _should_notify_schedule(db, current_user.tenant_id):
         await _notify_employee_ids(
             db, current_user.tenant_id, affected,
             f"Your schedule for {label} has been published.",

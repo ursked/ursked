@@ -30,6 +30,7 @@ from app.models.site_settings import SiteSettings
 from app.models.tenant import Tenant
 from app.models.user import User
 from app.services.role_service import RoleService
+from app.services.salary_enrollment_service import SalaryEnrollmentService
 from app.services.settings_service import SettingsService
 
 
@@ -133,6 +134,15 @@ async def seed() -> None:
         await db.flush()
 
         await RoleService.assign_roles(db, admin.id, ["employee", "tenant_admin"], tenant.id)
+
+        # Salary access is gated on an active 'viewer' enrollment, and granting one
+        # needs an active 'approver' — neither of which bypasses tenant_admin. On SaaS
+        # the founding admin is enrolled by app/ee/api/tenants.py, but CE deletes ee/,
+        # and migration 043's backfill runs before this seed exists to match. Without
+        # this call the table stays empty, nobody can approve anything, and payroll
+        # answers 403 to every user for ever. Must follow assign_roles: it selects on
+        # the tenant_admin role we have only just attached.
+        await SalaryEnrollmentService.seed_admin(db, tenant.id)
 
         db.add(AppSettings(tenant_id=tenant.id))
         await db.flush()
