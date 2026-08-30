@@ -251,6 +251,10 @@ export interface ScheduleTemplate {
 }
 
 export interface AppSettings {
+  timeclock_enabled?: boolean;
+  timeclock_require_location?: boolean;
+  timeclock_location_grace_minutes?: number;
+  timeclock_default_radius_m?: number;
   id: number;
   timezone: string;
   currency_code: string;
@@ -1501,4 +1505,75 @@ export interface ScheduleLintViolation {
   date: string;
   type: 'max_consecutive_work_days' | 'min_rest_days_per_week' | 'approved_leave' | 'holiday';
   message: string;
+}
+
+// ── Time clock ───────────────────────────────────────────────────────────────
+
+export interface TimePunch {
+  id: number;
+  employee_id: number;
+  business_date: string;
+  punch_type: 'in' | 'out';
+  shift_id?: number | null;
+  work_arrangement?: string | null;
+  punched_at: string;
+  local_time: string;
+  clock_skew_seconds?: number | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  accuracy_m?: number | null;
+  /** captured | recaptured | denied | unavailable | timeout | insecure_context | not_required */
+  location_status: string;
+  recapture_deadline?: string | null;
+  /** inside | outside | not_applicable | unverified */
+  geofence_status: string;
+  work_site_id?: number | null;
+  distance_m?: number | null;
+  notes?: string | null;
+}
+
+export interface TimeclockShiftInfo {
+  shift_id: number;
+  sequence_number: number;
+  start_time?: string | null;
+  end_time?: string | null;
+  status: string;
+  work_arrangement?: string | null;
+  /** require_site | any_location | record_only */
+  geofence_mode: string;
+  work_site_id?: number | null;
+}
+
+export interface TimeclockToday {
+  timeclock_enabled: boolean;
+  require_location: boolean;
+  grace_minutes: number;
+  business_date: string;
+  server_time: string;
+  next_action: 'clock_in' | 'clock_out';
+  open_punch?: TimePunch | null;
+  punches: TimePunch[];
+  shifts: TimeclockShiftInfo[];
+  hours_today?: number | null;
+}
+
+export interface WorkSite {
+  id: number;
+  name: string;
+  code?: string | null;
+  latitude: number;
+  longitude: number;
+  radius_m: number;
+  address?: string | null;
+  org_node_id?: number | null;
+  is_active: boolean;
+}
+
+export interface WorkArrangementRule {
+  id: number;
+  code: string;
+  label: string;
+  geofence_mode: 'require_site' | 'any_location' | 'record_only';
+  is_active: boolean;
+  sort_order: number;
 }

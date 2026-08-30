@@ -119,6 +119,72 @@ class AttendanceService:
         return record
 
     @staticmethod
+    async def upsert_attendance(
+        db: AsyncSession,
+        tenant_id: UUID,
+        employee_id: int,
+        attendance_date: date,
+        actual_start: Optional[time],
+        actual_end: Optional[time],
+        notes: Optional[str] = None,
+        recorded_by: Optional[int] = None,
+        self_reported: bool = False,
+    ) -> AttendanceRecord:
+        """Create the day's record, or re-derive it if one already exists.
+
+        `record_attendance` always inserts, and `attendance_records` carries
+        `uq_employee_attendance_date`. So a second submission for the same day
+        raised IntegrityError — which is not a ValueError, so the endpoints'
+        `except ValueError` never caught it and the caller got a 500. Submitting
+        your own hours twice for one date, or correcting a typo, hit this.
+
+        Delegating the update path to `update_attendance` matters: that is what
+        purges the previously generated overtime/tardiness/leave rows and re-runs
+        the policy engine, so a re-submission cannot leave doubled OT feeding
+        payroll.
+        """
+        existing = (
+            await db.execute(
+                select(AttendanceRecord).where(
+                    AttendanceRecord.tenant_id == tenant_id,
+                    AttendanceRecord.employee_id == employee_id,
+                    AttendanceRecord.date == attendance_date,
+                )
+            )
+        ).scalar_one_or_none()
+
+        if existing is None:
+            return await AttendanceService.record_attendance(
+                db,
+                tenant_id=tenant_id,
+                employee_id=employee_id,
+                attendance_date=attendance_date,
+                actual_start=actual_start,
+                actual_end=actual_end,
+                notes=notes,
+                recorded_by=recorded_by,
+                self_reported=self_reported,
+            )
+
+        data: dict = {
+            "actual_start_time": actual_start,
+            "actual_end_time": actual_end,
+        }
+        if notes is not None:
+            data["notes"] = notes
+        record = await AttendanceService.update_attendance(
+            db, tenant_id, existing.id, data
+        )
+        if record is not None:
+            # update_attendance does not carry these; they describe who supplied
+            # the latest figures, which is exactly what has just changed.
+            record.self_reported = self_reported
+            if recorded_by is not None:
+                record.recorded_by = recorded_by
+            await db.flush()
+        return record
+
+    @staticmethod
     async def _compute_metrics(
         scheduled_start: Optional[time],
         scheduled_end: Optional[time],

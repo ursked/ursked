@@ -16,6 +16,7 @@ from app.api.v1.permissions import router as permissions_router
 from app.api.v1.attendance import router as attendance_router
 from app.api.v1.policy_rules import router as policy_rules_router
 from app.api.v1.data_export import router as data_export_router
+from app.api.v1.work_sites import router as work_sites_router
 from app.api.v1.site import router as site_router
 from app.api.v1.capabilities import router as capabilities_router
 from app.api.v1.smtp_settings import router as smtp_settings_router
@@ -58,6 +59,7 @@ api_router.include_router(permissions_router)
 api_router.include_router(attendance_router)
 api_router.include_router(policy_rules_router)
 api_router.include_router(data_export_router)
+api_router.include_router(work_sites_router)
 api_router.include_router(salary_enrollment_router)
 api_router.include_router(notifications_router)
 api_router.include_router(backup_router)

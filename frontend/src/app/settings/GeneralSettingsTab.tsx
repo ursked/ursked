@@ -912,6 +912,93 @@ export default function GeneralSettingsTab() {
         </div>
       </div>
 
+      {/* ── Section: Time Clock ──────────────────────────────────── */}
+      <div className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-xl">
+        <div className="border-b border-gray-200 px-6 py-4">
+          <h2 className="text-lg font-semibold text-gray-900">Time Clock</h2>
+          <p className="mt-1 text-sm text-gray-500">
+            Let employees clock themselves in and out, optionally recording where they
+            were. Off by default.
+          </p>
+        </div>
+        <div className="px-6 py-6 space-y-5">
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={!!appSettings?.timeclock_enabled}
+              disabled={updateSettingsMutation.isPending}
+              onChange={(e) => updateSettingsMutation.mutate(
+                { timeclock_enabled: e.target.checked },
+                { onSuccess: () => showToast('Time clock setting saved', 'success'),
+                  onError: (err: Error) => showToast(err.message, 'error') },
+              )}
+              className="mt-0.5 h-4 w-4 rounded text-purple-600 border-gray-300 focus:ring-purple-500"
+            />
+            <div>
+              <p className="text-sm font-medium text-gray-900">Enable the time clock</p>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Adds a Time Clock page where employees record their own hours as they
+                work. Their attendance record is rebuilt from those punches, so
+                overtime and tardiness are calculated exactly as they are for hours
+                entered by hand.
+              </p>
+            </div>
+          </label>
+
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={!!appSettings?.timeclock_require_location}
+              disabled={updateSettingsMutation.isPending || !appSettings?.timeclock_enabled}
+              onChange={(e) => updateSettingsMutation.mutate(
+                { timeclock_require_location: e.target.checked },
+                { onSuccess: () => showToast('Location setting saved', 'success'),
+                  onError: (err: Error) => showToast(err.message, 'error') },
+              )}
+              className="mt-0.5 h-4 w-4 rounded text-purple-600 border-gray-300 focus:ring-purple-500"
+            />
+            <div>
+              <p className="text-sm font-medium text-gray-900">Ask for location on each punch</p>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Records the device&apos;s coordinates with each clock-in and clock-out, and
+                stores them as personal data. A punch is <strong>never refused</strong> because
+                a location is missing &mdash; it is recorded and flagged for review instead.
+                Browsers only share location over HTTPS, so on a plain-HTTP address every
+                punch is marked as having no location.
+              </p>
+            </div>
+          </label>
+
+          <NumberSetting
+            id="timeclock_location_grace_minutes"
+            label="Minutes to add a missing location"
+            help="After a punch with no location, how long the employee may still attach one. The result is always marked as added later, never as captured at the time. 0 disables it."
+            value={appSettings?.timeclock_location_grace_minutes}
+            min={0} max={1440}
+            disabled={updateSettingsMutation.isPending || !appSettings?.timeclock_enabled}
+            onCommit={(n) => updateSettingsMutation.mutate(
+              { timeclock_location_grace_minutes: n },
+              { onSuccess: () => showToast('Grace window saved', 'success'),
+                onError: (err: Error) => showToast(err.message, 'error') },
+            )}
+          />
+
+          <NumberSetting
+            id="timeclock_default_radius_m"
+            label="Default site radius (metres)"
+            help="How close to a work site still counts as being there, for sites that do not set their own. Indoor GPS is often 100-200m out, so a generous radius avoids wrongly flagging people."
+            value={appSettings?.timeclock_default_radius_m}
+            min={10} max={100000}
+            disabled={updateSettingsMutation.isPending || !appSettings?.timeclock_enabled}
+            onCommit={(n) => updateSettingsMutation.mutate(
+              { timeclock_default_radius_m: n },
+              { onSuccess: () => showToast('Default radius saved', 'success'),
+                onError: (err: Error) => showToast(err.message, 'error') },
+            )}
+          />
+        </div>
+      </div>
+
       {/* ── Section: Employee Data Retention ─────────────────────── */}
       <div className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-xl">
         <div className="border-b border-gray-200 px-6 py-4">

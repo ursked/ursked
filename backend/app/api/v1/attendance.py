@@ -1,11 +1,14 @@
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.middleware.auth import get_current_user, require_permission
+from app.models.attendance import TimePunch
+from app.models.settings import AppSettings
 from app.models.user import User
 from app.schemas.attendance import (
     AttendanceRecordCreate,
@@ -14,14 +17,20 @@ from app.schemas.attendance import (
     OvertimeLogResponse,
     OvertimeApproveRequest,
     OvertimeConvertRequest,
+    PunchLocationRequest,
+    PunchRequest,
     SelfTimeEntry,
     TardinessRecordResponse,
     TardinessResolveRequest,
+    TimeclockShiftInfo,
+    TimeclockTodayResponse,
+    TimePunchResponse,
 )
 from app.services.attendance_service import AttendanceService
 from app.services.email_service import EmailService
 from app.services.overtime_service import OvertimeService
 from app.services.tardiness_service import TardinessService
+from app.services.timeclock_service import TimeclockError, TimeclockService
 
 router = APIRouter(prefix="/attendance", tags=["attendance"])
 
@@ -266,9 +275,13 @@ async def record_attendance(
     current_user: User = Depends(require_permission("schedules", "edit")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Record attendance for an employee. Requires schedules:edit permission."""
+    """Record attendance for an employee. Requires schedules:edit permission.
+
+    Upserts: one record per employee per day is a database constraint, so
+    recording the same day twice is a correction, not an error.
+    """
     try:
-        record = await AttendanceService.record_attendance(
+        record = await AttendanceService.upsert_attendance(
             db=db,
             tenant_id=current_user.tenant_id,
             employee_id=data.employee_id,
@@ -302,6 +315,37 @@ async def list_attendance(
     for r in records:
         results.append(await _attendance_response(r, db))
     return results
+
+
+# NOTE: this must stay ABOVE GET /{record_id}. FastAPI matches routes in
+# registration order, and "punches" is not an int, so a parameterised route
+# declared first would swallow this path and 422.
+@router.get("/punches", response_model=List[TimePunchResponse])
+async def list_punches(
+    employee_id: Optional[int] = Query(None),
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
+    flagged_only: bool = Query(False, description="Only punches needing a look: no location, outside the geofence, or a large clock skew."),
+    limit: int = Query(200, le=1000),
+    current_user: User = Depends(require_permission("schedules", "view")),
+    db: AsyncSession = Depends(get_db),
+):
+    stmt = select(TimePunch).where(TimePunch.tenant_id == current_user.tenant_id)
+    if employee_id is not None:
+        stmt = stmt.where(TimePunch.employee_id == employee_id)
+    if start_date is not None:
+        stmt = stmt.where(TimePunch.business_date >= start_date)
+    if end_date is not None:
+        stmt = stmt.where(TimePunch.business_date <= end_date)
+    if flagged_only:
+        stmt = stmt.where(
+            (TimePunch.latitude.is_(None))
+            | (TimePunch.geofence_status == "outside")
+            | (TimePunch.clock_skew_seconds > 300)
+            | (TimePunch.clock_skew_seconds < -300)
+        )
+    stmt = stmt.order_by(TimePunch.punched_at.desc()).limit(limit)
+    return list((await db.execute(stmt)).scalars().all())
 
 
 @router.get("/{record_id}", response_model=AttendanceRecordResponse)
@@ -347,7 +391,7 @@ async def submit_own_time(
     still override via the regular attendance endpoints.
     """
     try:
-        record = await AttendanceService.record_attendance(
+        record = await AttendanceService.upsert_attendance(
             db,
             tenant_id=current_user.tenant_id,
             employee_id=current_user.id,
@@ -362,3 +406,141 @@ async def submit_own_time(
         raise HTTPException(status_code=400, detail=str(e))
     await db.commit()
     return await _attendance_response(record, db)
+
+
+# ── Time clock ───────────────────────────────────────────────────────────────
+#
+# Employee self-service, so these sit behind get_current_user rather than
+# require_permission("schedules", ...) — the `employee` role does not hold that
+# permission, and an employee must be able to clock themselves in. Same gate as
+# POST /attendance/my.
+
+
+@router.post("/punch", response_model=TimePunchResponse, status_code=201)
+async def punch_clock(
+    data: PunchRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Clock in or out.
+
+    Always records the punch when the state allows it. A missing or refused
+    location is flagged, never a reason to refuse someone's time.
+    """
+    try:
+        punch = await TimeclockService.punch(
+            db,
+            tenant_id=current_user.tenant_id,
+            employee_id=current_user.id,
+            punch_type=data.punch_type,
+            latitude=data.latitude,
+            longitude=data.longitude,
+            accuracy_m=data.accuracy_m,
+            location_error=data.location_error,
+            client_time=data.client_time,
+            notes=data.notes,
+            source="web",
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+            recorded_by=current_user.id,
+        )
+    except TimeclockError as e:
+        # 409 rather than 400 when the client simply disagrees about the current
+        # state, so a stale tab can resync instead of showing a hard error.
+        raise HTTPException(409 if e.current_state else 400, e.message)
+    await db.commit()
+    await db.refresh(punch)
+    return punch
+
+
+@router.get("/my/today", response_model=TimeclockTodayResponse)
+async def my_timeclock_today(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Everything the time-clock screen needs, in one call."""
+    settings = (
+        await db.execute(
+            select(AppSettings).where(AppSettings.tenant_id == current_user.tenant_id)
+        )
+    ).scalar_one_or_none()
+    enabled = bool(settings and settings.timeclock_enabled)
+
+    open_punch = await TimeclockService.open_punch(db, current_user.tenant_id, current_user.id)
+    utc_now = datetime.now(timezone.utc)
+
+    # The day being shown is the open punch's day when one is running — a night
+    # shift worker at 01:00 is still on yesterday's shift and should see it.
+    if open_punch is not None:
+        business_date = open_punch.business_date
+    else:
+        business_date = await TimeclockService._resolve_business_date(
+            db, current_user.tenant_id, current_user.id,
+            utc_now.astimezone(), "in", None,
+        )
+
+    punches = await TimeclockService.punches_for_day(
+        db, current_user.tenant_id, current_user.id, business_date
+    )
+    shifts = await TimeclockService._day_shifts(
+        db, current_user.tenant_id, current_user.id, business_date
+    )
+    shift_info = []
+    for s in shifts:
+        mode = await TimeclockService._arrangement_mode(
+            db, current_user.tenant_id, s.work_arrangement
+        )
+        shift_info.append(TimeclockShiftInfo(
+            shift_id=s.id,
+            sequence_number=s.sequence_number or 1,
+            start_time=s.start_time,
+            end_time=s.end_time,
+            status=s.status,
+            work_arrangement=s.work_arrangement,
+            geofence_mode=mode,
+            work_site_id=getattr(s, "work_site_id", None),
+        ))
+
+    _, _, hours = TimeclockService._derive_times(punches)
+    return TimeclockTodayResponse(
+        timeclock_enabled=enabled,
+        require_location=bool(settings and settings.timeclock_require_location),
+        grace_minutes=(settings.timeclock_location_grace_minutes if settings else 0) or 0,
+        business_date=business_date,
+        server_time=utc_now,
+        next_action="clock_out" if open_punch is not None else "clock_in",
+        open_punch=open_punch,
+        punches=punches,
+        shifts=shift_info,
+        hours_today=hours,
+    )
+
+
+@router.post("/punch/{punch_id}/location", response_model=TimePunchResponse)
+async def attach_punch_location(
+    punch_id: int,
+    data: PunchLocationRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Attach a location to your own punch, within the grace window.
+
+    Scoped to the caller's own punches: this is a correction to your record, not
+    a way to annotate somebody else's.
+    """
+    try:
+        punch = await TimeclockService.attach_location(
+            db,
+            tenant_id=current_user.tenant_id,
+            employee_id=current_user.id,
+            punch_id=punch_id,
+            latitude=data.latitude,
+            longitude=data.longitude,
+            accuracy_m=data.accuracy_m,
+        )
+    except TimeclockError as e:
+        raise HTTPException(409, e.message)
+    await db.commit()
+    await db.refresh(punch)
+    return punch

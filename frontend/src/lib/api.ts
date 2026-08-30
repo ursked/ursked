@@ -78,6 +78,10 @@ import {
   MySalaryStatus,
   SalaryRequestByToken,
   NotificationList,
+  TimePunch,
+  TimeclockToday,
+  WorkSite,
+  WorkArrangementRule,
 } from '@/types';
 
 const CSRF_COOKIE = 'csrf_token';
@@ -1267,6 +1271,61 @@ class ApiClient {
   }
 
   // Attendance
+  // ── Time clock ──────────────────────────────────────────────────────────
+  async punchClock(data: {
+    punch_type: 'in' | 'out';
+    latitude?: number;
+    longitude?: number;
+    accuracy_m?: number;
+    location_error?: 'denied' | 'unavailable' | 'timeout' | 'insecure_context';
+    client_time?: string;
+    notes?: string;
+  }): Promise<TimePunch> {
+    return this.post('/api/v1/attendance/punch', data) as Promise<TimePunch>;
+  }
+
+  async getMyTimeclockToday(): Promise<TimeclockToday> {
+    return this.get('/api/v1/attendance/my/today') as Promise<TimeclockToday>;
+  }
+
+  async attachPunchLocation(punchId: number, data: { latitude: number; longitude: number; accuracy_m?: number }): Promise<TimePunch> {
+    return this.post(`/api/v1/attendance/punch/${punchId}/location`, data) as Promise<TimePunch>;
+  }
+
+  async listPunches(params?: { employee_id?: number; start_date?: string; end_date?: string; flagged_only?: boolean }): Promise<TimePunch[]> {
+    const q = new URLSearchParams();
+    if (params?.employee_id) q.set('employee_id', String(params.employee_id));
+    if (params?.start_date) q.set('start_date', params.start_date);
+    if (params?.end_date) q.set('end_date', params.end_date);
+    if (params?.flagged_only) q.set('flagged_only', 'true');
+    const qs = q.toString();
+    return this.get(`/api/v1/attendance/punches${qs ? `?${qs}` : ''}`) as Promise<TimePunch[]>;
+  }
+
+  async listWorkSites(): Promise<WorkSite[]> {
+    return this.get('/api/v1/work-sites') as Promise<WorkSite[]>;
+  }
+
+  async createWorkSite(data: Partial<WorkSite>): Promise<WorkSite> {
+    return this.post('/api/v1/work-sites', data) as Promise<WorkSite>;
+  }
+
+  async updateWorkSite(id: number, data: Partial<WorkSite>): Promise<WorkSite> {
+    return this.patch(`/api/v1/work-sites/${id}`, data) as Promise<WorkSite>;
+  }
+
+  async deleteWorkSite(id: number): Promise<void> {
+    await this.del(`/api/v1/work-sites/${id}`);
+  }
+
+  async listArrangementRules(): Promise<WorkArrangementRule[]> {
+    return this.get('/api/v1/work-sites/arrangements/rules') as Promise<WorkArrangementRule[]>;
+  }
+
+  async updateArrangementRule(id: number, data: Partial<WorkArrangementRule>): Promise<WorkArrangementRule> {
+    return this.patch(`/api/v1/work-sites/arrangements/rules/${id}`, data) as Promise<WorkArrangementRule>;
+  }
+
   async recordAttendance(data: { employee_id: number; date: string; actual_start_time?: string; actual_end_time?: string; notes?: string }): Promise<AttendanceRecord> {
     return this.post('/api/v1/attendance', data) as Promise<AttendanceRecord>;
   }

@@ -90,6 +90,20 @@ class AppSettings(Base):
     schedule_employee_visibility = Column(String(30), default="own_node")  # all, own_node, own_and_children, own_and_parent
     data_retention_days = Column(Integer, nullable=True)  # null = keep forever, number = auto-delete after N days
     analytics_exclusion_days = Column(Integer, default=0)  # days after separation to still include in analytics
+
+    # ── Time clock ────────────────────────────────────────────────────────────
+    # Off by default: an existing install must not sprout a clock-in button on
+    # upgrade, and location capture is something an operator opts into knowingly.
+    timeclock_enabled = Column(Boolean, nullable=False, default=False, server_default="false")
+    # Ask the browser for coordinates on each punch. A punch is NEVER blocked by
+    # the answer; this only controls whether we ask and how we flag the result.
+    timeclock_require_location = Column(Boolean, nullable=False, default=True, server_default="true")
+    # How long after a punch an employee may still attach a location they could
+    # not provide at the time. 0 disables recapture entirely.
+    timeclock_location_grace_minutes = Column(Integer, nullable=False, default=60, server_default="60")
+    # Fallback radius for a site that does not set its own.
+    timeclock_default_radius_m = Column(Integer, nullable=False, default=200, server_default="200")
+
     custom_settings = Column(JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)

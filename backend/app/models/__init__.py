@@ -10,7 +10,8 @@ from app.models.site_settings import SiteSettings, AuditLog
 from app.models.configurable_types import EmployeeType, ScheduleFormat, UserOrgNode
 from app.models.payroll import SalaryGrade, EmployeeSalary, DeductionType, DeductionBracket, PayrollPeriod, PayrollItem
 from app.models.permission import RolePermission
-from app.models.attendance import AttendanceRecord, OvertimeLog, TardinessRecord, LeaveCreditAdjustment
+from app.models.attendance import AttendanceRecord, OvertimeLog, TardinessRecord, LeaveCreditAdjustment, TimePunch
+from app.models.work_site import WorkSite, WorkArrangementRule
 from app.models.policy import PolicyRule
 from app.models.data_export import DataExportConfig
 from app.models.job_run import JobRun
@@ -65,6 +66,9 @@ __all__ = [
     "OvertimeLog",
     "TardinessRecord",
     "LeaveCreditAdjustment",
+    "TimePunch",
+    "WorkSite",
+    "WorkArrangementRule",
     "PolicyRule",
     "DataExportConfig",
     "JobRun",

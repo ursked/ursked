@@ -46,6 +46,9 @@ only see and do what they should.
 - Track clock times, tardiness and overtime against policy rules.
 - Policy-driven exceptions are flagged automatically.
 - Night-differential and holiday handling built in.
+- Optional **time clock**: employees punch in and out themselves, with the
+  device's location captured where the browser allows it. Off by default; see
+  [Time clock and location](#time-clock-and-location).
 
 ### Payroll & compensation
 - Salary grades with effective-dated raises.
@@ -241,6 +244,49 @@ checks (Secure cookies and `http://` CORS origins) to loud startup warnings;
 `DEBUG` and wildcard CORS remain hard-blocked. **Never enable
 `ALLOW_INSECURE_TRANSPORT` on anything reachable from the internet** — put TLS in
 front and leave it `false`.
+
+### Time clock and location
+
+The time clock is off until you switch it on under **Settings -> General -> Time
+Clock**. Once enabled, employees get a **Time Clock** page where they clock in and
+out; their attendance record is rebuilt from those punches, so overtime and
+tardiness are computed exactly as they are for hours typed in by hand.
+
+**Location capture needs HTTPS.** Browsers only expose `navigator.geolocation` in
+a *secure context* — an `https://` origin, or `http://localhost`. On a plain-HTTP
+LAN address such as `http://192.168.1.10:3000` the browser never prompts and never
+returns coordinates, and no application setting can change that. The app handles
+this honestly rather than silently: the page warns before anyone presses the
+button, and each punch is stored with `location_status = insecure_context` so the
+condition is visible in the data instead of only in support tickets.
+
+Time is always recorded correctly regardless — only the location is affected.
+
+How you enable TLS is your choice; nothing about it is baked into the app. A
+reverse proxy in front of `APP_PORT` (see [Running behind
+HTTPS](#running-behind-https)), a certificate from an internal CA, or a tunnel all
+work. Remember to set `COOKIE_SECURE=true` once TLS is in place.
+
+What the location *means* depends on the shift's work arrangement, configured
+under the same settings page:
+
+| Arrangement | Behaviour |
+|---|---|
+| On-site | Must be within a work site's radius, otherwise the punch is **flagged for review** |
+| Work From Home / Official Business | Coordinates recorded, never judged |
+| Anything unrecognised | Treated as "any location" — a typo never becomes a false exception |
+
+A punch is **never refused** because of a location: not when permission is denied,
+not when GPS fails, and not when someone is outside the radius. Indoor GPS is
+routinely 100-200m out, so blocking would mean employees who cannot record their
+time. Exceptions are surfaced to managers instead.
+
+If a location could not be captured, the employee can add one within a grace
+window you configure. Such a punch is permanently marked as *added later* rather
+than captured at the time, because it is weaker evidence.
+
+Coordinates are personal data. Tell your staff you are collecting them, and check
+your local obligations before enabling this.
 
 ## Security & access control
 

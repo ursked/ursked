@@ -127,3 +127,109 @@ class LeaveCreditAdjustment(Base):
     tenant = relationship("Tenant", backref="leave_credit_adjustments")
     employee = relationship("User", foreign_keys=[employee_id])
     creator = relationship("User", foreign_keys=[created_by])
+
+
+class TimePunch(Base):
+    """A single clock-in or clock-out event.
+
+    Punches are the source of truth; AttendanceRecord stays a derived daily
+    summary that is recomputed after every punch. Storing the geolocation as
+    in_/out_ columns on the summary instead was rejected for three reasons that
+    this data actually exhibits:
+
+    * A day can hold more than one in/out pair. Split shifts (a morning worked
+      from home, an afternoon on site) are real in the roster, and they are
+      precisely the days where the location expectation CHANGES mid-day.
+    * `attendance_records` is keyed to a single `date` with `Time` columns, which
+      cannot express "06:05, the following calendar day, belongs to yesterday" —
+      the normal case for a 22:00-06:00 shift. A punch carries a real instant plus
+      an explicit `business_date`.
+    * A denied location, its later recapture and an admin correction must all stay
+      visible. Columns on a summary row get overwritten.
+
+    `uq_employee_attendance_date` therefore stays exactly as it is, and every
+    existing consumer (payroll, analytics, exports, the policy engine) is
+    untouched.
+    """
+
+    __tablename__ = "time_punches"
+    __table_args__ = (
+        Index("ix_time_punches_emp_date", "tenant_id", "employee_id", "business_date"),
+    )
+
+    PUNCH_TYPES = ("in", "out")
+    # not_required   : the tenant does not ask for location
+    # captured       : supplied with the punch
+    # recaptured     : supplied later, within the grace window — deliberately kept
+    #                  distinct from `captured` forever, because it is weaker
+    #                  evidence (deny, travel, then capture)
+    # denied / unavailable / timeout : the browser said no or could not fix
+    # insecure_context : served over plain HTTP, so the browser never even asked
+    LOCATION_STATUSES = (
+        "not_required", "captured", "recaptured",
+        "denied", "unavailable", "timeout", "insecure_context",
+    )
+    GEOFENCE_STATUSES = ("inside", "outside", "not_applicable", "unverified")
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(
+        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    employee_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True,
+    )
+
+    # The attendance day this punch rolls up to, which is NOT necessarily the
+    # calendar date of the instant: the 06:05 exit from a 22:00-06:00 shift
+    # belongs to the previous day. A clock-out always inherits this from the
+    # clock-in it closes, so there is no heuristic to get wrong.
+    business_date = Column(Date, nullable=False)
+    punch_type = Column(String(10), nullable=False)
+
+    # Which of the day's shifts this punch was matched to, snapshotted at punch
+    # time. On a split-shift day the two shifts carry different arrangements, so
+    # the expectation has to be recorded per punch rather than per day.
+    shift_id = Column(Integer, ForeignKey("shifts.id", ondelete="SET NULL"), nullable=True)
+    sequence_number = Column(Integer, nullable=False, default=1)
+    work_arrangement = Column(String(50), nullable=True)
+    attendance_record_id = Column(
+        Integer, ForeignKey("attendance_records.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
+    # An 'in' whose paired_punch_id is NULL is the currently open punch.
+    paired_punch_id = Column(
+        Integer, ForeignKey("time_punches.id", ondelete="SET NULL"), nullable=True,
+    )
+
+    # Server instant is authoritative. This feeds overtime and therefore payroll,
+    # and a device clock is user-controlled — winding a phone back is the oldest
+    # timesheet fraud there is. The client's claim is kept as evidence only.
+    punched_at = Column(DateTime(timezone=True), nullable=False)
+    local_time = Column(Time, nullable=False)
+    client_reported_at = Column(DateTime(timezone=True), nullable=True)
+    clock_skew_seconds = Column(Integer, nullable=True)
+
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
+    accuracy_m = Column(Float, nullable=True)
+    location_status = Column(String(20), nullable=False, default="not_required")
+    location_captured_at = Column(DateTime(timezone=True), nullable=True)
+    recapture_deadline = Column(DateTime(timezone=True), nullable=True)
+
+    geofence_status = Column(String(20), nullable=False, default="not_applicable")
+    work_site_id = Column(
+        Integer, ForeignKey("work_sites.id", ondelete="SET NULL"), nullable=True,
+    )
+    distance_m = Column(Float, nullable=True)
+
+    source = Column(String(20), nullable=False, default="web")  # web | admin | import
+    ip_address = Column(String(45), nullable=True)
+    user_agent = Column(String(255), nullable=True)
+    notes = Column(Text, nullable=True)
+    recorded_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    tenant = relationship("Tenant", backref="time_punches")
+    employee = relationship("User", foreign_keys=[employee_id])

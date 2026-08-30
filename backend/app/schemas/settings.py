@@ -42,6 +42,10 @@ class AppSettingsResponse(BaseModel):
     # Separated-employee data lifecycle. null = retain indefinitely.
     data_retention_days: Optional[int] = None
     analytics_exclusion_days: int = 0
+    timeclock_enabled: bool = False
+    timeclock_require_location: bool = True
+    timeclock_location_grace_minutes: int = 60
+    timeclock_default_radius_m: int = 200
     custom_settings: Optional[Dict] = None
 
 
@@ -81,6 +85,12 @@ class AppSettingsUpdate(BaseModel):
     # null clears the retention policy (retain indefinitely); 1..3650 sets a window.
     data_retention_days: Optional[int] = Field(None, ge=1, le=3650)
     analytics_exclusion_days: Optional[int] = Field(None, ge=0, le=365)
+    timeclock_enabled: Optional[bool] = None
+    timeclock_require_location: Optional[bool] = None
+    # 0 disables recapture. Capped at a day: a grace window longer than a shift
+    # would let someone attach a location from an entirely different context.
+    timeclock_location_grace_minutes: Optional[int] = Field(None, ge=0, le=1440)
+    timeclock_default_radius_m: Optional[int] = Field(None, ge=10, le=100000)
     custom_settings: Optional[Dict] = None
 
 

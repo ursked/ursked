@@ -68,6 +68,19 @@ const navItems: NavItem[] = [
     roles: ['employee', 'tenant_admin', 'hr', 'manager', 'leave_approver', 'schedule_editor', 'finance'],
   },
   {
+    // Every role: clocking yourself in is self-service. The page itself renders
+    // an "switched off" state when the tenant has not enabled the time clock,
+    // so the link is harmless on installs that do not use it.
+    name: 'Time Clock',
+    href: '/my/timeclock',
+    icon: (
+      <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    ),
+    roles: ['employee', 'tenant_admin', 'hr', 'manager', 'leave_approver', 'schedule_editor', 'finance'],
+  },
+  {
     name: 'Attendance',
     href: '/attendance',
     icon: (
