@@ -178,6 +178,70 @@ export default function LinearGridView({
     });
   }, [onRowOrderChange]);
 
+  // ── Rubber-band guard (iOS) ──────────────────────────────────────
+  // WebKit implements elastic overscroll by translating a scroller's ENTIRE
+  // contents layer, sticky cells included. Drag past the top-left edge and the
+  // pinned header row and employee column peel away from the corner, travel
+  // with the finger, and snap back on release — they are not "unstuck", the
+  // whole grid is being rubber-banded and they are painted inside it.
+  //
+  // `overscroll-behavior: none` on the scroller is the declarative fix and is
+  // applied below, but Safari has only shipped it since 16 and is inconsistent
+  // about honouring it on nested scrollers, so the boundary is also held shut
+  // by hand: if the scroller is already at an edge and the finger is moving
+  // further out along the dominant axis, the gesture is cancelled.
+  //
+  // This must run on the FIRST touchmove — iOS hands the gesture to the
+  // compositor once a scroll is under way and ignores preventDefault from then
+  // on. That constraint is also what makes it safe: it cannot interrupt a
+  // scroll that is legitimately in progress.
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+
+    let lastX = 0;
+    let lastY = 0;
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length !== 1) return;
+      lastX = e.touches[0].clientX;
+      lastY = e.touches[0].clientY;
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      // Leave pinch-zoom alone.
+      if (e.touches.length !== 1) return;
+      const dx = e.touches[0].clientX - lastX;
+      const dy = e.touches[0].clientY - lastY;
+      lastX = e.touches[0].clientX;
+      lastY = e.touches[0].clientY;
+
+      // 1px of slack: fractional scroll offsets on a hi-dpi screen never land
+      // exactly on the maximum.
+      const atTop = el.scrollTop <= 0;
+      const atBottom = el.scrollTop >= el.scrollHeight - el.clientHeight - 1;
+      const atLeft = el.scrollLeft <= 0;
+      const atRight = el.scrollLeft >= el.scrollWidth - el.clientWidth - 1;
+
+      const outward =
+        Math.abs(dy) > Math.abs(dx)
+          ? (dy > 0 && atTop) || (dy < 0 && atBottom)
+          : (dx > 0 && atLeft) || (dx < 0 && atRight);
+
+      if (outward && e.cancelable) e.preventDefault();
+    };
+
+    el.addEventListener('touchstart', onTouchStart, { passive: true });
+    el.addEventListener('touchmove', onTouchMove, { passive: false });
+    return () => {
+      el.removeEventListener('touchstart', onTouchStart);
+      el.removeEventListener('touchmove', onTouchMove);
+    };
+    // The scroller is not rendered while the roster is empty, so re-attach when
+    // it appears.
+  }, [employees.length]);
+
   const remarkMap = useMemo(() => {
     const map: Record<string, DateRemark> = {};
     dateRemarks.forEach((r) => (map[r.date] = r));
@@ -221,7 +285,10 @@ export default function LinearGridView({
           Height is DEFINITE on phones (h-, not max-h): sticky needs a resolved
           scrollport height, and with max-h iOS falls back to positioning against
           the page, so the header drifted by however far the page was scrolled. */}
-      <div className="overflow-auto rounded-xl touch-pan-x touch-pan-y h-[70vh] sm:h-auto sm:max-h-[calc(100vh-320px)]">
+      <div
+        ref={scrollRef}
+        className="overflow-auto overscroll-none rounded-xl touch-pan-x touch-pan-y h-[70vh] sm:h-auto sm:max-h-[calc(100vh-320px)]"
+      >
         {/* border-separate, NOT border-collapse. position:sticky on a th/td is
             ignored by WebKit when the table collapses its borders, so on iOS the
             pinned header and employee column detach and drift as you scroll.
