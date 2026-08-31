@@ -219,15 +219,20 @@ export default function LinearGridView({
 
       // 1px of slack: fractional scroll offsets on a hi-dpi screen never land
       // exactly on the maximum.
+      const canScrollY = el.scrollHeight > el.clientHeight + 1;
+      const canScrollX = el.scrollWidth > el.clientWidth + 1;
       const atTop = el.scrollTop <= 0;
       const atBottom = el.scrollTop >= el.scrollHeight - el.clientHeight - 1;
       const atLeft = el.scrollLeft <= 0;
       const atRight = el.scrollLeft >= el.scrollWidth - el.clientWidth - 1;
 
+      // Only an axis that can actually scroll can rubber-band. On an axis with
+      // nothing to scroll -- a roster short enough to fit -- both edges read as
+      // true, and cancelling there would swallow the swipe for no reason.
       const outward =
         Math.abs(dy) > Math.abs(dx)
-          ? (dy > 0 && atTop) || (dy < 0 && atBottom)
-          : (dx > 0 && atLeft) || (dx < 0 && atRight);
+          ? canScrollY && ((dy > 0 && atTop) || (dy < 0 && atBottom))
+          : canScrollX && ((dx > 0 && atLeft) || (dx < 0 && atRight));
 
       if (outward && e.cancelable) e.preventDefault();
     };
