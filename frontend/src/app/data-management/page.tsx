@@ -3,7 +3,8 @@
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import { useAuth } from '@/contexts/AuthContext'
 import { hasAnyRole } from '@/lib/roles'
-import DataTab from '@/app/settings/DataTab'
+import ExportBuilder from './ExportBuilder'
+import SchedulePanel from './SchedulePanel'
 
 export default function DataManagementPage() {
   const { user } = useAuth()
@@ -21,7 +22,7 @@ export default function DataManagementPage() {
               </svg>
             </div>
             <h3 className="mt-4 text-lg font-semibold text-gray-900">Access Denied</h3>
-            <p className="mt-2 text-sm text-gray-500">
+            <p className="mt-2 text-sm text-gray-600">
               You do not have permission to view this page. Only tenant administrators can access data management.
             </p>
           </div>
@@ -34,13 +35,15 @@ export default function DataManagementPage() {
     <DashboardLayout>
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Data Management</h1>
-          <p className="mt-1 text-sm text-gray-500">
-            Export and manage your organization&apos;s data.
+          <h1 className="text-2xl font-bold text-gray-900">Reports</h1>
+          <p className="mt-1 text-sm text-gray-600">
+            Build a report by looking at your data and changing it. Everything you do shows up
+            straight away, and nothing is saved until you say so.
           </p>
         </div>
 
-        <DataTab />
+        <ExportBuilder />
+        <SchedulePanel />
       </div>
     </DashboardLayout>
   )

@@ -12,7 +12,7 @@ from email import encoders
 from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from typing import Optional
+from typing import Optional, Union
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -199,7 +199,7 @@ class EmailService:
         to_email: str,
         subject: str,
         html_body: str,
-        attachment_content: str,
+        attachment_content: Union[str, bytes],
         attachment_filename: str,
         attachment_mime: str = "text/csv",
     ) -> bool:
@@ -218,7 +218,12 @@ class EmailService:
 
             maintype, subtype = attachment_mime.split("/", 1)
             attachment = MIMEBase(maintype, subtype)
-            attachment.set_payload(attachment_content.encode("utf-8"))
+            # Binary formats (xlsx) arrive as bytes; text ones as str.
+            attachment.set_payload(
+                attachment_content
+                if isinstance(attachment_content, bytes)
+                else attachment_content.encode("utf-8")
+            )
             encoders.encode_base64(attachment)
             attachment.add_header(
                 "Content-Disposition", "attachment", filename=attachment_filename

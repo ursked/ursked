@@ -1,16 +1,20 @@
 """
-Data export service: config CRUD, data querying, formula evaluation, CSV generation.
+Data export service: config CRUD, row loading, and orchestration of the
+transformation pipeline.
+
+Loading and joining live here; every transformation (filter, group, aggregate,
+sort, rename, format, serialise) lives in `export_pipeline` so that preview,
+download and the scheduler all run the identical code path.
 """
 
-import csv
-import io
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.data_export import DataExportConfig
+from app.services import export_pipeline as pipeline
 from app.services.data_source_registry import DATA_SOURCES, get_source, get_sources_metadata
 from app.services.formula_engine import FormulaEngine, FormulaError
 
@@ -20,21 +24,65 @@ from app.services.formula_engine import FormulaEngine, FormulaError
 # sources are excluded when a filter is active).
 DATE_SOURCES = {"schedules", "attendance", "overtime_logs", "tardiness_records"}
 
-# Characters that make spreadsheet apps (Excel, Sheets, LibreOffice) treat a
-# cell as a formula. Employee-entered free text (names, notes, reasons) flows
-# into exports, so a value like "=cmd|'…'" would execute on open. We neutralise
-# by prefixing a single quote, which spreadsheets strip on display.
-_CSV_FORMULA_TRIGGERS = ("=", "+", "-", "@", "\t", "\r")
+
+def _single_label_for(data_source: str) -> Callable[[str], str]:
+    """Header text for a column of one source, e.g. "Overtime (min)"."""
+    source = DATA_SOURCES.get(data_source, {})
+    labels = {c["key"]: c["label"] for c in source.get("columns", [])}
+
+    def label_for(key: str) -> str:
+        return labels.get(key, key)
+
+    return label_for
 
 
-def _csv_safe(value: Any) -> str:
-    """Render a cell value as CSV text, neutralising spreadsheet formula injection."""
-    if value is None:
-        return ""
-    s = value if isinstance(value, str) else str(value)
-    if s and s[0] in _CSV_FORMULA_TRIGGERS:
-        return "'" + s
-    return s
+def _multi_label_for(key: str) -> str:
+    """Header text for a namespaced column, e.g. "Attendance > Overtime (min)"."""
+    if "." not in key:
+        return key
+    src_key, col_key = key.split(".", 1)
+    source = DATA_SOURCES.get(src_key, {})
+    col = next((c for c in source.get("columns", []) if c["key"] == col_key), None)
+    return f"{source.get('label', src_key)} > {col['label'] if col else col_key}"
+
+
+def _formula_scope(row: Dict[str, Any]) -> Dict[str, Any]:
+    """Give a formula both `{source.column}` and bare `{column}` keys.
+
+    The bare form is ambiguous when two sources share a column name, and the
+    last one written wins — which is why the builder writes namespaced keys.
+    """
+    scope: Dict[str, Any] = {}
+    for k, v in row.items():
+        if "." in k:
+            scope.setdefault(k.split(".", 1)[1], v)
+        scope[k] = v
+    return scope
+
+
+def _as_dicts(value: Any) -> List[Dict[str, Any]]:
+    """Normalise a list of pydantic models or dicts to plain dicts for JSONB."""
+    out = []
+    for v in value or []:
+        if isinstance(v, dict):
+            out.append(v)
+        elif hasattr(v, "model_dump"):
+            out.append(v.model_dump())
+        elif hasattr(v, "dict"):
+            out.append(v.dict())
+    return out
+
+
+def _as_dict_map(value: Any) -> Dict[str, Dict[str, Any]]:
+    out: Dict[str, Dict[str, Any]] = {}
+    for k, v in (value or {}).items():
+        if isinstance(v, dict):
+            out[k] = v
+        elif hasattr(v, "model_dump"):
+            out[k] = v.model_dump()
+        elif hasattr(v, "dict"):
+            out[k] = v.dict()
+    return out
 
 
 class DataExportService:
@@ -92,6 +140,20 @@ class DataExportService:
             filters=[f if isinstance(f, dict) else f.dict() for f in (data.get("filters") or [])],
             sort_by=data.get("sort_by"),
             sort_direction=data.get("sort_direction"),
+            # name_format was accepted by the schema and had a column and a
+            # migration, but was never assigned here — so a report saved with a
+            # name format silently lost it until someone edited and re-saved.
+            name_format=data.get("name_format"),
+            group_by=data.get("group_by") or [],
+            aggregations=_as_dicts(data.get("aggregations")),
+            column_aliases=data.get("column_aliases") or {},
+            column_formats=_as_dict_map(data.get("column_formats")),
+            sorts=_as_dicts(data.get("sorts")),
+            date_preset=data.get("date_preset"),
+            date_from=data.get("date_from"),
+            date_to=data.get("date_to"),
+            output_format=(data.get("output_format") or "csv"),
+            row_limit=data.get("row_limit"),
             created_by=created_by,
         )
         db.add(config)
@@ -131,6 +193,13 @@ class DataExportService:
                 for f in data["filters"]
             ]
 
+        # JSONB columns must hold plain dicts, not pydantic models.
+        for key in ("aggregations", "sorts"):
+            if key in data and data[key] is not None:
+                data[key] = _as_dicts(data[key])
+        if "column_formats" in data and data["column_formats"] is not None:
+            data["column_formats"] = _as_dict_map(data["column_formats"])
+
         for key, value in data.items():
             if hasattr(config, key):
                 setattr(config, key, value)
@@ -147,94 +216,143 @@ class DataExportService:
         await db.delete(config)
         return True
 
-    # ── Data query + export ──────────────────────────────────────
+    # ── Export orchestration ─────────────────────────────────────
 
     @staticmethod
-    async def query_data(
+    async def run_export(
         db: AsyncSession,
         tenant_id: UUID,
-        data_source: str,
-        columns: List[str],
-        custom_columns: Optional[List[Dict[str, str]]] = None,
-        filters: Optional[List[Dict[str, Any]]] = None,
-        sort_by: Optional[str] = None,
-        sort_direction: Optional[str] = None,
+        spec: Dict[str, Any],
+        *,
         limit: Optional[int] = None,
-        name_format: Optional[str] = None,
-        date_from: Optional[str] = None,
-        date_to: Optional[str] = None,
-    ) -> Tuple[List[Dict[str, Any]], int]:
-        """Query data from a source and apply column selection, formulas, filters."""
-        source = get_source(data_source)
-        if not source:
-            raise ValueError(f"Unknown data source: {data_source}")
+    ) -> Tuple[List[Dict[str, Any]], int, List[Tuple[str, str]]]:
+        """Load, transform and shape one export.
 
-        # Get all rows from source
-        query_kwargs = {}
-        if name_format:
-            query_kwargs["name_format"] = name_format
-        all_rows = await source["query"](db, tenant_id, **query_kwargs)
+        Returns (rows, total_before_limit, output_columns) where output_columns
+        is an ordered list of (field_key, header). One entry point for preview,
+        download and the scheduler, so the three cannot drift apart — which is
+        exactly how scheduled exports ended up unable to run a multi-source
+        config at all while the download path could.
 
-        # Apply date range filter
-        if date_from or date_to:
-            all_rows = _apply_date_range(
-                all_rows, date_from, date_to, is_date_source=data_source in DATE_SOURCES
+        Stage order is documented in `export_pipeline` and is restated to the
+        user in the builder, so do not reorder it casually.
+        """
+        data_source = spec.get("data_source") or ""
+        columns: List[str] = list(spec.get("columns") or [])
+        custom_columns = list(spec.get("custom_columns") or [])
+        group_by = [g for g in (spec.get("group_by") or []) if g]
+        aggregations = list(spec.get("aggregations") or [])
+
+        # A relative window re-resolves on every run; absolute dates pass through.
+        date_from, date_to = pipeline.resolve_date_window(
+            spec.get("date_preset"), spec.get("date_from"), spec.get("date_to")
+        )
+
+        # 1. Load
+        if data_source == "multi":
+            rows = await DataExportService._load_multi_rows(
+                db, tenant_id, columns,
+                name_format=spec.get("name_format"),
+                date_from=date_from, date_to=date_to,
             )
+            label_for = _multi_label_for
+            valid_columns = list(columns)
+        else:
+            source = get_source(data_source)
+            if not source:
+                raise ValueError(f"Unknown data source: {data_source}")
+            query_kwargs = {}
+            if spec.get("name_format"):
+                query_kwargs["name_format"] = spec["name_format"]
+            rows = await source["query"](db, tenant_id, **query_kwargs)
+            if date_from or date_to:
+                rows = _apply_date_range(
+                    rows, date_from, date_to, is_date_source=data_source in DATE_SOURCES
+                )
+            source_col_keys = {c["key"] for c in source["columns"]}
+            valid_columns = [c for c in columns if c in source_col_keys]
+            label_for = _single_label_for(data_source)
 
-        # Apply filters
-        if filters:
-            all_rows = _apply_filters(all_rows, filters)
-
-        # Apply sort
-        if sort_by:
-            reverse = (sort_direction or "asc").lower() == "desc"
-            all_rows.sort(key=lambda r: _sort_key(r.get(sort_by, "")), reverse=reverse)
-
-        total = len(all_rows)
-
-        # Apply limit
-        if limit and limit > 0:
-            all_rows = all_rows[:limit]
-
-        # Project columns + compute custom columns
-        source_col_keys = {c["key"] for c in source["columns"]}
-        valid_columns = [c for c in columns if c in source_col_keys]
-
-        result_rows = []
-        for row in all_rows:
-            projected = {}
-            for col in valid_columns:
-                projected[col] = row.get(col, "")
-
-            # Evaluate custom columns
-            if custom_columns:
+        # 2. Calculate BEFORE filtering and grouping, so a computed column can be
+        #    filtered on and grouped by. Formulas see the whole source row, not
+        #    just the selected columns.
+        if custom_columns:
+            for row in rows:
+                scope = _formula_scope(row) if data_source == "multi" else row
                 for cc in custom_columns:
                     try:
-                        projected[cc["name"]] = FormulaEngine.evaluate(cc["formula"], row)
+                        row[cc["name"]] = FormulaEngine.evaluate(cc["formula"], scope)
                     except FormulaError:
-                        projected[cc["name"]] = "#ERROR"
+                        row[cc["name"]] = "#ERROR"
 
-            result_rows.append(projected)
+        # 3. Filter
+        rows = pipeline.apply_filters(rows, spec.get("filters"))
 
-        return result_rows, total
+        # 4. Group — replaces the row shape when active
+        if group_by:
+            rows = pipeline.apply_grouping(rows, group_by, aggregations)
 
-    # ── Multi-source query + export ─────────────────────────────
+        # 5. Sort. `sorts` is the multi-key form; fall back to the legacy
+        #    sort_by/sort_direction pair so configs saved before 058 still work.
+        sorts = list(spec.get("sorts") or [])
+        if not sorts and spec.get("sort_by"):
+            sorts = [{"column": spec["sort_by"], "direction": spec.get("sort_direction") or "asc"}]
+        rows = pipeline.apply_sort(rows, sorts)
+
+        total = len(rows)
+
+        # 6. Limit
+        effective_limit = limit if limit is not None else spec.get("row_limit")
+        if effective_limit and effective_limit > 0:
+            rows = rows[:effective_limit]
+
+        # 7. Project, rename, format
+        output_columns = pipeline.build_output_columns(
+            columns=valid_columns,
+            custom_columns=custom_columns,
+            group_by=group_by,
+            aggregations=aggregations,
+            label_for=label_for,
+            aliases=spec.get("column_aliases"),
+        )
+        shaped = pipeline.project_rows(rows, output_columns, spec.get("column_formats"))
+        return shaped, total, output_columns
 
     @staticmethod
-    async def query_multi_source_data(
+    def serialise(
+        rows: List[Dict[str, Any]],
+        output_columns: List[Tuple[str, str]],
+        output_format: str = "csv",
+        sheet_name: str = "Export",
+    ) -> Tuple[bytes, str, str]:
+        """Return (payload, media_type, file_extension)."""
+        if (output_format or "csv").lower() == "xlsx":
+            return (
+                pipeline.generate_xlsx(rows, output_columns, sheet_name),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "xlsx",
+            )
+        return pipeline.generate_csv(rows, output_columns).encode("utf-8"), "text/csv", "csv"
+
+    # ── Row loading ──────────────────────────────────────────────
+
+    @staticmethod
+    async def _load_multi_rows(
         db: AsyncSession,
         tenant_id: UUID,
         namespaced_columns: List[str],
-        custom_columns: Optional[List[Dict[str, str]]] = None,
-        filters: Optional[List[Dict[str, Any]]] = None,
-        sort_by: Optional[str] = None,
-        sort_direction: Optional[str] = None,
-        limit: Optional[int] = None,
         name_format: Optional[str] = None,
         date_from: Optional[str] = None,
         date_to: Optional[str] = None,
-    ) -> Tuple[List[Dict[str, Any]], int]:
-        """Query and merge data from multiple sources, joined on employee_id."""
+    ) -> List[Dict[str, Any]]:
+        """Query and merge several sources, joined on employee id (+ date).
+
+        Returns raw merged rows keyed `source.column`. Filtering, grouping,
+        sorting, limiting and projection all happen afterwards in the pipeline,
+        which is what makes multi-source behave identically to single-source —
+        previously filters ran BEFORE projection for one source and AFTER for
+        several, so the same filter worked in one mode and not the other.
+        """
         # Parse namespaced columns -> {source_key: [col_key, ...]}
         source_cols: Dict[str, List[str]] = {}
         for nc in namespaced_columns:
@@ -244,7 +362,7 @@ class DataExportService:
             source_cols.setdefault(src_key, []).append(col_key)
 
         if not source_cols:
-            return [], 0
+            return []
 
         # Query each needed source
         query_kwargs = {}
@@ -264,46 +382,18 @@ class DataExportService:
             source_rows[src_key] = rows
 
         if not source_rows:
-            return [], 0
+            return []
 
         source_keys = list(source_rows.keys())
 
-        # Single source fast path
+        # Only one source actually contributes columns: namespace and return.
         if len(source_keys) == 1:
             src = source_keys[0]
             cols = source_cols[src]
-            projected = []
-            for r in source_rows[src]:
-                row = {f"{src}.{c}": r.get(c, "") for c in cols}
-                projected.append(row)
-            if filters:
-                projected = _apply_filters(projected, filters)
-            if sort_by:
-                reverse = (sort_direction or "asc").lower() == "desc"
-                projected.sort(key=lambda r: _sort_key(r.get(sort_by, "")), reverse=reverse)
-            total = len(projected)
-            if limit and limit > 0:
-                projected = projected[:limit]
-            if custom_columns:
-                for row in projected:
-                    flat = {}
-                    for k, v in row.items():
-                        if '.' in k:
-                            flat[k.split('.', 1)[1]] = v
-                        flat[k] = v
-                    for cc in custom_columns:
-                        try:
-                            row[cc["name"]] = FormulaEngine.evaluate(cc["formula"], flat)
-                        except FormulaError:
-                            row[cc["name"]] = "#ERROR"
-            return projected, total
-
-        # Multi-source merge
-        EMPLOYEE_SOURCES = {
-            "employees", "schedules", "attendance", "leave_applications",
-            "overtime_logs", "tardiness_records", "payroll_items",
-            "leave_credit_adjustments",
-        }
+            return [
+                {f"{src}.{c}": r.get(c, "") for c in cols}
+                for r in source_rows[src]
+            ]
 
         # Pick primary source: prefer detail (date-based) sources, then largest
         detail = [s for s in source_keys if s in DATE_SOURCES]
@@ -377,128 +467,7 @@ class DataExportService:
                         mrow[f"{sec}.{c}"] = srow.get(c, "")
                 merged.append(mrow)
 
-        # Apply filters
-        if filters:
-            merged = _apply_filters(merged, filters)
-
-        # Sort
-        if sort_by:
-            reverse = (sort_direction or "asc").lower() == "desc"
-            merged.sort(key=lambda r: _sort_key(r.get(sort_by, "")), reverse=reverse)
-
-        total = len(merged)
-        if limit and limit > 0:
-            merged = merged[:limit]
-
-        # Custom columns (provide both namespaced and flat keys for formulas)
-        if custom_columns:
-            for row in merged:
-                flat: Dict[str, Any] = {}
-                for k, v in row.items():
-                    if '.' in k:
-                        flat[k.split('.', 1)[1]] = v
-                    flat[k] = v
-                for cc in custom_columns:
-                    try:
-                        row[cc["name"]] = FormulaEngine.evaluate(cc["formula"], flat)
-                    except FormulaError:
-                        row[cc["name"]] = "#ERROR"
-
-        return merged, total
-
-    @staticmethod
-    def generate_multi_csv(
-        rows: List[Dict[str, Any]],
-        namespaced_columns: List[str],
-        custom_columns: Optional[List[Dict[str, str]]] = None,
-        currency_code: Optional[str] = None,
-    ) -> str:
-        """Generate CSV from multi-source merged data with readable headers.
-
-        Monetary column headers are suffixed with the tenant currency code
-        (e.g. "Payroll > Net Pay (PHP)") so raw numeric amounts remain numeric
-        while the denomination stays explicit."""
-        from app.services.data_source_registry import column_is_monetary
-
-        output = io.StringIO()
-
-        headers = []
-        for nc in namespaced_columns:
-            if '.' in nc:
-                src_key, col_key = nc.split('.', 1)
-                source = DATA_SOURCES.get(src_key, {})
-                src_label = source.get("label", src_key)
-                col_def = next(
-                    (c for c in source.get("columns", []) if c["key"] == col_key),
-                    None,
-                )
-                col_label = col_def["label"] if col_def else col_key
-                header = f"{src_label} > {col_label}"
-                if currency_code and column_is_monetary(src_key, col_key):
-                    header = f"{header} ({currency_code})"
-                headers.append(header)
-            else:
-                headers.append(nc)
-        if custom_columns:
-            for cc in custom_columns:
-                headers.append(cc["name"])
-
-        field_keys = list(namespaced_columns)
-        if custom_columns:
-            field_keys.extend(cc["name"] for cc in custom_columns)
-
-        writer = csv.writer(output)
-        writer.writerow(headers)
-        for row in rows:
-            writer.writerow([_csv_safe(row.get(k, "")) for k in field_keys])
-
-        return output.getvalue()
-
-    @staticmethod
-    def generate_csv(
-        rows: List[Dict[str, Any]],
-        columns: List[str],
-        custom_columns: Optional[List[Dict[str, str]]] = None,
-        source_columns: Optional[List[Dict[str, str]]] = None,
-        data_source: Optional[str] = None,
-        currency_code: Optional[str] = None,
-    ) -> str:
-        """Generate CSV string from query results.
-
-        Monetary column headers are suffixed with the tenant currency code
-        (e.g. "Net Pay (PHP)") when data_source + currency_code are supplied."""
-        from app.services.data_source_registry import column_is_monetary
-
-        output = io.StringIO()
-
-        # Build header labels
-        col_label_map = {}
-        if source_columns:
-            for sc in source_columns:
-                col_label_map[sc["key"]] = sc["label"]
-
-        headers = []
-        for col in columns:
-            label = col_label_map.get(col, col)
-            if currency_code and data_source and column_is_monetary(data_source, col):
-                label = f"{label} ({currency_code})"
-            headers.append(label)
-        if custom_columns:
-            for cc in custom_columns:
-                headers.append(cc["name"])
-
-        # Build field keys in order
-        field_keys = list(columns)
-        if custom_columns:
-            field_keys.extend(cc["name"] for cc in custom_columns)
-
-        writer = csv.writer(output)
-        writer.writerow(headers)
-
-        for row in rows:
-            writer.writerow([_csv_safe(row.get(k, "")) for k in field_keys])
-
-        return output.getvalue()
+        return merged
 
 
 def _apply_date_range(
@@ -547,57 +516,3 @@ def _apply_date_range(
             continue
         result.append(row)
     return result
-
-
-def _apply_filters(rows: List[Dict[str, Any]], filters: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Apply filter conditions to rows."""
-    result = rows
-    for f in filters:
-        col = f.get("column", "")
-        op = f.get("operator", "eq")
-        val = f.get("value", "")
-        result = [r for r in result if _match_filter(r.get(col, ""), op, val)]
-    return result
-
-
-def _match_filter(cell_value: Any, operator: str, filter_value: Any) -> bool:
-    """Check if a cell value matches a filter condition."""
-    cv_str = str(cell_value).lower() if cell_value is not None else ""
-    fv_str = str(filter_value).lower() if filter_value is not None else ""
-
-    if operator == "eq":
-        return cv_str == fv_str
-    if operator == "neq":
-        return cv_str != fv_str
-    if operator == "contains":
-        return fv_str in cv_str
-    if operator == "starts_with":
-        return cv_str.startswith(fv_str)
-
-    # Numeric comparisons
-    try:
-        cv_num = float(cell_value) if cell_value else 0
-        fv_num = float(filter_value) if filter_value else 0
-    except (TypeError, ValueError):
-        return False
-
-    if operator == "gt":
-        return cv_num > fv_num
-    if operator == "gte":
-        return cv_num >= fv_num
-    if operator == "lt":
-        return cv_num < fv_num
-    if operator == "lte":
-        return cv_num <= fv_num
-
-    return True
-
-
-def _sort_key(value: Any):
-    """Generate a sort key that works for mixed types."""
-    if value is None or value == "":
-        return (1, "")
-    try:
-        return (0, float(value))
-    except (TypeError, ValueError):
-        return (0, str(value).lower())

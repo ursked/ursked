@@ -1121,15 +1121,92 @@ export interface DataExportConfig {
   sort_by?: string;
   sort_direction?: string;
   name_format?: string;
+  group_by?: string[];
+  aggregations?: AggregationSpec[];
+  column_aliases?: Record<string, string>;
+  column_formats?: Record<string, ColumnFormat>;
+  sorts?: SortSpec[];
+  date_preset?: string | null;
+  date_from?: string | null;
+  date_to?: string | null;
+  output_format?: string;
+  row_limit?: number | null;
   created_by?: number;
   created_at?: string;
   updated_at?: string;
 }
 
+export interface PreviewColumn {
+  key: string;
+  header: string;
+}
+
 export interface PreviewResponse {
   columns: string[];
+  column_headers: PreviewColumn[];
   rows: Record<string, unknown>[];
+  /** Rows matching the whole definition, before the preview limit. */
   total: number;
+  returned: number;
+  /** What a relative window like "last month" resolved to on the server. */
+  resolved_date_from?: string | null;
+  resolved_date_to?: string | null;
+}
+
+// ── Report builder ────────────────────────────────────────────────
+
+export type AggregateFunc =
+  | 'sum' | 'avg' | 'min' | 'max' | 'count' | 'count_distinct' | 'first';
+
+export interface AggregationSpec {
+  /** Empty for `count`, which counts rows rather than a column. */
+  column: string;
+  func: AggregateFunc;
+  label?: string | null;
+  /** Stable key the row is written under; kept out of the user's way. */
+  output_key: string;
+}
+
+export interface SortSpec {
+  column: string;
+  direction: 'asc' | 'desc';
+}
+
+export interface ColumnFormat {
+  kind: 'number' | 'date' | 'time' | 'text';
+  pattern?: string;
+  decimals?: number;
+  thousands?: boolean;
+  prefix?: string;
+  suffix?: string;
+  transform?: string;
+}
+
+export type DatePreset =
+  | 'today' | 'yesterday' | 'last_7_days' | 'last_30_days' | 'last_90_days'
+  | 'this_week' | 'last_week' | 'this_month' | 'last_month'
+  | 'this_quarter' | 'this_year' | 'year_to_date' | 'custom';
+
+/**
+ * The whole definition of a report. Mirrors the backend spec exactly so the
+ * builder, the preview, the download and a saved config cannot drift apart.
+ */
+export interface ExportSpec {
+  data_source: string;
+  columns: string[];
+  custom_columns: CustomColumn[];
+  filters: FilterCondition[];
+  group_by: string[];
+  aggregations: AggregationSpec[];
+  column_aliases: Record<string, string>;
+  column_formats: Record<string, ColumnFormat>;
+  sorts: SortSpec[];
+  date_preset?: DatePreset | null;
+  date_from?: string | null;
+  date_to?: string | null;
+  output_format: 'csv' | 'xlsx';
+  row_limit?: number | null;
+  name_format?: string | null;
 }
 
 export interface ScheduledExport {

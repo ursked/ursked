@@ -1,12 +1,16 @@
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.exc import IntegrityError
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.middleware.auth import require_permission
 from app.models.user import User
+import io
+
+from app.services.export_pipeline import resolve_date_window
 from app.schemas.data_export import (
     DataExportConfigCreate,
     DataExportConfigResponse,
@@ -67,56 +71,81 @@ async def list_data_sources(
 
 # ── Preview & Export ─────────────────────────────────────────────
 
+def _spec_from_request(data: DataExportRequest) -> dict:
+    """One dict shape shared by preview, download and the scheduler."""
+    return {
+        "data_source": data.data_source,
+        "columns": data.columns,
+        "custom_columns": [{"name": c.name, "formula": c.formula} for c in data.custom_columns],
+        "filters": [
+            {"column": f.column, "operator": f.operator, "value": f.value}
+            for f in (data.filters or [])
+        ],
+        "group_by": data.group_by,
+        "aggregations": [a.model_dump() for a in data.aggregations],
+        "column_aliases": data.column_aliases,
+        "column_formats": {k: v.model_dump() for k, v in (data.column_formats or {}).items()},
+        "sorts": [s.model_dump() for s in data.sorts],
+        "sort_by": data.sort_by,
+        "sort_direction": data.sort_direction,
+        "name_format": data.name_format,
+        "date_preset": data.date_preset,
+        "date_from": data.date_from,
+        "date_to": data.date_to,
+        "row_limit": data.row_limit,
+    }
+
+
+def spec_from_config(config) -> dict:
+    """Same shape, built from a saved config row."""
+    return {
+        "data_source": config.data_source,
+        "columns": config.columns or [],
+        "custom_columns": config.custom_columns or [],
+        "filters": config.filters or [],
+        "group_by": config.group_by or [],
+        "aggregations": config.aggregations or [],
+        "column_aliases": config.column_aliases or {},
+        "column_formats": config.column_formats or {},
+        "sorts": config.sorts or [],
+        "sort_by": config.sort_by,
+        "sort_direction": config.sort_direction,
+        "name_format": config.name_format,
+        "date_preset": config.date_preset,
+        "date_from": config.date_from,
+        "date_to": config.date_to,
+        "row_limit": config.row_limit,
+    }
+
+
 @router.post("/preview", response_model=PreviewResponse)
 async def preview_data(
     data: DataExportRequest,
     current_user: User = Depends(require_permission("settings", "view")),
     db: AsyncSession = Depends(get_db),
 ):
+    """Run the export but return only the first N rows, plus the true total.
+
+    The builder calls this on every change, which is the whole point: you can
+    see what a filter or a grouping did to your data before committing to it.
+    """
     try:
         await _assert_salary_access_if_needed(db, current_user, data)
-        custom_cols = [{"name": c.name, "formula": c.formula} for c in data.custom_columns]
-        filters = [{"column": f.column, "operator": f.operator, "value": f.value} for f in (data.filters or [])]
-
-        if data.data_source == "multi":
-            # Multi-source mode: columns are namespaced like "employees.full_name"
-            rows, total = await DataExportService.query_multi_source_data(
-                db=db,
-                tenant_id=current_user.tenant_id,
-                namespaced_columns=data.columns,
-                custom_columns=custom_cols if custom_cols else None,
-                filters=filters if filters else None,
-                sort_by=data.sort_by,
-                sort_direction=data.sort_direction,
-                limit=20,
-                name_format=data.name_format,
-                date_from=data.date_from,
-                date_to=data.date_to,
-            )
-            all_cols = list(data.columns)
-            for cc in data.custom_columns:
-                all_cols.append(cc.name)
-            return PreviewResponse(columns=all_cols, rows=rows, total=total)
-
-        rows, total = await DataExportService.query_data(
-            db=db,
-            tenant_id=current_user.tenant_id,
-            data_source=data.data_source,
-            columns=data.columns,
-            custom_columns=custom_cols if custom_cols else None,
-            filters=filters if filters else None,
-            sort_by=data.sort_by,
-            sort_direction=data.sort_direction,
-            limit=20,
-            name_format=data.name_format,
-            date_from=data.date_from,
-            date_to=data.date_to,
+        spec = _spec_from_request(data)
+        limit = max(1, min(int(data.limit or 50), 500))
+        rows, total, output_columns = await DataExportService.run_export(
+            db, current_user.tenant_id, spec, limit=limit
         )
-        # Build column list for response
-        all_cols = list(data.columns)
-        for cc in data.custom_columns:
-            all_cols.append(cc.name)
-        return PreviewResponse(columns=all_cols, rows=rows, total=total)
+        rfrom, rto = resolve_date_window(data.date_preset, data.date_from, data.date_to)
+        return PreviewResponse(
+            columns=[k for k, _h in output_columns],
+            column_headers=[{"key": k, "header": h} for k, h in output_columns],
+            rows=rows,
+            total=total,
+            returned=len(rows),
+            resolved_date_from=rfrom,
+            resolved_date_to=rto,
+        )
     except ValueError as e:
         raise HTTPException(400, str(e))
 
@@ -129,71 +158,48 @@ async def export_data(
 ):
     try:
         await _assert_salary_access_if_needed(db, current_user, data)
+        spec = _spec_from_request(data)
+        rows, _total, output_columns = await DataExportService.run_export(
+            db, current_user.tenant_id, spec
+        )
+
+        # Monetary headers carry the tenant currency so a bare number is never
+        # ambiguous about its denomination.
         currency_code = await SettingsService.get_tenant_currency(db, current_user.tenant_id)
-        custom_cols = [{"name": c.name, "formula": c.formula} for c in data.custom_columns]
-        filters = [{"column": f.column, "operator": f.operator, "value": f.value} for f in (data.filters or [])]
+        output_columns = _suffix_currency(output_columns, data.data_source, currency_code, data.column_aliases)
 
-        if data.data_source == "multi":
-            # Multi-source export
-            rows, total = await DataExportService.query_multi_source_data(
-                db=db,
-                tenant_id=current_user.tenant_id,
-                namespaced_columns=data.columns,
-                custom_columns=custom_cols if custom_cols else None,
-                filters=filters if filters else None,
-                sort_by=data.sort_by,
-                sort_direction=data.sort_direction,
-                name_format=data.name_format,
-                date_from=data.date_from,
-                date_to=data.date_to,
-            )
-            csv_content = DataExportService.generate_multi_csv(
-                rows=rows,
-                namespaced_columns=data.columns,
-                custom_columns=custom_cols if custom_cols else None,
-                currency_code=currency_code,
-            )
-            import io as _io
-            return StreamingResponse(
-                _io.StringIO(csv_content),
-                media_type="text/csv",
-                headers={"Content-Disposition": "attachment; filename=multi_source_export.csv"},
-            )
-
-        rows, total = await DataExportService.query_data(
-            db=db,
-            tenant_id=current_user.tenant_id,
-            data_source=data.data_source,
-            columns=data.columns,
-            custom_columns=custom_cols if custom_cols else None,
-            filters=filters if filters else None,
-            sort_by=data.sort_by,
-            sort_direction=data.sort_direction,
-            name_format=data.name_format,
-            date_from=data.date_from,
-            date_to=data.date_to,
+        fmt = (data.output_format or "csv").lower()
+        payload, media_type, ext = DataExportService.serialise(
+            rows, output_columns, fmt, sheet_name=data.data_source
         )
-        source = get_source(data.data_source)
-        source_columns = source["columns"] if source else []
-        csv_content = DataExportService.generate_csv(
-            rows=rows,
-            columns=data.columns,
-            custom_columns=custom_cols if custom_cols else None,
-            source_columns=source_columns,
-            data_source=data.data_source,
-            currency_code=currency_code,
-        )
-        import io
+        filename = f"{data.data_source}_export.{ext}"
         return StreamingResponse(
-            io.StringIO(csv_content),
-            media_type="text/csv",
-            headers={"Content-Disposition": f"attachment; filename={data.data_source}_export.csv"},
+            io.BytesIO(payload),
+            media_type=media_type,
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
         )
     except ValueError as e:
         raise HTTPException(400, str(e))
 
 
-# ── Configs CRUD ─────────────────────────────────────────────────
+def _suffix_currency(output_columns, data_source, currency_code, aliases=None):
+    """Append "(PHP)" to money column headers, unless the user renamed them."""
+    if not currency_code:
+        return output_columns
+    from app.services.data_source_registry import column_is_monetary
+
+    aliases = aliases or {}
+    out = []
+    for key, header in output_columns:
+        if key in aliases:
+            out.append((key, header))
+            continue
+        src, col = (key.split(".", 1) if "." in key else (data_source, key))
+        if column_is_monetary(src, col):
+            header = f"{header} ({currency_code})"
+        out.append((key, header))
+    return out
+
 
 @router.get("/configs", response_model=List[DataExportConfigResponse])
 async def list_configs(
@@ -220,6 +226,15 @@ async def create_config(
         return _config_response(config)
     except ValueError as e:
         raise HTTPException(400, str(e))
+    except IntegrityError:
+        # Report names are unique per tenant. Only ValueError was caught, so
+        # re-using a name produced an opaque 500 instead of saying so.
+        await db.rollback()
+        raise HTTPException(
+            409,
+            f"You already have a report called \u201c{data.name}\u201d. "
+            "Give this one a different name, or open the existing one and save your changes to it.",
+        )
 
 
 @router.get("/configs/{config_id}", response_model=DataExportConfigResponse)
@@ -253,6 +268,9 @@ async def update_config(
         return _config_response(config)
     except ValueError as e:
         raise HTTPException(400, str(e))
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(409, "Another report already uses that name.")
 
 
 @router.delete("/configs/{config_id}", status_code=204)
@@ -419,6 +437,13 @@ def _schedule_response(schedule) -> dict:
 
 
 def _config_response(config) -> dict:
+    """Hand-mapped rather than from_attributes.
+
+    That is a trap worth naming: a field added to the model, the migration, the
+    request schema AND the response schema still comes back empty unless it is
+    also listed here, and nothing warns you. It is how a rename survived the
+    round trip to the database and then vanished on the way back.
+    """
     return {
         "id": config.id,
         "tenant_id": str(config.tenant_id),
@@ -431,6 +456,16 @@ def _config_response(config) -> dict:
         "sort_by": config.sort_by,
         "sort_direction": config.sort_direction,
         "name_format": config.name_format,
+        "group_by": config.group_by or [],
+        "aggregations": config.aggregations or [],
+        "column_aliases": config.column_aliases or {},
+        "column_formats": config.column_formats or {},
+        "sorts": config.sorts or [],
+        "date_preset": config.date_preset,
+        "date_from": config.date_from,
+        "date_to": config.date_to,
+        "output_format": config.output_format or "csv",
+        "row_limit": config.row_limit,
         "created_by": config.created_by,
         "created_at": config.created_at,
         "updated_at": config.updated_at,

@@ -52,6 +52,7 @@ import {
   DataSource,
   DataExportConfig,
   PreviewResponse,
+  ExportSpec,
   CustomColumn,
   FilterCondition,
   ScheduledExport,
@@ -1444,11 +1445,11 @@ class ApiClient {
     return this.get(`/api/v1/data-export/configs/${id}`) as Promise<DataExportConfig>;
   }
 
-  async createExportConfig(data: { name: string; description?: string; data_source: string; columns: string[]; custom_columns?: CustomColumn[]; filters?: FilterCondition[]; sort_by?: string; sort_direction?: string; name_format?: string }): Promise<DataExportConfig> {
+  async createExportConfig(data: ExportSpec & { name: string; description?: string }): Promise<DataExportConfig> {
     return this.post('/api/v1/data-export/configs', data) as Promise<DataExportConfig>;
   }
 
-  async updateExportConfig(id: number, data: Record<string, unknown>): Promise<DataExportConfig> {
+  async updateExportConfig(id: number, data: Partial<ExportSpec> & { name?: string; description?: string }): Promise<DataExportConfig> {
     return this.put(`/api/v1/data-export/configs/${id}`, data) as Promise<DataExportConfig>;
   }
 
@@ -1456,11 +1457,12 @@ class ApiClient {
     await this.del(`/api/v1/data-export/configs/${id}`);
   }
 
-  async previewExport(data: { data_source: string; columns: string[]; custom_columns?: CustomColumn[]; filters?: FilterCondition[]; sort_by?: string; sort_direction?: string }): Promise<PreviewResponse> {
+  /** Run the report but return only the first `limit` rows, plus the true total. */
+  async previewExport(data: ExportSpec & { limit?: number }): Promise<PreviewResponse> {
     return this.post('/api/v1/data-export/preview', data) as Promise<PreviewResponse>;
   }
 
-  async exportData(data: { data_source: string; columns: string[]; custom_columns?: CustomColumn[]; filters?: FilterCondition[]; sort_by?: string; sort_direction?: string }): Promise<Blob> {
+  async exportData(data: ExportSpec): Promise<Blob> {
     const response = await fetch(`${this.baseUrl}/api/v1/data-export/export`, {
       method: 'POST',
       credentials: 'include',

@@ -187,32 +187,27 @@ class ScheduledExportService:
                     "salary-viewer; run skipped."
                 )
 
-        # Query data
-        custom_cols = config.custom_columns or []
-        filters = config.filters or []
-        rows, total = await DataExportService.query_data(
-            db=db,
-            tenant_id=schedule.tenant_id,
-            data_source=config.data_source,
-            columns=config.columns,
-            custom_columns=custom_cols if custom_cols else None,
-            filters=filters if filters else None,
-            sort_by=config.sort_by,
-            sort_direction=config.sort_direction,
+        # Run through the SAME path preview and download use. Previously this
+        # called query_data directly, which meant a multi-source config raised
+        # "Unknown data source: multi" on every single run — permanently, and
+        # silently, for every schedule built from a joined report.
+        from app.api.v1.data_export import spec_from_config
+
+        spec = spec_from_config(config)
+        rows, total, output_columns = await DataExportService.run_export(
+            db, schedule.tenant_id, spec
         )
 
-        # Generate CSV
         from app.services.settings_service import SettingsService
         currency_code = await SettingsService.get_tenant_currency(db, schedule.tenant_id)
-        source = get_source(config.data_source)
-        source_columns = source["columns"] if source else []
-        csv_content = DataExportService.generate_csv(
-            rows=rows,
-            columns=config.columns,
-            custom_columns=custom_cols if custom_cols else None,
-            source_columns=source_columns,
-            data_source=config.data_source,
-            currency_code=currency_code,
+        if currency_code:
+            from app.api.v1.data_export import _suffix_currency
+            output_columns = _suffix_currency(
+                output_columns, config.data_source, currency_code, config.column_aliases or {}
+            )
+
+        payload, mime, ext = DataExportService.serialise(
+            rows, output_columns, config.output_format or "csv", sheet_name=config.name
         )
 
         # Build email
@@ -224,17 +219,29 @@ class ScheduledExportService:
         )
 
         timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M")
-        filename = f"{config.data_source}_{timestamp}.csv"
+        filename = f"{config.data_source}_{timestamp}.{ext}"
 
-        # Send to each recipient
+        # Send to each recipient. A False return means SMTP is unconfigured or
+        # refused the message; the run used to be recorded as a success anyway,
+        # so nobody found out the report had not arrived.
+        delivered = 0
         for email in schedule.recipient_emails:
-            await EmailService.send_email_with_attachment(
+            ok = await EmailService.send_email_with_attachment(
                 db=db,
                 to_email=email,
                 subject=subject,
                 html_body=html_body,
-                attachment_content=csv_content,
+                attachment_content=payload,
                 attachment_filename=filename,
+                attachment_mime=mime,
+            )
+            if ok:
+                delivered += 1
+
+        if schedule.recipient_emails and delivered == 0:
+            raise RuntimeError(
+                "Export generated but could not be emailed to any recipient — "
+                "check the SMTP settings."
             )
 
     @staticmethod

@@ -19,9 +19,31 @@ class DataExportConfig(Base):
     columns = Column(JSONB, nullable=False)
     custom_columns = Column(JSONB, nullable=False, server_default="[]")
     filters = Column(JSONB, nullable=True)
+    # Kept for backward compatibility with configs saved before `sorts`; read as
+    # a fallback when `sorts` is empty.
     sort_by = Column(String(100), nullable=True)
     sort_direction = Column(String(4), nullable=True)
     name_format = Column(String(50), nullable=True)
+
+    # ── Transformation (migration 058) ───────────────────────────
+    # group_by:        ["dept"]  -> collapses rows; REPLACES the output shape
+    # aggregations:    [{"column":"ot","func":"sum","output_key":"ot_sum","label":"Total OT"}]
+    # column_aliases:  {"employee_name": "Staff Member"}
+    # column_formats:  {"date": {"kind":"date","pattern":"long"}}
+    # sorts:           [{"column":"dept","direction":"asc"}, ...]
+    group_by = Column(JSONB, nullable=False, server_default="[]")
+    aggregations = Column(JSONB, nullable=False, server_default="[]")
+    column_aliases = Column(JSONB, nullable=False, server_default="{}")
+    column_formats = Column(JSONB, nullable=False, server_default="{}")
+    sorts = Column(JSONB, nullable=False, server_default="[]")
+    # A relative window ("last_month") re-resolves on every run, which is what
+    # makes a schedule send last month's data rather than all history.
+    date_preset = Column(String(30), nullable=True)
+    date_from = Column(String(10), nullable=True)
+    date_to = Column(String(10), nullable=True)
+    output_format = Column(String(10), nullable=False, server_default="csv")
+    row_limit = Column(Integer, nullable=True)
+
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
