@@ -219,7 +219,7 @@ export default function MySchedulePage() {
         </div>
 
         {isLoading ? (
-          <div className="text-sm text-gray-400">Loading…</div>
+          <div className="text-sm text-gray-500">Loading…</div>
         ) : view === 'month' ? (
           <MonthGrid anchor={anchor} shiftsByDate={shiftsByDate} holidayByDate={holidayByDate} todayIso={todayIso} fmtTime={fmtTime} />
         ) : (
@@ -279,7 +279,7 @@ function WeekList({
           <Card key={key} className={isToday ? 'ring-1 ring-purple-400' : ''}>
             <CardBody className="flex items-start gap-4 p-4">
               <div className="w-12 shrink-0 text-center">
-                <div className="text-xs uppercase text-gray-400">
+                <div className="text-xs uppercase text-gray-500">
                   {d.toLocaleDateString(undefined, { weekday: 'short' })}
                 </div>
                 <div className={'text-lg font-semibold ' + (isToday ? 'text-purple-700' : 'text-gray-800')}>
@@ -289,7 +289,7 @@ function WeekList({
               <div className="flex-1 space-y-1">
                 {holiday && <Badge tone="red">{holiday}</Badge>}
                 {shifts.length === 0 && !holiday ? (
-                  <div className="text-sm text-gray-400">No shift</div>
+                  <div className="text-sm text-gray-500">No shift</div>
                 ) : (
                   shifts.map((s) => (
                     <div key={s.id} className="flex items-center justify-between gap-2">
@@ -342,7 +342,7 @@ function MonthGrid({
     <div className="rounded-lg border border-gray-200 bg-white p-2">
       <div className="grid grid-cols-7 gap-1">
         {weekdayHeaders.map((w) => (
-          <div key={w} className="text-center text-[10px] font-medium uppercase text-gray-400 py-1">{w}</div>
+          <div key={w} className="text-center text-[10px] font-medium uppercase text-gray-500 py-1">{w}</div>
         ))}
         {cells.map((d, i) => {
           if (!d) return <div key={`b${i}`} />
@@ -372,7 +372,7 @@ function MonthGrid({
                 </div>
               )}
               {shifts.length > 1 && (
-                <div className="text-[8px] text-gray-400">+{shifts.length - 1}</div>
+                <div className="text-[8px] text-gray-500">+{shifts.length - 1}</div>
               )}
             </div>
           )

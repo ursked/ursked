@@ -17,7 +17,7 @@ function InfoRow({ label, value }: { label: string; value?: string | null }) {
   return (
     <div>
       <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">{label}</p>
-      <p className="text-sm text-gray-900 mt-0.5">{value || <span className="text-gray-300">Not set</span>}</p>
+      <p className="text-sm text-gray-900 mt-0.5">{value || <span className="text-gray-500">Not set</span>}</p>
     </div>
   );
 }

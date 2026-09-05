@@ -1195,7 +1195,7 @@ export default function GeneralSettingsTab() {
                         {st.is_system ? (
                           <span className="inline-flex items-center rounded-full bg-purple-100 text-purple-800 px-2.5 py-0.5 text-xs font-medium">System</span>
                         ) : (
-                          <span className="text-sm text-gray-400">--</span>
+                          <span className="text-sm text-gray-500">--</span>
                         )}
                       </td>
                       <td className="px-4 py-3 text-right">

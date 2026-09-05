@@ -114,8 +114,9 @@ export default function ScheduleToolbar({
         <div className="flex items-center gap-1">
           <button
             onClick={onPrev}
-            className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-600 transition-colors"
+            className="min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 inline-flex items-center justify-center p-1.5 rounded-lg hover:bg-gray-100 text-gray-600 transition-colors"
             title="Previous"
+            aria-label="Previous period"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -123,14 +124,15 @@ export default function ScheduleToolbar({
           </button>
           <button
             onClick={onToday}
-            className="px-3 py-1 text-xs font-medium rounded-lg bg-purple-50 text-purple-700 hover:bg-purple-100 transition-colors"
+            className="px-3 py-1 min-h-[44px] sm:min-h-0 text-xs font-medium rounded-lg bg-purple-50 text-purple-700 hover:bg-purple-100 transition-colors"
           >
             Today
           </button>
           <button
             onClick={onNext}
-            className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-600 transition-colors"
+            className="min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 inline-flex items-center justify-center p-1.5 rounded-lg hover:bg-gray-100 text-gray-600 transition-colors"
             title="Next"
+            aria-label="Next period"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -146,7 +148,7 @@ export default function ScheduleToolbar({
           type="button"
           onClick={() => setToolsOpen((v) => !v)}
           aria-expanded={toolsOpen}
-          className="sm:hidden ml-auto inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+          className="sm:hidden ml-auto inline-flex items-center justify-center gap-1 min-h-[44px] px-3 text-xs font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
         >
           {toolsOpen ? 'Hide' : 'Tools'}
           <svg
@@ -168,7 +170,7 @@ export default function ScheduleToolbar({
               className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
                 rangeMode === mode
                   ? 'bg-white text-gray-900 shadow-sm'
-                  : 'text-gray-500 hover:text-gray-700'
+                  : 'text-gray-600 hover:text-gray-900'
               }`}
             >
               {mode === 'week' ? '1W' : mode === 'biweekly' ? '2W' : '1M'}
@@ -182,9 +184,10 @@ export default function ScheduleToolbar({
             className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
               rangeMode === 'custom'
                 ? 'bg-white text-gray-900 shadow-sm'
-                : 'text-gray-500 hover:text-gray-700'
+                : 'text-gray-600 hover:text-gray-900'
             }`}
             title="Custom date range"
+            aria-label="Choose a custom date range"
           >
             <svg className="w-3.5 h-3.5 inline-block" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
@@ -224,10 +227,12 @@ export default function ScheduleToolbar({
         <div className="flex bg-gray-100 rounded-lg p-0.5">
           <button
             onClick={() => onViewModeChange('day')}
-            className={`p-1.5 rounded-md transition-colors ${
-              viewMode === 'day' ? 'bg-white text-purple-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'
+            className={`min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 inline-flex items-center justify-center p-1.5 rounded-md transition-colors ${
+              viewMode === 'day' ? 'bg-white text-purple-600 shadow-sm' : 'text-gray-600 hover:text-gray-900'
             }`}
             title="Day View"
+            aria-label="Day View"
+            aria-pressed={viewMode === 'day'}
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5m-9-6h.008v.008H12v-.008zM12 15h.008v.008H12V15z" />
@@ -235,10 +240,12 @@ export default function ScheduleToolbar({
           </button>
           <button
             onClick={() => onViewModeChange('linear')}
-            className={`p-1.5 rounded-md transition-colors ${
-              viewMode === 'linear' ? 'bg-white text-purple-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'
+            className={`min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 inline-flex items-center justify-center p-1.5 rounded-md transition-colors ${
+              viewMode === 'linear' ? 'bg-white text-purple-600 shadow-sm' : 'text-gray-600 hover:text-gray-900'
             }`}
             title="Grid View"
+            aria-label="Grid View"
+            aria-pressed={viewMode === 'linear'}
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
@@ -246,10 +253,12 @@ export default function ScheduleToolbar({
           </button>
           <button
             onClick={() => onViewModeChange('calendar')}
-            className={`p-1.5 rounded-md transition-colors ${
-              viewMode === 'calendar' ? 'bg-white text-purple-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'
+            className={`min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 inline-flex items-center justify-center p-1.5 rounded-md transition-colors ${
+              viewMode === 'calendar' ? 'bg-white text-purple-600 shadow-sm' : 'text-gray-600 hover:text-gray-900'
             }`}
             title="Calendar View"
+            aria-label="Calendar View"
+            aria-pressed={viewMode === 'calendar'}
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -304,8 +313,9 @@ export default function ScheduleToolbar({
             </span>
             <button
               onClick={onClearClipboard}
-              className="p-0.5 rounded hover:bg-purple-100 text-purple-400 hover:text-purple-600 transition-colors"
+              className="min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 inline-flex items-center justify-center p-0.5 rounded hover:bg-purple-100 text-purple-600 hover:text-purple-800 transition-colors"
               title="Clear clipboard"
+              aria-label="Clear the copied shift"
             >
               <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

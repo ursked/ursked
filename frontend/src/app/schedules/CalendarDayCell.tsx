@@ -56,7 +56,7 @@ export default function CalendarDayCell({
       <div className="flex items-center justify-between mb-1">
         <span
           className={`text-sm font-semibold ${
-            isToday ? 'text-purple-700' : isCurrentMonth ? 'text-gray-800' : 'text-gray-400'
+            isToday ? 'text-purple-700' : isCurrentMonth ? 'text-gray-800' : 'text-gray-500'
           }`}
         >
           {dayNum}
@@ -106,7 +106,7 @@ export default function CalendarDayCell({
           );
         })}
         {Object.keys(statusCounts).length > 4 && (
-          <span className="text-[9px] text-gray-400">+{Object.keys(statusCounts).length - 4} more</span>
+          <span className="text-[9px] text-gray-500">+{Object.keys(statusCounts).length - 4} more</span>
         )}
       </div>
     </button>

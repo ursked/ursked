@@ -42,7 +42,7 @@ export default function MyPayslipsPage() {
         <h1 className="text-xl font-bold text-gray-900">My Payslips</h1>
 
         {isLoading ? (
-          <p className="text-sm text-gray-400">Loading…</p>
+          <p className="text-sm text-gray-500">Loading…</p>
         ) : (payslips ?? []).length === 0 ? (
           <EmptyState
             icon={Receipt}
@@ -71,7 +71,7 @@ export default function MyPayslipsPage() {
                       <div className="text-sm font-bold text-purple-700">
                         {peso(p.net_pay)}
                       </div>
-                      <div className="text-[11px] text-gray-400">net</div>
+                      <div className="text-[11px] text-gray-500">net</div>
                     </div>
                     <Badge tone={STATUS_TONE[p.status] ?? 'gray'}>{p.status}</Badge>
                   </div>
@@ -95,7 +95,7 @@ function PayslipModal({
   onClose: () => void
 }) {
   const { format: peso } = useCurrency()
-  const { data: slip } = useQuery<MyPayslipDetail>({
+  const { data: slip, isError: slipError, isLoading: slipLoading } = useQuery<MyPayslipDetail>({
     queryKey: ['my-payslip', periodId],
     queryFn: () => api.getMyPayslip(periodId as number),
     enabled: periodId != null,
@@ -122,8 +122,12 @@ function PayslipModal({
         </>
       }
     >
-      {!slip ? (
-        <p className="text-sm text-gray-400">Loading…</p>
+      {slipError ? (
+        /* `!slip` alone meant a failed detail fetch left the modal saying
+           "Loading…" for as long as it stayed open. */
+        <p className="text-sm text-red-700">Could not load this payslip. Close and try again.</p>
+      ) : slipLoading || !slip ? (
+        <p className="text-sm text-gray-500">Loading…</p>
       ) : (
         <div className="space-y-4 text-sm">
           <div className="rounded-lg bg-gray-50 p-3">

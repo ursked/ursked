@@ -177,7 +177,7 @@ export function Sidebar() {
     <div className="flex flex-col h-full bg-gray-900 text-white overflow-hidden">
       {/* Logo */}
       <div className={`flex items-center justify-between h-16 border-b border-gray-800 ${isCollapsed ? 'px-6 lg:px-3' : 'px-6'}`}>
-        <Link href="/dashboard" className={`flex items-center ${isCollapsed ? 'lg:justify-center lg:w-full' : ''}`}>
+        <Link href="/dashboard" aria-label="ursked — go to the dashboard" className={`flex items-center ${isCollapsed ? 'lg:justify-center lg:w-full' : ''}`}>
           {/* The wordmark's darker half would disappear on the dark sidebar, so
               it sits on a small white chip. Collapsed rail shows just the icon. */}
           <span className="inline-flex items-center rounded-md bg-white px-2 py-1">
@@ -221,7 +221,7 @@ export function Sidebar() {
               href={item.href}
               onClick={close}
               title={isCollapsed ? item.name : undefined}
-              className={`flex items-center ${rowJustify} px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+              className={`flex items-center ${rowJustify} px-3 py-2.5 min-h-[44px] rounded-lg text-sm font-medium transition-colors ${
                 isActive
                   ? 'bg-gray-700 text-white'
                   : 'text-gray-300 hover:bg-gray-800 hover:text-white'

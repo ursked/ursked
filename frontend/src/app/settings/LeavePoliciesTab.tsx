@@ -866,7 +866,7 @@ export default function LeavePoliciesTab() {
                                       <td className="px-3 py-2">
                                         {ent.requires_documentation ? (
                                           <span className="inline-flex items-center rounded-full bg-amber-100 text-amber-800 px-2 py-0.5 text-xs font-medium">Yes</span>
-                                        ) : <span className="text-gray-400">--</span>}
+                                        ) : <span className="text-gray-500">--</span>}
                                       </td>
                                       <td className="px-3 py-2 text-gray-600">{ent.min_notice_days > 0 ? `${ent.min_notice_days}d` : '--'}</td>
                                       <td className="px-3 py-2 text-right">

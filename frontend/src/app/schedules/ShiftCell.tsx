@@ -55,6 +55,7 @@ export default function ShiftCell({
 }: ShiftCellProps) {
   const hasShifts = shifts.length > 0;
   const [isDragOver, setIsDragOver] = useState(false);
+  const [warningsOpen, setWarningsOpen] = useState(false);
   const dragCounterRef = useRef(0);
 
   const handleClick = () => {
@@ -67,6 +68,20 @@ export default function ShiftCell({
   const handlePaste = (e: React.MouseEvent) => {
     e.stopPropagation();
     onPasteShift?.(employeeId, dateStr);
+  };
+
+  // An empty, editable cell is the one thing in the grid a keyboard user could
+  // not reach: shift cards are <button>s, but creating a shift meant clicking
+  // bare table cell. Only empty cells become tab stops, so a 7x16 grid adds at
+  // most a screenful of stops rather than 112.
+  // Excludes the clipboard case deliberately: when a shift has been copied the
+  // cell already renders a paste <button> filling it, and a role="button" cell
+  // wrapping a real button is nested interactive content.
+  const isInteractive = !hasShifts && !!onCellClick && !hasClipboard;
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    handleClick();
   };
 
   // Drag source handler (called by ShiftCard via onDragStart prop)
@@ -131,7 +146,23 @@ export default function ShiftCell({
 
   return (
     <td
-      className={`border-r border-b border-gray-100 p-0.5 align-top min-w-[100px] max-w-[120px] transition-colors cursor-pointer ${
+      // Interactive only when it can actually do something. An empty editable
+      // cell creates a shift on Enter/Space; occupied cells are reachable
+      // through the shift cards, which are real buttons already.
+      {...(isInteractive
+        ? {
+            role: 'button' as const,
+            tabIndex: 0,
+            onKeyDown: handleKeyDown,
+            'aria-label': `Add a shift on ${dateStr}`,
+          }
+        : {})}
+      // min-w drops to 56px on phones. It used to be a flat min-w-[100px] with
+      // no breakpoint, which silently overrode the 64px mobile minimum on the
+      // matching <th>: a table column takes the widest constraint across all
+      // its cells, so the header's intent never applied and the grid showed
+      // two days of seven.
+      className={`border-r border-b border-gray-100 p-0.5 align-top min-w-[56px] sm:min-w-[100px] max-w-[120px] transition-colors cursor-pointer ${
         isToday ? 'bg-purple-50/50' : isWeekend ? 'bg-gray-50/50' : 'bg-white'
       } ${
         remark?.is_holiday
@@ -150,14 +181,33 @@ export default function ShiftCell({
     >
       <div className="min-h-[56px] flex flex-col gap-0.5 p-0.5 relative group/cell">
         {warnings && warnings.length > 0 && (
-          <span
-            className="absolute top-0 right-0 z-20 flex h-4 w-4 items-center justify-center rounded-full bg-amber-400 text-white shadow-sm"
+          // Was a <span title=...>. The badge showed an amber triangle and the
+          // violation text lived only in the tooltip — which does not exist on
+          // touch, while the banner above the grid told the user to "hover the
+          // amber marks for details". Now a real button: tap or focus it and
+          // the messages appear in a panel.
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setWarningsOpen((v) => !v); }}
+            className="absolute top-0 right-0 z-20 flex h-4 w-4 items-center justify-center rounded-full bg-amber-500 text-white shadow-sm"
             title={warnings.join('\n')}
+            aria-expanded={warningsOpen}
+            aria-label={`${warnings.length} scheduling ${warnings.length === 1 ? 'warning' : 'warnings'}: ${warnings.join('; ')}`}
           >
-            <svg className="h-2.5 w-2.5" viewBox="0 0 24 24" fill="currentColor">
+            <svg className="h-2.5 w-2.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <path d="M12 2L1 21h22L12 2zm0 6l7.53 13H4.47L12 8zm-1 3v4h2v-4h-2zm0 5v2h2v-2h-2z" />
             </svg>
-          </span>
+          </button>
+        )}
+        {warningsOpen && warnings && warnings.length > 0 && (
+          <div
+            className="absolute top-4 right-0 z-30 w-56 rounded-lg border border-amber-200 bg-amber-50 p-2 text-left shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <ul className="list-disc space-y-1 pl-4 text-[11px] text-amber-900">
+              {warnings.map((w, i) => <li key={i}>{w}</li>)}
+            </ul>
+          </div>
         )}
         {actuals && (actuals.attendance_status || actuals.overtime_minutes > 0) && (
           <div className="flex items-center gap-1 flex-wrap">
@@ -201,7 +251,7 @@ export default function ShiftCell({
             />
             {/* Swap / Change actions for own shifts */}
             {isOwnShift && onSwapRequest && onChangeRequest && (
-              <div className="absolute inset-x-0 bottom-0 translate-y-full z-10 hidden group-hover/cell:flex gap-0.5 justify-center pt-0.5">
+              <div className="absolute inset-x-0 bottom-0 translate-y-full z-10 hidden group-hover/cell:flex group-focus-within/cell:flex gap-0.5 justify-center pt-0.5">
                 <button
                   type="button"
                   onClick={(e) => { e.stopPropagation(); onSwapRequest(shift); }}
@@ -233,7 +283,7 @@ export default function ShiftCell({
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); onCellClick(dateStr); }}
-            className="absolute bottom-0 left-0 z-20 hidden group-hover/cell:flex h-4 w-4 items-center justify-center rounded bg-purple-100 text-purple-700 hover:bg-purple-200 transition-colors"
+            className="absolute bottom-0 left-0 z-20 hidden group-hover/cell:flex group-focus-within/cell:flex h-5 w-5 items-center justify-center rounded bg-purple-100 text-purple-700 hover:bg-purple-200 transition-colors"
             title="Add another shift on this day (split shift)"
           >
             <svg className="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -246,8 +296,9 @@ export default function ShiftCell({
           <button
             type="button"
             onClick={handlePaste}
-            className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity bg-purple-50/50 rounded"
+            className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 focus:opacity-100 transition-opacity bg-purple-50/50 rounded"
             title="Paste shift (Ctrl+V)"
+            aria-label={`Paste the copied shift into ${dateStr}`}
           >
             <svg className="w-4 h-4 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />

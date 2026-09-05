@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/components/ui/Toast';
+import { ErrorMessage } from '@/components/ui/ErrorBoundary';
 import { api } from '@/lib/api';
 import { OrgNodeDetail, OrgNodeMember } from '@/types';
 import MemberAssignModal from './MemberAssignModal';
@@ -37,7 +38,7 @@ export default function NodeDetailPanel({ nodeId, canEdit, onClose, onUpdated, o
     schedule_visibility: '',
   });
 
-  const { data: node, isLoading } = useQuery<OrgNodeDetail>({
+  const { data: node, isLoading, isError, refetch } = useQuery<OrgNodeDetail>({
     queryKey: ['org-node', nodeId],
     queryFn: () => api.getOrgNode(nodeId),
     staleTime: 15_000,
@@ -137,6 +138,19 @@ export default function NodeDetailPanel({ nodeId, canEdit, onClose, onUpdated, o
   };
 
   const members: OrgNodeMember[] = membersData?.members ?? [];
+
+  // `isLoading || !node` spun forever on failure: isLoading goes false, node
+  // stays undefined, and the panel never leaves its loading branch.
+  if (isError || (!isLoading && !node)) {
+    return (
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+        <ErrorMessage
+          message="Could not load this unit."
+          onRetry={() => refetch()}
+        />
+      </div>
+    );
+  }
 
   if (isLoading || !node) {
     return (

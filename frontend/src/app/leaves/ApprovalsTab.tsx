@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { LeaveApplication, PaginatedResponse } from '@/types'
 import { useToast } from '@/components/ui/Toast'
+import { ErrorMessage } from '@/components/ui/ErrorBoundary'
 
 const STATUS_COLORS: Record<string, string> = {
   pending: 'bg-yellow-100 text-yellow-800',
@@ -26,7 +27,7 @@ export default function ApprovalsTab() {
   const [revokeNotes, setRevokeNotes] = useState('')
 
   // ── Queries ────────────────────────────────────────────────────────
-  const { data: pendingApprovals, isLoading } = useQuery<PaginatedResponse<LeaveApplication>>({
+  const { data: pendingApprovals, isLoading, isError, refetch } = useQuery<PaginatedResponse<LeaveApplication>>({
     queryKey: ['pending-approvals', page],
     queryFn: () => api.getPendingApprovals({ page: String(page), per_page: '10' }),
   })
@@ -157,7 +158,7 @@ export default function ApprovalsTab() {
                               </span>
                             </div>
                           ) : (
-                            <span className="text-xs text-gray-400">--</span>
+                            <span className="text-xs text-gray-500">--</span>
                           )}
                         </td>
                         <td className="px-4 py-3 text-right">
@@ -210,6 +211,14 @@ export default function ApprovalsTab() {
                 </div>
               )}
             </>
+          ) : isError ? (
+            /* Never claim an empty queue on a failed request. A reviewer told
+               "you're all caught up" stops looking, and the applications sit
+               there unapproved. */
+            <ErrorMessage
+              message="Could not load the approval queue. This is a loading failure, not an empty queue — do not treat it as nothing to review."
+              onRetry={() => refetch()}
+            />
           ) : (
             <div className="text-center py-12">
               <svg className="mx-auto h-12 w-12 text-gray-300" fill="none" viewBox="0 0 24 24" strokeWidth={1} stroke="currentColor">

@@ -251,7 +251,7 @@ export default function SalaryGradesTab() {
                     <button onClick={() => startEdit(g)} className="text-sm text-purple-600 hover:text-purple-800">Edit</button>
                     {deleteConfirmId === g.id ? (
                       <>
-                        <button onClick={() => deleteMutation.mutate(g.id)} className="text-sm text-red-600 hover:text-red-800">Confirm</button>
+                        <button onClick={() => deleteMutation.mutate(g.id)} disabled={deleteMutation.isPending} className="text-sm text-red-600 hover:text-red-800 disabled:opacity-50 disabled:cursor-not-allowed">{deleteMutation.isPending ? 'Deleting…' : 'Confirm'}</button>
                         <button onClick={() => setDeleteConfirmId(null)} className="text-sm text-gray-500 hover:text-gray-700">Cancel</button>
                       </>
                     ) : (

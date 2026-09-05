@@ -339,15 +339,15 @@ export default function EmployeesPage() {
                       </td>
                       {/* Personnel # */}
                       <td className="py-3 px-4 text-gray-600 hidden md:table-cell">
-                        {emp.personnel_number || <span className="text-gray-300">-</span>}
+                        {emp.personnel_number || <span className="text-gray-500">-</span>}
                       </td>
                       {/* Job title */}
                       <td className="py-3 px-4 text-gray-600 hidden lg:table-cell">
-                        {emp.job_title || <span className="text-gray-300">-</span>}
+                        {emp.job_title || <span className="text-gray-500">-</span>}
                       </td>
                       {/* Department */}
                       <td className="py-3 px-4 text-gray-600 hidden lg:table-cell">
-                        {emp.div_department || <span className="text-gray-300">-</span>}
+                        {emp.div_department || <span className="text-gray-500">-</span>}
                       </td>
                       {/* Role */}
                       <td className="py-3 px-4">

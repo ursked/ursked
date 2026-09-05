@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/components/ui/Toast';
+import { ErrorMessage } from '@/components/ui/ErrorBoundary';
 import { hasAnyRole } from '@/lib/roles';
 import { api } from '@/lib/api';
 import { OrgTreeNode as OrgTreeNodeType } from '@/types';
@@ -28,7 +29,7 @@ export default function OrganizationPage() {
   const [createParentId, setCreateParentId] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<'list' | 'chart'>('list');
 
-  const { data: treeData, isLoading } = useQuery({
+  const { data: treeData, isLoading, isError, refetch } = useQuery({
     queryKey: ['org-tree'],
     queryFn: () => api.getOrgTree(),
     staleTime: 30_000,
@@ -110,6 +111,16 @@ export default function OrganizationPage() {
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
             </svg>
+          </div>
+        ) : isError ? (
+          /* Offering "Configure Levels" to a tenant that already has them, on
+             the strength of a failed request, invites someone to rebuild an
+             org chart that is not actually missing. */
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+            <ErrorMessage
+              message="Could not load the organization structure. Nothing has been lost — this is a loading failure."
+              onRetry={() => refetch()}
+            />
           </div>
         ) : !hasLevels ? (
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-12 text-center">

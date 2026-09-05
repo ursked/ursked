@@ -163,7 +163,7 @@ export default function DashboardPage() {
                 </table>
               </div>
             ) : (
-              <p className="text-gray-400 text-sm">No recent leave applications</p>
+              <p className="text-gray-500 text-sm">No recent leave applications</p>
             )}
           </div>
 
@@ -200,7 +200,7 @@ export default function DashboardPage() {
                 </table>
               </div>
             ) : (
-              <p className="text-gray-400 text-sm">No recent overtime logs</p>
+              <p className="text-gray-500 text-sm">No recent overtime logs</p>
             )}
           </div>
         </div>
@@ -263,7 +263,7 @@ function KpiCard({ label, value, subtitle, icon, color, loading }: {
       ) : (
         <>
           <p className="text-3xl font-bold text-gray-900">{value?.toLocaleString() ?? '-'}</p>
-          {subtitle && <p className="text-xs text-gray-400 mt-1">{subtitle}</p>}
+          {subtitle && <p className="text-xs text-gray-500 mt-1">{subtitle}</p>}
         </>
       )}
     </div>

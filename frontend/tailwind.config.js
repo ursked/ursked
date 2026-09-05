@@ -52,10 +52,19 @@ module.exports = {
           '0%': { transform: 'translateX(-100%)' },
           '100%': { transform: 'translateX(0)' },
         },
+        // DayDetailPanel has always asked for `animate-slide-in-right`, which
+        // was defined neither here nor by tailwindcss-animate, so the class was
+        // inert and the panel appeared instantly. `slide-in` comes from the
+        // left, which is the wrong side for a right-hand drawer.
+        'slide-in-right': {
+          '0%': { transform: 'translateX(100%)' },
+          '100%': { transform: 'translateX(0)' },
+        },
       },
       animation: {
         'fade-in': 'fade-in 0.3s ease-out',
         'slide-in': 'slide-in 0.3s ease-out',
+        'slide-in-right': 'slide-in-right 0.3s ease-out',
       },
     },
   },

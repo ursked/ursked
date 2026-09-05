@@ -511,7 +511,7 @@ export default function EmployeeModal({ employee, onClose, onSaved }: EmployeeMo
                                           {hasViewSalary ? (
                                             <span className="text-green-600 font-bold text-xs">&#10003;</span>
                                           ) : (
-                                            <span className="text-gray-300 text-xs">&#8212;</span>
+                                            <span className="text-gray-500 text-xs">&#8212;</span>
                                           )}
                                         </td>
                                       ) : null}
@@ -568,7 +568,7 @@ export default function EmployeeModal({ employee, onClose, onSaved }: EmployeeMo
                                   {Object.values(effectivePerms).some(p => p.view_salary) ? (
                                     <span className="text-purple-600 font-bold text-xs">&#10003;</span>
                                   ) : (
-                                    <span className="text-gray-300 text-xs">&#8212;</span>
+                                    <span className="text-gray-500 text-xs">&#8212;</span>
                                   )}
                                 </td>
                               ) : null}

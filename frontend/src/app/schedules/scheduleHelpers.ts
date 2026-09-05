@@ -200,6 +200,88 @@ export function formatShiftTime(startTime?: string | null, endTime?: string | nu
   return '';
 }
 
+/**
+ * The same times as two separate strings, for stacking them on a phone.
+ *
+ * "20:00-04:00" needs 66px at 10px, and with the card and cell padding that
+ * alone sets a ~90px floor under the date column. A table column takes the
+ * widest constraint across its cells, so no `min-width` can undercut it — the
+ * only way to narrow the column is to stop printing the range on one line.
+ * Stacked, the widest string is "20:00" at ~27px.
+ */
+export function shiftTimeParts(
+  startTime?: string | null,
+  endTime?: string | null
+): { start: string; end: string } | null {
+  if (!startTime && !endTime) return null;
+  const fmt = (t: string) => t.substring(0, 5);
+  return {
+    start: startTime ? fmt(startTime) : '',
+    end: endTime ? fmt(endTime) : '',
+  };
+}
+
+// ── Contrast ─────────────────────────────────────────────────────────
+//
+// Status colours are tenant-chosen and unvalidated, and the card paints the
+// same colour as both its text and (at ~9% alpha) its background. Several of
+// the shipped defaults do not clear WCAG AA that way — amber #ca8a04 lands at
+// 2.9:1 — and an admin picking their own colour has nothing stopping them
+// going lower. Rather than police the picker, the card darkens the colour for
+// TEXT use only until it is readable. The chip, border and legend keep the
+// exact colour the admin chose, so the palette still looks like their palette.
+
+function hexToRgb(hex: string): [number, number, number] {
+  const h = hex.replace('#', '');
+  const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h;
+  const n = parseInt(full, 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+function toHex([r, g, b]: [number, number, number]): string {
+  return '#' + [r, g, b].map((v) => Math.round(v).toString(16).padStart(2, '0')).join('');
+}
+
+function luminance([r, g, b]: [number, number, number]): number {
+  const f = (v: number) => {
+    const s = v / 255;
+    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  };
+  return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+}
+
+function ratio(a: [number, number, number], b: [number, number, number]): number {
+  const [hi, lo] = luminance(a) > luminance(b) ? [luminance(a), luminance(b)] : [luminance(b), luminance(a)];
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+/** The card background: `color` at alpha 0x18 (~9.4%) over white. */
+export function cardTint(hex: string): [number, number, number] {
+  const a = 0x18 / 255;
+  const [r, g, b] = hexToRgb(hex);
+  return [r * a + 255 * (1 - a), g * a + 255 * (1 - a), b * a + 255 * (1 - a)];
+}
+
+/**
+ * Darken `hex` until it clears `min` against its own card tint. Returns the
+ * original when it already passes, so well-chosen colours are untouched.
+ */
+export function readableOnTint(hex: string, min = 4.5): string {
+  let rgb: [number, number, number];
+  try {
+    rgb = hexToRgb(hex);
+  } catch {
+    return hex;
+  }
+  const bg = cardTint(hex);
+  // 40 steps of 6% reaches black from any starting colour; the loop exits as
+  // soon as the ratio is met, which for the shipped palette is within 6 steps.
+  for (let i = 0; i < 40 && ratio(rgb, bg) < min; i++) {
+    rgb = [rgb[0] * 0.94, rgb[1] * 0.94, rgb[2] * 0.94];
+  }
+  return toHex(rgb);
+}
+
 // ── Status resolution ────────────────────────────────────────────────
 //
 // One place decides how a status code is presented. Everything else in the

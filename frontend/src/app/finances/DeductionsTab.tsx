@@ -291,7 +291,8 @@ export default function DeductionsTab() {
                     <button
                       type="button"
                       onClick={() => updateMutation.mutate({ id: dt.id, data: { is_active: !dt.is_active } })}
-                      className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 ${dt.is_active ? 'bg-purple-600' : 'bg-gray-200'}`}
+                      disabled={updateMutation.isPending}
+                      className={`relative inline-flex h-5 w-9 disabled:opacity-50 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 ${dt.is_active ? 'bg-purple-600' : 'bg-gray-200'}`}
                       title={dt.is_active ? 'Click to deactivate' : 'Click to activate'}
                     >
                       <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${dt.is_active ? 'translate-x-4' : 'translate-x-0'}`} />
@@ -301,7 +302,7 @@ export default function DeductionsTab() {
                     <button onClick={() => startEdit(dt)} className="text-sm text-purple-600 hover:text-purple-800">Edit</button>
                     {deleteConfirmId === dt.id ? (
                       <>
-                        <button onClick={() => deleteMutation.mutate(dt.id)} className="text-sm text-red-600 hover:text-red-800">Confirm</button>
+                        <button onClick={() => deleteMutation.mutate(dt.id)} disabled={deleteMutation.isPending} className="text-sm text-red-600 hover:text-red-800 disabled:opacity-50 disabled:cursor-not-allowed">{deleteMutation.isPending ? 'Deleting…' : 'Confirm'}</button>
                         <button onClick={() => setDeleteConfirmId(null)} className="text-sm text-gray-500 hover:text-gray-700">Cancel</button>
                       </>
                     ) : (

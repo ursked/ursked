@@ -329,7 +329,7 @@ export default function MyLeaveTab() {
                               </span>
                             </div>
                           ) : (
-                            <span className="text-xs text-gray-400">--</span>
+                            <span className="text-xs text-gray-500">--</span>
                           )}
                         </td>
                         <td className="px-4 py-3 text-right">

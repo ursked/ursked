@@ -231,7 +231,7 @@ export default function ProfilePage() {
                       <span key={r} className="inline-flex items-center rounded-full bg-purple-100 text-purple-800 px-2.5 py-0.5 text-xs font-medium">
                         {r}
                       </span>
-                    )) : <span className="text-sm text-gray-400">--</span>}
+                    )) : <span className="text-sm text-gray-500">--</span>}
                   </dd>
                 </div>
               </dl>

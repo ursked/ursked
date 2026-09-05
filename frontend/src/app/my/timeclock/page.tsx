@@ -9,6 +9,7 @@ import { captureLocation, canCaptureLocation, geoFailureMessage } from '@/lib/ge
 import type { TimeclockToday, TimePunch } from '@/types'
 import { useToast } from '@/components/ui/Toast'
 import { Button, Card, CardBody, Badge, EmptyState } from '@/components/ui'
+import { ErrorMessage } from '@/components/ui/ErrorBoundary'
 
 const ARRANGEMENT_LABEL: Record<string, string> = {
   onsite: 'On-site',
@@ -75,7 +76,7 @@ export default function TimeclockPage() {
     return () => clearInterval(t)
   }, [])
 
-  const { data, isLoading } = useQuery<TimeclockToday>({
+  const { data, isLoading, isError, refetch } = useQuery<TimeclockToday>({
     queryKey: ['timeclock-today'],
     queryFn: () => api.getMyTimeclockToday(),
     // The app registers a service worker, and a cached shell showing "Clock in"
@@ -144,6 +145,24 @@ export default function TimeclockPage() {
     )
   }
 
+  // `!data?.timeclock_enabled` conflated two very different states: the feature
+  // being off, and the request having failed. On any error `data` is undefined,
+  // so a network blip told the employee their time clock was disabled and sent
+  // them to an administrator who would find nothing wrong.
+  if (isError) {
+    return (
+      <DashboardLayout>
+        <div className="p-4 sm:p-6 max-w-2xl">
+          <h1 className="text-2xl font-bold text-gray-900 mb-1">Time Clock</h1>
+          <ErrorMessage
+            message="Could not reach the time clock. Your punches are safe — this is a loading failure, not a disabled feature."
+            onRetry={() => refetch()}
+          />
+        </div>
+      </DashboardLayout>
+    )
+  }
+
   if (!data?.timeclock_enabled) {
     return (
       <DashboardLayout>
@@ -187,7 +206,7 @@ export default function TimeclockPage() {
 
         <Card>
           <CardBody className="text-center py-8">
-            <div className="text-xs uppercase tracking-wide text-gray-400 mb-1">
+            <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">
               {nextIn ? 'Not clocked in' : 'Clocked in since'}
             </div>
             <div className="text-3xl font-semibold text-gray-900 mb-5">
@@ -256,7 +275,7 @@ export default function TimeclockPage() {
                         </Badge>
                       )}
                       {s.geofence_mode === 'require_site' && (
-                        <span className="text-gray-400">on-site expected</span>
+                        <span className="text-gray-500">on-site expected</span>
                       )}
                     </span>
                   </div>

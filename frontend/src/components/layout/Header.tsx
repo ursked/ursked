@@ -28,7 +28,8 @@ export function Header() {
       {/* Left: mobile menu button */}
       <button
         onClick={toggle}
-        className="lg:hidden text-gray-500 hover:text-gray-700"
+        className="lg:hidden inline-flex items-center justify-center min-h-[44px] min-w-[44px] -ml-2 text-gray-600 hover:text-gray-900"
+        aria-label="Open the navigation menu"
       >
         <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
@@ -46,7 +47,9 @@ export function Header() {
         <div className="relative" ref={dropdownRef}>
           <button
             onClick={() => setDropdownOpen(!dropdownOpen)}
-            className="flex items-center gap-2 hover:bg-gray-50 rounded-lg px-2 py-1.5 transition-colors"
+            className="flex items-center gap-2 min-h-[44px] hover:bg-gray-50 rounded-lg px-2 py-1.5 transition-colors"
+            aria-label="Account menu"
+            aria-expanded={dropdownOpen}
           >
             <div className="w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center text-white text-sm font-medium">
               {user?.first_name?.[0]}

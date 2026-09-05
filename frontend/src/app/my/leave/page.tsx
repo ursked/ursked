@@ -85,7 +85,7 @@ export default function MyLeavePage() {
                 <div className="truncate text-sm font-medium text-gray-700">
                   {b.leave_type_name}
                 </div>
-                <div className="mt-1 text-xs text-gray-400">
+                <div className="mt-1 text-xs text-gray-500">
                   {b.used_days} used · {b.pending_days} pending
                 </div>
               </CardBody>
@@ -269,7 +269,7 @@ function FileLeaveModal({
           </div>
         )}
         {precheck && (
-          <p className="text-xs text-gray-400">
+          <p className="text-xs text-gray-500">
             {precheck.days_requested} business day(s) requested.
           </p>
         )}

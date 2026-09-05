@@ -724,7 +724,7 @@ export default function DataTab() {
                       >
                         Select All
                       </button>
-                      <span className="text-xs text-gray-300">|</span>
+                      <span className="text-xs text-gray-500">|</span>
                       <button
                         onClick={() => clearColumnsForSource(srcKey)}
                         className="text-xs text-gray-500 hover:text-gray-700 font-medium"

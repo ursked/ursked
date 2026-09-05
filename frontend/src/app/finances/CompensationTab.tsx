@@ -121,9 +121,10 @@ export default function CompensationTab() {
                     {it.status === 'scheduled' && (
                       <button
                         onClick={() => voidMut.mutate(it.id)}
-                        className="text-xs font-medium text-red-600 hover:underline"
+                        disabled={voidMut.isPending}
+                        className="text-xs font-medium text-red-600 hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        Void
+                        {voidMut.isPending ? 'Voiding…' : 'Void'}
                       </button>
                     )}
                   </td>

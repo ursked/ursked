@@ -292,17 +292,25 @@ export default function LinearGridView({
           the page, so the header drifted by however far the page was scrolled. */}
       <div
         ref={scrollRef}
-        className="overflow-auto overscroll-none rounded-xl touch-pan-x touch-pan-y h-[70vh] sm:h-auto sm:max-h-[calc(100vh-320px)]"
+        // touch-pinch-zoom is not cosmetic. `touch-pan-x touch-pan-y` alone
+        // resolves to `touch-action: pan-x pan-y`, which EXCLUDES pinch-zoom,
+        // so the one surface in the product carrying 8-11px text was also the
+        // one surface a user could not magnify.
+        className="overflow-auto overscroll-none rounded-xl touch-pan-x touch-pan-y touch-pinch-zoom h-[70vh] sm:h-auto sm:max-h-[calc(100vh-320px)]"
       >
         {/* border-separate, NOT border-collapse. position:sticky on a th/td is
             ignored by WebKit when the table collapses its borders, so on iOS the
             pinned header and employee column detach and drift as you scroll.
             Cells carry their own border-b/border-r, so nothing doubles up. */}
         <table className="w-full border-separate border-spacing-0">
+          <caption className="sr-only">
+            Staff schedule: one row per employee, one column per day, from {dates[0]} to{' '}
+            {dates[dates.length - 1]}.
+          </caption>
           <thead>
             <tr>
               {/* Employee column header — pinned top AND left (corner cell) */}
-              <th className="sticky top-0 left-0 z-40 bg-gray-50 border-b border-r border-gray-200 px-2 sm:px-4 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-[52px] min-w-[52px] sm:w-auto sm:min-w-[200px]">
+              <th scope="col" className="sticky top-0 left-0 z-40 bg-gray-50 border-b border-r border-gray-200 px-2 sm:px-4 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-[52px] min-w-[52px] sm:w-auto sm:min-w-[200px]">
                 <span className="sm:hidden">Emp</span>
                 <span className="hidden sm:inline">Employee</span>
               </th>
@@ -317,11 +325,15 @@ export default function LinearGridView({
                 return (
                   <th
                     key={dateStr}
-                    className={`sticky top-0 z-30 border-b border-r border-gray-200 px-1 py-2 text-center min-w-[64px] sm:min-w-[100px] max-w-[120px] ${
+                    scope="col"
+                    className={`sticky top-0 z-30 border-b border-r border-gray-200 px-1 py-2 text-center min-w-[56px] sm:min-w-[100px] max-w-[120px] ${
                       isToday ? 'bg-purple-50' : isWeekend ? 'bg-gray-50' : 'bg-gray-100'
                     }`}
                   >
-                    <div className="text-[10px] text-gray-400 uppercase">{dayName}</div>
+                    {/* gray-400 on these header tints measured 2.3:1 against a
+                        4.5:1 requirement — roughly half. This is the primary
+                        orientation cue in a grid you scroll sideways. */}
+                    <div className="text-[10px] text-gray-600 uppercase">{dayName}</div>
                     <div className={`text-sm font-semibold ${isToday ? 'text-purple-600' : 'text-gray-700'}`}>
                       {dayNum}
                     </div>
@@ -332,7 +344,7 @@ export default function LinearGridView({
                             ? remark.is_special
                               ? 'text-amber-700 font-medium'
                               : 'text-red-600 font-medium'
-                            : 'text-blue-500'
+                            : 'text-blue-700 font-medium'
                         }`}
                         title={
                           remark.is_holiday
@@ -364,7 +376,9 @@ export default function LinearGridView({
                 >
                   {/* Sticky employee name with drag handle (left-pinned, under the
                       header corner but above the scrolling shift cells) */}
-                  <td className={`sticky left-0 z-20 bg-white group-hover:bg-gray-50 border-b border-r border-gray-200 px-2 py-2 transition-colors ${isDragging ? 'opacity-40' : ''}`}>
+                  {/* A row header, not a plain cell. As a <td> the grid gave a
+                      screen reader 112 cells with no row label at all. */}
+                  <th scope="row" className={`sticky left-0 z-20 bg-white group-hover:bg-gray-50 border-b border-r border-gray-200 px-2 py-2 text-left font-normal transition-colors ${isDragging ? 'opacity-40' : ''}`}>
                     <div className="flex items-center gap-1.5">
                       {/* Drag grip handle */}
                       <div
@@ -396,14 +410,19 @@ export default function LinearGridView({
                           title={emp.employee_name}
                         >
                           {initialsOf(emp.employee_name)}
+                          {/* The title alone was the whole name on the ONE
+                              device class where tooltips do not exist. It stays
+                              for mouse users, but the row now carries the name
+                              in the accessibility tree too. */}
+                          <span className="sr-only">{emp.employee_name}</span>
                         </p>
                         <p className="hidden sm:block text-xs font-medium text-gray-900 truncate">{emp.employee_name}</p>
                         {emp.section_name && (
-                          <p className="hidden sm:block text-[10px] text-gray-400 truncate">{emp.section_name}</p>
+                          <p className="hidden sm:block text-[10px] text-gray-600 truncate">{emp.section_name}</p>
                         )}
                       </div>
                     </div>
-                  </td>
+                  </th>
                   {dates.map((dateStr) => {
                     const d = new Date(dateStr + 'T00:00:00');
                     const isToday = dateStr === today;

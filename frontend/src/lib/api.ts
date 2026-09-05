@@ -202,6 +202,20 @@ class ApiClient {
         typeof (rawDetail as { message?: unknown }).message === 'string'
       ) {
         message = (rawDetail as { message: string }).message;
+      } else if (Array.isArray(rawDetail)) {
+        // FastAPI 422: an array of {loc, msg, type}. JSON.stringify put the raw
+        // objects on screen, so a user correcting a form saw
+        // [{"type":"missing","loc":["body","start_time"],...}].
+        message = rawDetail
+          .map((item) => {
+            if (!item || typeof item !== 'object') return String(item);
+            const e = item as { loc?: unknown[]; msg?: string };
+            const field = Array.isArray(e.loc)
+              ? e.loc.filter((p) => p !== 'body').join(' → ')
+              : '';
+            return field ? `${field}: ${e.msg ?? 'invalid'}` : (e.msg ?? 'invalid');
+          })
+          .join('; ');
       } else {
         message = JSON.stringify(rawDetail);
       }

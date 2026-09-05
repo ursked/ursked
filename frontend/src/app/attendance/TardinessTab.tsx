@@ -120,7 +120,7 @@ export default function TardinessTab() {
                             {rec.resolution_type.replace('_', ' ')}
                           </span>
                         ) : (
-                          <span className="text-xs text-gray-400 italic">Unresolved</span>
+                          <span className="text-xs text-gray-500 italic">Unresolved</span>
                         )}
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-600">

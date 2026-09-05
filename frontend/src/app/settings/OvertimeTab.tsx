@@ -378,7 +378,7 @@ export default function OvertimeTab() {
                             )}
                           </>
                         ) : (
-                          <span className="text-sm text-gray-400">--</span>
+                          <span className="text-sm text-gray-500">--</span>
                         )}
                       </td>
                       <td className="px-4 py-3">
@@ -395,7 +395,7 @@ export default function OvertimeTab() {
                             )}
                           </div>
                         ) : (
-                          <span className="text-gray-400">--</span>
+                          <span className="text-gray-500">--</span>
                         )}
                       </td>
                       <td className="px-4 py-3">

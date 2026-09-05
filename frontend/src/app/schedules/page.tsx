@@ -11,6 +11,7 @@ import { api } from '@/lib/api';
 import { ScheduleGrid, Shift, AppSettings, ShiftStatusType, UserPreferences, OrgTreeNode, ShiftActuals } from '@/types';
 import { buildStatusMaps, toLocalDateStr } from './scheduleHelpers';
 import { useToast } from '@/components/ui/Toast';
+import { ErrorMessage } from '@/components/ui/ErrorBoundary';
 
 export interface ClipboardShift {
   status: string;
@@ -334,7 +335,7 @@ function SchedulesPageInner() {
     [start, end, search, orgNodeId, showActuals],
   );
 
-  const { data: gridData, isLoading: gridLoading } = useQuery<ScheduleGrid>({
+  const { data: gridData, isLoading: gridLoading, isError: gridError, refetch: refetchGrid } = useQuery<ScheduleGrid>({
     queryKey: ['schedule-grid', gridQueryParams],
     queryFn: () => api.getScheduleGrid(gridQueryParams) as Promise<ScheduleGrid>,
     staleTime: 30_000,
@@ -713,7 +714,7 @@ function SchedulesPageInner() {
               <path d="M12 2L1 21h22L12 2zm0 6l7.53 13H4.47L12 8zm-1 3v4h2v-4h-2zm0 5v2h2v-2h-2z" />
             </svg>
             <span>
-              <span className="font-semibold">{violationCount}</span> guardrail warning{violationCount !== 1 ? 's' : ''} in this range — hover the amber marks on the grid for details.
+              <span className="font-semibold">{violationCount}</span> guardrail warning{violationCount !== 1 ? 's' : ''} in this range — tap or hover the amber marks on the grid for details.
             </span>
           </div>
         )}
@@ -783,8 +784,20 @@ function SchedulesPageInner() {
           </div>
         )}
 
+        {/* A failed grid fetch used to render an empty roster under a stats bar
+            reading 0 employees / 0 shifts — indistinguishable from a genuinely
+            blank week, on the screen people use to decide who is working. */}
+        {!isLoading && gridError && (
+          <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <ErrorMessage
+              message="Could not load the schedule. The counts above are not real — nothing was returned for this range."
+              onRetry={() => refetchGrid()}
+            />
+          </div>
+        )}
+
         {/* Day View */}
-        {!isLoading && viewMode === 'day' && (
+        {!isLoading && !gridError && viewMode === 'day' && (
           <DayView
             employees={employees}
             dates={dates}
@@ -800,7 +813,7 @@ function SchedulesPageInner() {
         )}
 
         {/* Grid / Calendar */}
-        {!isLoading && viewMode === 'linear' && (
+        {!isLoading && !gridError && viewMode === 'linear' && (
           <LinearGridView
             employees={employees}
             dates={dates}
@@ -825,7 +838,7 @@ function SchedulesPageInner() {
           />
         )}
 
-        {!isLoading && viewMode === 'calendar' && (
+        {!isLoading && !gridError && viewMode === 'calendar' && (
           <CalendarView
             employees={employees}
             dates={dates}

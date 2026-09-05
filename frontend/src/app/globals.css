@@ -94,3 +94,49 @@
     user-drag: none;
   }
 }
+
+/* Focus visibility.
+ *
+ * 93 of the app's 101 `focus:outline-none` declarations pair with
+ * `focus:ring-<colour>` and nothing else. In Tailwind a ring colour without a
+ * ring WIDTH renders nothing, and @tailwindcss/forms — which would have
+ * supplied a default width — is not installed. The result was that almost every
+ * input, select and button in the product removed the browser's focus ring and
+ * put nothing back.
+ *
+ * Rather than edit 93 call sites, one :focus-visible rule restores a ring
+ * everywhere. :focus-visible (not :focus) means a mouse click does not paint a
+ * ring, which is why the outlines were being removed in the first place. */
+:focus-visible {
+  outline: 2px solid #7c3aed;
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Reduced motion.
+ *
+ * The app runs 59 `animate-spin`, 7 `animate-pulse`, an `animate-ping`, a
+ * hover:scale on every shift chip and a 300ms sidebar slide, none of which
+ * consulted the user's preference. Spinners keep a slow rotation rather than
+ * freezing, because a motionless spinner reads as a hung request. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .animate-spin {
+    animation: spin 1.5s linear infinite !important;
+  }
+
+  /* Hover growth on shift chips is pure decoration and the most likely thing
+   * in the grid to provoke discomfort, since it fires on every cell crossed. */
+  .hover\:scale-\[1\.02\]:hover,
+  .hover\:scale-105:hover {
+    transform: none !important;
+  }
+}

@@ -94,7 +94,7 @@ export default function TeamOverviewTab() {
                   ))}
                 </div>
               ) : (
-                <p className="text-sm text-gray-400">No data available</p>
+                <p className="text-sm text-gray-500">No data available</p>
               )}
             </div>
 
@@ -119,7 +119,7 @@ export default function TeamOverviewTab() {
                   ))}
                 </div>
               ) : (
-                <p className="text-sm text-gray-400">No data available</p>
+                <p className="text-sm text-gray-500">No data available</p>
               )}
             </div>
           </div>
@@ -202,7 +202,7 @@ export default function TeamOverviewTab() {
                               </span>
                             </div>
                           ) : (
-                            <span className="text-xs text-gray-400">--</span>
+                            <span className="text-xs text-gray-500">--</span>
                           )}
                         </td>
                       </tr>

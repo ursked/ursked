@@ -116,11 +116,11 @@ export default function CopyWeekModal({
                     {preview.resolvable_conflicts.length} target slot(s) already have shifts / hit a guardrail:
                   </p>
                   <label className="flex items-center gap-2 text-xs text-gray-700">
-                    <input type="radio" checked={onConflict === 'skip'} onChange={() => setOnConflict('skip')} />
+                    <input type="radio" name="copy-week-on-conflict" checked={onConflict === 'skip'} onChange={() => setOnConflict('skip')} />
                     Skip them (keep existing)
                   </label>
                   <label className="flex items-center gap-2 text-xs text-gray-700">
-                    <input type="radio" checked={onConflict === 'overwrite'} onChange={() => setOnConflict('overwrite')} />
+                    <input type="radio" name="copy-week-on-conflict" checked={onConflict === 'overwrite'} onChange={() => setOnConflict('overwrite')} />
                     Overwrite them (approved leave still kept)
                   </label>
                 </div>
