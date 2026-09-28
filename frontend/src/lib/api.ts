@@ -260,6 +260,11 @@ class ApiClient {
             credentials: 'include',
             headers: this.getHeaders('POST'),
           });
+          // Read the body even though only the status matters. API responses
+          // are Cache-Control: no-store, so the browser cannot drain an unread
+          // body into its cache: the request stays open until the page is
+          // closed, one per signed-out visit, and the page never goes idle.
+          await response.text().catch(() => undefined);
           return response.ok;
         } catch {
           return false;
@@ -547,7 +552,10 @@ class ApiClient {
       credentials: 'include',
       headers: this.getHeaders('GET'),
     });
-    if (!response.ok) throw new Error('Export failed');
+    if (!response.ok) {
+      await response.text().catch(() => undefined); // release the unread body (see refreshToken)
+      throw new Error('Export failed');
+    }
     return response.blob();
   }
 
