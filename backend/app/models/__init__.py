@@ -19,6 +19,8 @@ from app.models.compensation import PayoutSchedule, CompensationItem
 from app.models.salary_enrollment import SalaryEnrollment, SalaryEnrollmentRequest
 from app.models.notification import Notification
 from app.models.email_log import EmailLog
+# Area E (employees): company-defined profile fields.
+from app.models.employee_field import EmployeeFieldDefinition, EmployeeFieldValue
 
 __all__ = [
     "Tenant",
@@ -78,4 +80,17 @@ __all__ = [
     "SalaryEnrollmentRequest",
     "Notification",
     "EmailLog",
+    # Area E (employees)
+    "EmployeeFieldDefinition",
+    "EmployeeFieldValue",
 ]
+
+# Area L (leave, approvals, organization)
+from app.models.leave import LeaveApprovalEvent, LeaveApproverRuleStep  # noqa: E402
+
+__all__ += ["LeaveApprovalEvent", "LeaveApproverRuleStep"]
+
+# Area S: live holiday feed source (migration 062).
+from app.models.schedule import HolidaySource  # noqa: E402
+
+__all__.append("HolidaySource")

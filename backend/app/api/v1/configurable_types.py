@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.middleware.auth import get_current_user, require_role
+from app.middleware.auth import get_current_user, require_permission
 from app.models.configurable_types import EmployeeType, ScheduleFormat
 from app.models.user import User
 from app.schemas.configurable_types import (
@@ -19,6 +19,13 @@ from app.schemas.configurable_types import (
 from app.services.configurable_type_service import ConfigurableTypeService
 
 router = APIRouter(tags=["configurable-types"])
+
+# Employee types and schedule formats are company configuration, so they follow
+# the settings row of the permission matrix: settings:view to see the full list
+# (inactive entries included), settings:edit to add, change or retire one. The
+# defaults give settings:edit to tenant_admin only, which is exactly who could
+# manage them before. The active lists stay open to every signed-in user: the
+# employee form, profile and grid need the names to label what they show.
 
 
 # ── Employee Types ──────────────────────────────────────────────────────
@@ -45,7 +52,7 @@ async def list_employee_types(
 async def list_all_employee_types(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_role(["tenant_admin"])),
+    _=Depends(require_permission("settings", "view")),
 ):
     """List all employee types including inactive (for admin management)."""
     stmt = (
@@ -61,7 +68,7 @@ async def list_all_employee_types(
 async def backfill_employee_types(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_role(["tenant_admin"])),
+    _=Depends(require_permission("settings", "edit")),
 ):
     """Ensure this tenant has the generic seed employee types plus any codes
     already referenced by existing users. Fixes tenants whose type list is
@@ -85,7 +92,7 @@ async def create_employee_type(
     data: EmployeeTypeCreate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_role(["tenant_admin"])),
+    _=Depends(require_permission("settings", "edit")),
 ):
     # Check uniqueness
     existing = await db.execute(
@@ -116,7 +123,7 @@ async def update_employee_type(
     data: EmployeeTypeUpdate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_role(["tenant_admin"])),
+    _=Depends(require_permission("settings", "edit")),
 ):
     et = await db.get(EmployeeType, type_id)
     if not et or et.tenant_id != current_user.tenant_id:
@@ -136,7 +143,7 @@ async def delete_employee_type(
     type_id: int,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_role(["tenant_admin"])),
+    _=Depends(require_permission("settings", "edit")),
 ):
     et = await db.get(EmployeeType, type_id)
     if not et or et.tenant_id != current_user.tenant_id:
@@ -193,7 +200,7 @@ async def list_schedule_formats(
 async def list_all_schedule_formats(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_role(["tenant_admin"])),
+    _=Depends(require_permission("settings", "view")),
 ):
     """List all schedule formats including inactive (for admin management)."""
     stmt = (
@@ -210,7 +217,7 @@ async def create_schedule_format(
     data: ScheduleFormatCreate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_role(["tenant_admin"])),
+    _=Depends(require_permission("settings", "edit")),
 ):
     existing = await db.execute(
         select(ScheduleFormat).where(
@@ -253,7 +260,7 @@ async def update_schedule_format(
     data: ScheduleFormatUpdate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_role(["tenant_admin"])),
+    _=Depends(require_permission("settings", "edit")),
 ):
     sf = await db.get(ScheduleFormat, format_id)
     if not sf or sf.tenant_id != current_user.tenant_id:
@@ -273,7 +280,7 @@ async def delete_schedule_format(
     format_id: int,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_role(["tenant_admin"])),
+    _=Depends(require_permission("settings", "edit")),
 ):
     sf = await db.get(ScheduleFormat, format_id)
     if not sf or sf.tenant_id != current_user.tenant_id:

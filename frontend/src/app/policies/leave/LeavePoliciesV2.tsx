@@ -14,8 +14,10 @@ import {
   EmptyState,
   ConfirmDialog,
 } from '@/components/ui'
-import { POOL_TYPE, ACCRUAL_METHOD, APPROVAL_MODE } from '@/lib/copy/policies'
+import { POOL_TYPE, ACCRUAL_METHOD, APPROVAL_MODE, ENFORCEMENT_RULES } from '@/lib/copy/policies'
+import { usePermissions } from '@/contexts/PermissionsContext'
 import PolicyWizard from './PolicyWizard'
+import LeaveTypesSection from './LeaveTypesSection'
 
 function completenessWarnings(p: LeavePolicy): string[] {
   const c = p.completeness
@@ -31,7 +33,7 @@ function completenessWarnings(p: LeavePolicy): string[] {
     out.push('No employment types selected and not the default — this policy may never apply.')
   }
   if (!c.enforcement_configured) {
-    out.push('No enforcement rules set — filing limits are not checked.')
+    out.push('No filing rules set: limits are not enforced (employees are still warned about overlaps and overdrawn balances).')
   }
   return out
 }
@@ -41,6 +43,10 @@ export default function LeavePoliciesV2() {
   const { showToast } = useToast()
   const [wizardOpen, setWizardOpen] = useState(false)
   const [editing, setEditing] = useState<LeavePolicy | null>(null)
+  const [wizardStep, setWizardStep] = useState(0)
+  const { hasPermission } = usePermissions()
+  const canEdit = hasPermission('leave', 'edit')
+  const canDelete = hasPermission('leave', 'delete')
   const [deactivateId, setDeactivateId] = useState<number | null>(null)
 
   const { data: policies, isLoading } = useQuery<LeavePolicy[]>({
@@ -69,10 +75,12 @@ export default function LeavePoliciesV2() {
 
   const openCreate = () => {
     setEditing(null)
+    setWizardStep(0)
     setWizardOpen(true)
   }
-  const openEdit = (p: LeavePolicy) => {
+  const openEdit = (p: LeavePolicy, step = 0) => {
     setEditing(p)
+    setWizardStep(step)
     setWizardOpen(true)
   }
 
@@ -84,9 +92,11 @@ export default function LeavePoliciesV2() {
         <p className="text-sm text-gray-500">
           Leave policies decide how many days each group of employees gets and how requests are approved.
         </p>
-        <Button onClick={openCreate}>
-          <Plus className="h-4 w-4" /> New policy
-        </Button>
+        {canEdit && (
+          <Button onClick={openCreate}>
+            <Plus className="h-4 w-4" /> New policy
+          </Button>
+        )}
       </div>
 
       {isLoading ? (
@@ -96,7 +106,7 @@ export default function LeavePoliciesV2() {
           icon={Plus}
           title="No leave policies yet"
           description="Create your first policy to define leave allowances and approval flow."
-          action={<Button onClick={openCreate}>Create a policy</Button>}
+          action={canEdit ? <Button onClick={openCreate}>Create a policy</Button> : undefined}
         />
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
@@ -131,6 +141,9 @@ export default function LeavePoliciesV2() {
                     <Badge tone="gray">{POOL_TYPE[p.pool_type].label}</Badge>
                     <Badge tone="gray">{ACCRUAL_METHOD[p.accrual_method].label}</Badge>
                     <Badge tone="blue">{APPROVAL_MODE[p.approval_mode].label}</Badge>
+                    <Badge tone="blue">
+                      {p.required_approval_levels > 1 ? `${p.required_approval_levels} approval levels` : '1 approver'}
+                    </Badge>
                     <Badge tone={entCount ? 'green' : 'yellow'}>
                       {entCount} leave type{entCount === 1 ? '' : 's'} funded
                     </Badge>
@@ -160,21 +173,48 @@ export default function LeavePoliciesV2() {
                     </div>
                   )}
 
-                  <div className="flex gap-2 pt-1">
-                    <Button variant="secondary" size="sm" onClick={() => openEdit(p)}>
-                      <Pencil className="h-3.5 w-3.5" /> Edit
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      loading={clone.isPending}
-                      onClick={() => clone.mutate(p.id)}
-                    >
-                      <Copy className="h-3.5 w-3.5" /> Clone
-                    </Button>
-                    <Button variant="ghost" size="sm" onClick={() => setDeactivateId(p.id)}>
-                      <Power className="h-3.5 w-3.5" /> Deactivate
-                    </Button>
+                  {/* Filing rules, visible on the card so they can be found */}
+                  <div className="rounded-lg border border-gray-200 px-3 py-2">
+                    <div className="text-xs font-medium text-gray-700">Filing rules</div>
+                    <ul className="mt-1 grid gap-0.5 text-xs text-gray-600 sm:grid-cols-2">
+                      {ENFORCEMENT_RULES.map((r) => {
+                        const mode = p.enforcement?.[r.key] ?? 'off'
+                        return (
+                          <li key={r.key}>
+                            {r.label}:{' '}
+                            <span className={mode === 'block' ? 'font-medium text-red-700' : mode === 'warn' ? 'font-medium text-amber-700' : 'text-gray-500'}>
+                              {mode === 'block' ? 'Block' : mode === 'warn' ? 'Warn' : 'Off'}
+                            </span>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {canEdit && (
+                      <>
+                        <Button variant="secondary" size="sm" onClick={() => openEdit(p)}>
+                          <Pencil className="h-3.5 w-3.5" /> Edit
+                        </Button>
+                        <Button variant="secondary" size="sm" onClick={() => openEdit(p, 3)}>
+                          Approvals &amp; filing rules
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          loading={clone.isPending}
+                          onClick={() => clone.mutate(p.id)}
+                        >
+                          <Copy className="h-3.5 w-3.5" /> Clone
+                        </Button>
+                      </>
+                    )}
+                    {canDelete && (
+                      <Button variant="ghost" size="sm" onClick={() => setDeactivateId(p.id)}>
+                        <Power className="h-3.5 w-3.5" /> Deactivate
+                      </Button>
+                    )}
                   </div>
                 </CardBody>
               </Card>
@@ -183,7 +223,9 @@ export default function LeavePoliciesV2() {
         </div>
       )}
 
-      <PolicyWizard open={wizardOpen} onOpenChange={setWizardOpen} policy={editing} />
+      <LeaveTypesSection />
+
+      <PolicyWizard open={wizardOpen} onOpenChange={setWizardOpen} policy={editing} initialStep={wizardStep} />
 
       <ConfirmDialog
         open={deactivateId !== null}

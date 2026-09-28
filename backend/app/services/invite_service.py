@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from typing import Optional, Tuple
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -89,6 +89,21 @@ class InviteService:
 
         user.password_hash = get_password_hash(new_password)
         user.must_change_password = False
+        # Activation is a write path too: store the email lowercased (audit
+        # E-16) unless that would collide with another account's spelling.
+        lowered = (user.email or "").strip().lower()
+        if lowered and lowered != user.email:
+            clash = (
+                await db.execute(
+                    select(User.id).where(
+                        User.tenant_id == user.tenant_id,
+                        func.lower(User.email) == lowered,
+                        User.id != user.id,
+                    )
+                )
+            ).scalar()
+            if clash is None:
+                user.email = lowered
 
         invite.used_at = datetime.utcnow()
 
@@ -115,3 +130,42 @@ class InviteService:
 
         await db.flush()
         return await InviteService.create_invite_token(db, user_id, tenant_id, created_by)
+
+    @staticmethod
+    async def issue_and_email(
+        db: AsyncSession,
+        *,
+        user: User,
+        created_by: Optional[int],
+        frontend_base: str,
+        resend: bool = False,
+        defer: Optional[list] = None,
+    ) -> None:
+        """Create (or replace) the user's activation link and email it.
+
+        One path for the Add Employee form, Resend, bulk invites and CSV import.
+        With `defer` (a list), the email job is appended instead of sent, so a
+        batch can send only after its transaction commits: an invite for a row
+        that was rolled back would otherwise link to a token that never existed.
+        """
+        from app.models.tenant import Tenant
+        from app.services.email_service import EmailService
+
+        if resend:
+            _, raw_token = await InviteService.resend_invite(db, user.id, user.tenant_id, created_by)
+        else:
+            _, raw_token = await InviteService.create_invite_token(db, user.id, user.tenant_id, created_by)
+        tenant_name = (
+            await db.execute(select(Tenant.name).where(Tenant.id == user.tenant_id))
+        ).scalar() or "Your Organization"
+        url = f"{frontend_base.rstrip('/')}/auth/activate?token={raw_token}"
+
+        def job(d, _email=user.email, _name=user.first_name, _tenant=tenant_name, _url=url):
+            return EmailService.send_invite_email(
+                d, to_email=_email, first_name=_name, tenant_name=_tenant, activation_url=_url
+            )
+
+        if defer is not None:
+            defer.append(job)
+        else:
+            EmailService.fire_and_forget(job)

@@ -179,7 +179,7 @@ export default function DayView({
                 </button>
 
                 {/* Swap / Change actions */}
-                {onSwapRequest && onChangeRequest && (
+                {onSwapRequest && onChangeRequest && !shift.leave_application_id && (
                   <div className="flex gap-2 mt-2">
                     <button
                       onClick={() => onSwapRequest(shift)}

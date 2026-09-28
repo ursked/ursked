@@ -364,3 +364,14 @@ export function getStatusShort(status: string, dynamicShort?: Record<string, str
 export function getStatusBgClass(status: string, dynamicBg?: Record<string, string>): string {
   return dynamicBg?.[status] ?? SHIFT_STATUS_BG[status] ?? UNKNOWN_STATUS_BG;
 }
+
+// ── Change requests ──────────────────────────────────────────────────
+
+/**
+ * Statuses an employee may ask for in a schedule change. Leave is not one of
+ * them: it has its own request, balance and approver, and approving a change
+ * that set a leave status used to rewrite the day without any leave record.
+ */
+export function requestableStatuses(maps: StatusMaps): { value: string; label: string }[] {
+  return maps.allStatuses.filter((s) => (maps.categories[s.value] ?? 'leave') !== 'leave');
+}

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, AlertTriangle, Info } from 'lucide-react'
+import { Plus } from 'lucide-react'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import { api } from '@/lib/api'
 import type {
@@ -12,6 +12,7 @@ import type {
   PaginatedResponse,
 } from '@/types'
 import { useToast } from '@/components/ui/Toast'
+import { DayBreakdown, ViolationList, daysLabel, errorViolations, typeLabel } from '@/app/leaves/leaveUi'
 import {
   Button,
   Card,
@@ -38,6 +39,7 @@ const STATUS_TONE: Record<string, 'yellow' | 'green' | 'red' | 'gray'> = {
   approved: 'green',
   rejected: 'red',
   cancelled: 'gray',
+  expired: 'gray',
 }
 
 export default function MyLeavePage() {
@@ -62,6 +64,7 @@ export default function MyLeavePage() {
       qc.invalidateQueries({ queryKey: ['my-leave-balance'] })
       showToast('Request cancelled', 'success')
     },
+    onError: (e: Error) => showToast(e.message, 'error'),
   })
 
   return (
@@ -107,14 +110,14 @@ export default function MyLeavePage() {
               <Card key={a.id}>
                 <CardBody className="flex items-center justify-between p-4">
                   <div>
-                    <div className="text-sm font-medium text-gray-900">{a.leave_type}</div>
+                    <div className="text-sm font-medium text-gray-900">{typeLabel(a)}</div>
                     <div className="text-xs text-gray-500">
-                      {a.start_date} → {a.end_date} · {a.days_requested}d
+                      {a.start_date} → {a.end_date} · {daysLabel(a)}
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
                     <Badge tone={STATUS_TONE[a.status] ?? 'gray'}>{a.status}</Badge>
-                    {a.status === 'pending' && (
+                    {a.actions?.can_cancel && (
                       <Button variant="ghost" size="sm" onClick={() => cancel.mutate(a.id)}>
                         Cancel
                       </Button>
@@ -145,22 +148,29 @@ function FileLeaveModal({
     leave_type: '',
     start_date: '',
     end_date: '',
+    half_day: '' as '' | 'am' | 'pm',
     reason: '',
   })
+  const halfDayAllowed = !!form.start_date && form.start_date === form.end_date
 
   const { data: leaveTypes } = useQuery<LeaveTypeConfig[]>({
     queryKey: ['leave-types'],
     queryFn: () => api.getLeaveTypes(),
   })
 
+  const [submitErrors, setSubmitErrors] = useState<ReturnType<typeof errorViolations>>([])
   const debouncedForm = useDebounced(form, 400)
   const { data: precheck } = useQuery({
     queryKey: ['leave-precheck', debouncedForm],
     queryFn: () =>
-      api.precheckLeave({
+      api.previewLeave({
         leave_type: debouncedForm.leave_type,
         start_date: debouncedForm.start_date,
         end_date: debouncedForm.end_date,
+        half_day:
+          debouncedForm.half_day && debouncedForm.start_date === debouncedForm.end_date
+            ? debouncedForm.half_day
+            : null,
       }),
     enabled:
       !!debouncedForm.leave_type &&
@@ -170,18 +180,19 @@ function FileLeaveModal({
   })
 
   const submit = useMutation({
-    mutationFn: () => api.createLeaveApplication(form),
+    mutationFn: () =>
+      api.createLeaveApplication({ ...form, half_day: halfDayAllowed && form.half_day ? form.half_day : null }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['my-leave-apps'] })
       qc.invalidateQueries({ queryKey: ['my-leave-balance'] })
       showToast('Leave request filed', 'success')
       onOpenChange(false)
-      setForm({ leave_type: '', start_date: '', end_date: '', reason: '' })
+      setForm({ leave_type: '', start_date: '', end_date: '', half_day: '', reason: '' })
     },
     onError: (e: unknown) => {
-      // Surface structured block violations from the backend.
-      const msg = (e as Error)?.message ?? 'Could not file request'
-      showToast(msg, 'error')
+      // The message is a readable sentence; the list is shown as bullets below.
+      setSubmitErrors(errorViolations(e))
+      showToast((e as Error)?.message ?? 'Could not file request', 'error')
     },
   })
 
@@ -247,32 +258,28 @@ function FileLeaveModal({
           />
         </FormField>
 
-        {/* Live enforcement feedback from the precheck endpoint */}
-        {precheck && precheck.violations.length > 0 && (
-          <div className="space-y-1 rounded-lg bg-red-50 p-3">
-            {precheck.violations.map((v, i) => (
-              <div key={i} className="flex gap-2 text-sm text-red-700">
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                <span>{v.message}</span>
-              </div>
-            ))}
-          </div>
+        <FormField label="Half day" help={halfDayAllowed ? 'Counts as half a day.' : 'Available for a single day.'}>
+          <Select
+            value={halfDayAllowed ? form.half_day : ''}
+            disabled={!halfDayAllowed}
+            onChange={(e) => setForm({ ...form, half_day: e.target.value as '' | 'am' | 'pm' })}
+          >
+            <option value="">Full day</option>
+            <option value="am">Morning off (AM)</option>
+            <option value="pm">Afternoon off (PM)</option>
+          </Select>
+        </FormField>
+
+        {/* Live preview: days counted from the roster, and policy feedback */}
+        {precheck?.problem && (
+          <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700" role="alert">{precheck.problem}</p>
         )}
-        {precheck && precheck.warnings.length > 0 && (
-          <div className="space-y-1 rounded-lg bg-yellow-50 p-3">
-            {precheck.warnings.map((v, i) => (
-              <div key={i} className="flex gap-2 text-sm text-yellow-800">
-                <Info className="mt-0.5 h-4 w-4 shrink-0" />
-                <span>{v.message}</span>
-              </div>
-            ))}
-          </div>
+        {precheck && !precheck.problem && (
+          <DayBreakdown items={precheck.day_breakdown} total={precheck.days_requested} />
         )}
-        {precheck && (
-          <p className="text-xs text-gray-500">
-            {precheck.days_requested} business day(s) requested.
-          </p>
-        )}
+        <ViolationList items={precheck?.violations} tone="block" title="This request cannot be filed:" />
+        <ViolationList items={precheck?.warnings} tone="warn" title="Please check before submitting:" />
+        <ViolationList items={submitErrors} tone="block" title="This request cannot be filed:" />
       </div>
     </Modal>
   )

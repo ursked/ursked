@@ -31,15 +31,15 @@ export const ACCRUAL_METHOD = {
 export const APPROVAL_MODE = {
   auto: {
     label: 'Use the org chart',
-    description: "Requests route up the employee's reporting line automatically.",
+    description: "The head of the employee's unit approves, then the head of each unit above, up to the number of levels you set.",
   },
   manual: {
     label: 'Use custom rules',
-    description: 'Requests route according to the approval rules you define.',
+    description: 'The approval rule that applies to the employee decides who approves, in the order the rule lists them.',
   },
   hybrid: {
-    label: 'Custom rules, org chart as fallback',
-    description: 'Try your custom rules first; fall back to the org chart if none match.',
+    label: 'Custom rules, then the org chart',
+    description: "The rule's approvers go first; unit heads from the org chart follow, up to the number of levels you set.",
   },
 } as const
 
@@ -82,7 +82,17 @@ export const ENFORCEMENT_MODE_COPY = {
 } as const
 
 export const CHAIN_SOURCE_LABEL: Record<string, string> = {
-  auto: 'From org chart',
+  auto: 'Unit head (org chart)',
+  hybrid_org_chart: 'Unit head (org chart)',
   manual: 'From a custom rule',
+  manual_employee: 'Rule for this employee',
+  manual_org_node: 'Rule for their unit',
+  manual_cascade: 'Rule for a unit above',
+  manual_default: 'Default rule',
   hybrid: 'From custom rules',
+  fallback_manager: 'Line manager (no other approver)',
+  fallback_tenant_admin: 'Administrator (no other approver)',
+  fallback_hr: 'HR (no other approver)',
+  fallback_leave_editor: 'Leave administrator (no other approver)',
+  self_approval: 'Self-approval: nobody else can approve',
 }

@@ -13,12 +13,16 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.middleware.auth import get_current_user, require_role
+from app.middleware.auth import get_current_user, require_permission
 from app.models.org_hierarchy import NodeScheduleVisibility, OrgNode
 from app.models.user import User
 from app.services.schedule_service import ScheduleService
 
 router = APIRouter(prefix="/schedule-visibility", tags=["Schedule Visibility"])
+
+# Granting someone sight of a unit's schedule is organization:edit in the
+# permission contract ("visibility grants"). It was a hard-coded admin/HR
+# list, which the Permissions screen could not change.
 
 
 class GrantCreate(BaseModel):
@@ -57,7 +61,7 @@ async def _to_response(db: AsyncSession, grant: NodeScheduleVisibility) -> Grant
 @router.get("", response_model=List[GrantResponse])
 async def list_grants(
     user_id: Optional[int] = None,
-    current_user: User = Depends(require_role(["tenant_admin", "hr"])),
+    current_user: User = Depends(require_permission("organization", "edit")),
     db: AsyncSession = Depends(get_db),
 ):
     stmt = select(NodeScheduleVisibility).where(
@@ -73,7 +77,7 @@ async def list_grants(
 @router.post("", response_model=GrantResponse, status_code=201)
 async def create_grant(
     payload: GrantCreate,
-    current_user: User = Depends(require_role(["tenant_admin", "hr"])),
+    current_user: User = Depends(require_permission("organization", "edit")),
     db: AsyncSession = Depends(get_db),
 ):
     # Both the user and the node must belong to the caller's tenant.
@@ -116,7 +120,7 @@ async def create_grant(
 @router.delete("/{grant_id}", status_code=204)
 async def delete_grant(
     grant_id: int,
-    current_user: User = Depends(require_role(["tenant_admin", "hr"])),
+    current_user: User = Depends(require_permission("organization", "edit")),
     db: AsyncSession = Depends(get_db),
 ):
     grant = await db.get(NodeScheduleVisibility, grant_id)

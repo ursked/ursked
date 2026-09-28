@@ -7,26 +7,33 @@ import { OrgLevel } from '@/types';
 
 interface Props {
   currentLevels: OrgLevel[];
+  canAdd?: boolean;
+  canRemove?: boolean;
   onClose: () => void;
   onSaved: () => void;
 }
 
 interface LevelDraft {
+  // The saved level this row keeps. Sent to the server so removing a middle
+  // level removes THAT level; matching by position used to rename the others.
+  id?: number;
   level_number: number;
   name: string;
 }
 
-export default function LevelConfigModal({ currentLevels, onClose, onSaved }: Props) {
+export default function LevelConfigModal({ currentLevels, canAdd = true, canRemove = true, onClose, onSaved }: Props) {
   const { showToast } = useToast();
   const [saving, setSaving] = useState(false);
   const [levels, setLevels] = useState<LevelDraft[]>(
     currentLevels.length > 0
-      ? currentLevels.map(l => ({ level_number: l.level_number, name: l.name }))
+      ? currentLevels.map(l => ({ id: l.id, level_number: l.level_number, name: l.name }))
       : [{ level_number: 1, name: '' }]
   );
 
   // No upper bound: some organizations are very deep.
-  const canRemoveLevel = levels.length > 1;
+  // A saved level may only be removed with delete permission; a row added in
+  // this dialog can always be taken out again.
+  const canRemoveLevel = (l: LevelDraft) => levels.length > 1 && (!l.id || canRemove);
 
   const handleAddLevel = () => {
     const nextNum = levels.length + 1;
@@ -34,7 +41,7 @@ export default function LevelConfigModal({ currentLevels, onClose, onSaved }: Pr
   };
 
   const handleRemoveLevel = (index: number) => {
-    if (!canRemoveLevel) return;
+    if (!canRemoveLevel(levels[index])) return;
     const updated = levels
       .filter((_, i) => i !== index)
       .map((l, i) => ({ ...l, level_number: i + 1 }));
@@ -58,7 +65,7 @@ export default function LevelConfigModal({ currentLevels, onClose, onSaved }: Pr
 
     setSaving(true);
     try {
-      await api.setOrgLevels(levels.map(l => ({ level_number: l.level_number, name: l.name.trim() })));
+      await api.setOrgLevels(levels.map(l => ({ ...(l.id ? { id: l.id } : {}), level_number: l.level_number, name: l.name.trim() })));
       onSaved();
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Failed to save levels';
@@ -91,7 +98,7 @@ export default function LevelConfigModal({ currentLevels, onClose, onSaved }: Pr
 
           <div className="space-y-3">
             {levels.map((level, index) => (
-              <div key={index} className="flex items-center gap-3">
+              <div key={level.id ?? `new-${index}`} className="flex items-center gap-3">
                 <span className="w-8 h-8 flex-shrink-0 rounded-full bg-purple-100 text-purple-700 text-sm font-semibold flex items-center justify-center">
                   {level.level_number}
                 </span>
@@ -103,7 +110,7 @@ export default function LevelConfigModal({ currentLevels, onClose, onSaved }: Pr
                   className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
                   maxLength={100}
                 />
-                {canRemoveLevel && (
+                {canRemoveLevel(level) && (
                   <button
                     onClick={() => handleRemoveLevel(index)}
                     className="p-1.5 text-gray-400 hover:text-red-500 transition-colors"
@@ -118,6 +125,7 @@ export default function LevelConfigModal({ currentLevels, onClose, onSaved }: Pr
             ))}
           </div>
 
+          {canAdd && (
           <button
             onClick={handleAddLevel}
             className="w-full py-2 border-2 border-dashed border-gray-300 rounded-lg text-sm font-medium text-gray-500 hover:text-purple-600 hover:border-purple-300 transition-colors flex items-center justify-center gap-1"
@@ -127,6 +135,10 @@ export default function LevelConfigModal({ currentLevels, onClose, onSaved }: Pr
             </svg>
             Add Level ({levels.length})
           </button>
+          )}
+          <p className="text-xs text-gray-500">
+            A level that still has units cannot be removed; move or delete its units first.
+          </p>
 
           {levels.length > 1 && (
             <div className="flex items-center gap-2 text-xs text-gray-400 mt-2">

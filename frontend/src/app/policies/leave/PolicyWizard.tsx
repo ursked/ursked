@@ -55,6 +55,9 @@ interface WizardState {
   is_default: boolean
   employment_types: string[]
   approval_mode: 'auto' | 'manual' | 'hybrid'
+  // How many people must approve, in order. The UI always sent 1, so
+  // multi-level approval could not be switched on.
+  required_approval_levels: number
   enforcement: Partial<Record<EnforcementRule, EnforcementMode>>
   entitlements: EntitlementDraft[]
   // shared-pool fields
@@ -112,6 +115,7 @@ function initialState(
       is_default: existing.is_default,
       employment_types: existing.employment_types ?? [],
       approval_mode: existing.approval_mode,
+      required_approval_levels: existing.required_approval_levels ?? 1,
       enforcement: existing.enforcement ?? {},
       entitlements: leaveTypes.map((lt) => {
         const e = byType.get(lt.id)
@@ -148,6 +152,7 @@ function initialState(
     is_default: false,
     employment_types: [],
     approval_mode: 'auto',
+    required_approval_levels: 1,
     // Default new policies to warn — safer than silent, less strict than block.
     enforcement: {
       insufficient_balance: 'warn',
@@ -171,9 +176,11 @@ interface Props {
   open: boolean
   onOpenChange: (open: boolean) => void
   policy?: LeavePolicy | null // null/undefined = create
+  // Open on a given step, e.g. 3 to go straight to the filing rules.
+  initialStep?: number
 }
 
-export default function PolicyWizard({ open, onOpenChange, policy }: Props) {
+export default function PolicyWizard({ open, onOpenChange, policy, initialStep = 0 }: Props) {
   const qc = useQueryClient()
   const { showToast } = useToast()
   const wiz = useWizard(STEPS.length)
@@ -203,14 +210,14 @@ export default function PolicyWizard({ open, onOpenChange, policy }: Props) {
     void Promise.resolve().then(() => {
       if (!active) return
       setState(initialState(activeLeaveTypes, policy))
-      wiz.goTo(0)
+      wiz.goTo(policy ? initialStep : 0)
       setErrors({})
     })
     return () => {
       active = false
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, policy, activeLeaveTypes.length])
+  }, [open, policy, activeLeaveTypes.length, initialStep])
 
   const patch = (p: Partial<WizardState>) => setState((s) => (s ? { ...s, ...p } : s))
   const patchEnt = (idx: number, p: Partial<EntitlementDraft>) =>
@@ -232,6 +239,7 @@ export default function PolicyWizard({ open, onOpenChange, policy }: Props) {
       is_default: s.is_default,
       employment_types: s.employment_types,
       approval_mode: s.approval_mode,
+      required_approval_levels: Math.max(1, Math.round(s.required_approval_levels || 1)),
       enforcement: s.enforcement,
     }
     if (s.pool_type === 'shared') {
@@ -652,8 +660,33 @@ export default function PolicyWizard({ open, onOpenChange, policy }: Props) {
             </div>
           </FormField>
 
+          <FormField
+            label="How many people must approve each request?"
+            help={
+              state.approval_mode === 'auto'
+                ? "1 = the head of the employee's unit; 2 = also the head of the unit above; and so on."
+                : state.approval_mode === 'manual'
+                ? "The first this many approvers listed on the matching rule are asked, in order."
+                : "The rule's approvers first, then unit heads from the org chart, up to this many."
+            }
+          >
+            <Input
+              type="number"
+              min={1}
+              max={10}
+              className="w-24"
+              value={state.required_approval_levels}
+              onChange={(e) => patch({ required_approval_levels: Math.max(1, Number(e.target.value) || 1) })}
+            />
+          </FormField>
+
           <div>
-            <div className="mb-2 text-sm font-medium text-gray-700">When a request breaks a rule…</div>
+            <div className="mb-1 text-sm font-medium text-gray-700">Filing rules: when a request breaks a rule…</div>
+            <p className="mb-2 text-xs text-gray-500">
+              Block refuses the request. Warn lets it through and shows the problem to the employee and
+              the approver. Off does not check it, except that employees are always warned about overlapping
+              requests and requests larger than their balance.
+            </p>
             <div className="space-y-2">
               {ENFORCEMENT_RULES.map((rule) => (
                 <div

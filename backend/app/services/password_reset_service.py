@@ -15,7 +15,7 @@ import logging
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -41,10 +41,15 @@ class PasswordResetService:
         if not normalized:
             return
 
+        # Case-insensitive: emails written before 2026-09 may carry capitals.
+        # first(), not scalar_one_or_none(): the same address can exist in
+        # two tenants, and a 500 here would itself be an existence oracle.
         result = await db.execute(
-            select(User).where(User.email == normalized, User.is_active == True)  # noqa: E712
+            select(User)
+            .where(func.lower(User.email) == normalized, User.is_active == True)  # noqa: E712
+            .order_by(User.id)
         )
-        user = result.scalar_one_or_none()
+        user = result.scalars().first()
         if not user:
             # Unknown or inactive address: do nothing, but the endpoint still
             # returns the same message.

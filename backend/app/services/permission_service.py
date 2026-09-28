@@ -327,13 +327,17 @@ class PermissionService:
         if action_col is None:
             return False
 
-        stmt = select(RolePermission).where(
+        # limit(1)/first(): a user holding two roles that both grant the action
+        # (e.g. hr + manager, both employees:view) matches two rows, and
+        # scalar_one_or_none() raised MultipleResultsFound -> a 500 on every
+        # request that checked the permission.
+        stmt = select(RolePermission.id).where(
             RolePermission.role_id.in_(role_ids),
             RolePermission.module == module,
             action_col == True,
-        )
+        ).limit(1)
         result = await db.execute(stmt)
-        return result.scalar_one_or_none() is not None
+        return result.scalars().first() is not None
 
     @staticmethod
     async def check_extra_permission(

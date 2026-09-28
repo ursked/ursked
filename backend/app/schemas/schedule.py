@@ -20,12 +20,15 @@ class ShiftCreate(BaseModel):
     color: Optional[str] = None
     notes: Optional[str] = None
     remarks: Optional[str] = None
-    # Override forceable guardrail conflicts (consecutive-days / rest-days).
-    # Approved-leave overlaps can never be forced.
+    work_site_id: Optional[int] = None
+    # Override forceable guardrail conflicts (consecutive-days / rest-days /
+    # working hours). Approved-leave overlaps can never be forced.
     force: bool = False
 
 
 class ShiftUpdate(BaseModel):
+    """PATCH body. Only the keys sent change; an explicit null clears an
+    optional field (times, arrangement, role, colour, notes, remarks, site)."""
     employee_id: Optional[int] = None
     date: Optional[_dt.date] = None
     start_time: Optional[time] = None
@@ -36,6 +39,10 @@ class ShiftUpdate(BaseModel):
     color: Optional[str] = None
     notes: Optional[str] = None
     remarks: Optional[str] = None
+    work_site_id: Optional[int] = None
+    # Same override as on create: edits, drags and moves go through the same
+    # validator, so they need the same way past a guardrail.
+    force: bool = False
 
 
 class ShiftCopyRequest(BaseModel):
@@ -56,7 +63,10 @@ class DateRemarkCreate(BaseModel):
 
 
 class DateRemarkUpdate(BaseModel):
-    date: Optional[date] = None
+    # _dt.date, not date: with postponed annotations the field name `date`
+    # shadowed the type, the annotation became Optional[None], and every
+    # attempt to move a holiday to another date was refused with a 422.
+    date: Optional[_dt.date] = None
     title: Optional[str] = Field(default=None, min_length=1, max_length=200)
     description: Optional[str] = None
     is_holiday: Optional[bool] = None
@@ -77,6 +87,11 @@ class TemplateCreate(BaseModel):
 class TemplateApply(BaseModel):
     start_date: date
     employee_ids: List[int]
+    # Repeat the pattern back-to-back until this date (inclusive). None = once.
+    end_date: Optional[date] = None
+    # Override forceable guardrail conflicts, as for a single shift. Days on
+    # approved leave are always skipped.
+    force: bool = False
 
 
 class ShiftBulkCreate(BaseModel):
@@ -91,6 +106,7 @@ class ShiftBulkCreate(BaseModel):
     color: Optional[str] = None
     notes: Optional[str] = None
     remarks: Optional[str] = None
+    work_site_id: Optional[int] = None
     skip_weekends: bool = False
     skip_holidays: bool = False
     skip_days: List[str] = []
@@ -119,6 +135,9 @@ class ShiftResponse(BaseModel):
     notes: Optional[str] = None
     remarks: Optional[str] = None
     is_published: bool = True
+    # Set when the shift is an approved leave day (it cannot be moved/swapped).
+    leave_application_id: Optional[int] = None
+    work_site_id: Optional[int] = None
 
 
 class DateRemarkResponse(BaseModel):
@@ -131,6 +150,15 @@ class DateRemarkResponse(BaseModel):
     is_holiday: bool
     is_special: bool
     is_recurring: bool
+    # For a recurring holiday listed in another year, `date` is that year's
+    # occurrence and this is the stored date (what an edit changes).
+    stored_date: Optional[_dt.date] = None
+    # Live holiday feed: where it came from and what the feed said about it.
+    source: str = "manual"
+    is_tentative: bool = False
+    region: Optional[str] = None
+    needs_review: bool = False
+    locally_modified: bool = False
 
 
 class TemplateResponse(BaseModel):
@@ -156,6 +184,11 @@ class ShiftBulkCreateResponse(BaseModel):
     skipped_conflicts: List[ScheduleConflict] = []
 
 
+class TemplateApplyResult(BaseModel):
+    created: List[ShiftResponse] = []
+    skipped_conflicts: List[ScheduleConflict] = []
+
+
 class ScheduleStatsResponse(BaseModel):
     total_shifts: int = 0
     total_employees: int = 0
@@ -170,6 +203,9 @@ class ScheduleEmployeeResponse(BaseModel):
     section_name: Optional[str] = None
     unit_name: Optional[str] = None
     shifts: List[ShiftResponse] = []
+    # Whether the caller may change this row (access_scope). Visibility is
+    # wider than management, so the grid needs to know which rows to lock.
+    can_manage: bool = False
 
 
 class ShiftActuals(BaseModel):
@@ -261,6 +297,9 @@ class ScheduleChangeRequestResponse(BaseModel):
 class ScheduleChangeReviewRequest(BaseModel):
     action: Literal["approve", "reject"]
     notes: Optional[str] = None
+    # Approving applies the change through the same validator as the grid; a
+    # final approver may override forceable guardrails, never leave.
+    force: bool = False
 
 
 # ── Bulk Delete Schemas ──────────────────────────────────────────────
@@ -268,7 +307,23 @@ class ScheduleChangeReviewRequest(BaseModel):
 class ShiftBulkDelete(BaseModel):
     start_date: date
     end_date: date
-    employee_ids: Optional[List[int]] = None  # None = all employees
+    # Required: exactly the employees whose shifts are cleared (the grid sends
+    # the rows it shows). An empty list clears nothing. This used to default to
+    # None = "every employee in the company", which is how "Clear all shifts in
+    # current view" deleted everyone's range from a filtered view.
+    employee_ids: List[int]
+    # Approved-leave days are kept unless explicitly included: deleting one
+    # silently undoes a leave decision that still stands.
+    include_leave: bool = False
+    # Count only; delete nothing. Lets the confirmation state what will happen.
+    dry_run: bool = False
+
+
+class ShiftBulkDeleteResponse(BaseModel):
+    deleted_count: int
+    leave_kept_count: int = 0
+    employee_count: int = 0
+    dry_run: bool = False
 
 
 # ── Schedule Snapshot Schemas ────────────────────────────────────────
@@ -279,6 +334,9 @@ class SnapshotCreate(BaseModel):
     start_date: date
     end_date: date
     range_type: str = "week"
+    # Whose shifts to capture (the grid sends the rows it shows). Absent means
+    # everyone the caller can see; it used to mean the whole company.
+    employee_ids: Optional[List[int]] = None
 
 
 class SnapshotApply(BaseModel):
@@ -372,16 +430,25 @@ class ScheduleLintResponse(BaseModel):
 class PublishRangeRequest(BaseModel):
     start_date: date
     end_date: date
+    # The employees to publish for (the grid sends the rows it shows). An empty
+    # list publishes nothing; absent means everyone the caller manages.
     employee_ids: Optional[List[int]] = None
+    # Count only, change nothing: the confirmation shows what will happen.
+    dry_run: bool = False
 
 
 class PublishRangeResponse(BaseModel):
     published_count: int
     notified: int
+    employee_count: int = 0
+    dry_run: bool = False
 
 
 class UnpublishRangeResponse(BaseModel):
     unpublished_count: int
+    employee_count: int = 0
+    notified: int = 0
+    dry_run: bool = False
 
 
 class SnapshotResponse(BaseModel):
@@ -398,3 +465,48 @@ class SnapshotResponse(BaseModel):
     is_active: bool = True
     created_by: Optional[int] = None
     created_at: Optional[datetime] = None
+
+# ── Live holiday feed ────────────────────────────────────────────────
+
+class HolidaySourceUpdate(BaseModel):
+    # 'officeholidays': the free per-country feed at officeholidays.com/ics/<slug>.
+    # 'ics_url': any https iCal address.
+    provider: Literal["officeholidays", "ics_url"] = "officeholidays"
+    country_slug: Optional[str] = Field(None, max_length=100, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+    feed_url: Optional[str] = Field(None, max_length=2000)
+    # Regional holidays are imported only for these subdivision codes (PH-CEB...).
+    include_regions: List[str] = Field(default_factory=list, max_length=200)
+    auto_sync: bool = False
+
+
+class HolidayCountry(BaseModel):
+    slug: str
+    name: str
+
+
+class HolidaySourceResponse(BaseModel):
+    configured: bool = False
+    provider: str = "officeholidays"
+    country_slug: Optional[str] = None
+    feed_url: Optional[str] = None
+    include_regions: List[str] = []
+    auto_sync: bool = False
+    last_synced_at: Optional[datetime] = None
+    last_status: Optional[str] = None
+    last_error: Optional[str] = None
+    last_counts: Optional[Dict[str, int]] = None
+    discovered_regions: Optional[List[Dict[str, Any]]] = None
+    # The tenant's country, as a slug, when it matches one in `countries`.
+    suggested_country_slug: Optional[str] = None
+    countries: List[HolidayCountry] = []
+
+
+class HolidaySyncResponse(BaseModel):
+    dry_run: bool
+    added: List[Dict[str, Any]] = []
+    changed: List[Dict[str, Any]] = []
+    removed: List[Dict[str, Any]] = []
+    skipped: List[Dict[str, Any]] = []
+    needs_review: List[Dict[str, Any]] = []
+    regions: List[Dict[str, Any]] = []
+    holiday_off_created: int = 0

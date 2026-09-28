@@ -33,3 +33,6 @@ venv/
 e2e/
 *.xlsx
 backend/seed_client_schedule.py
+
+# Local agent worktrees and settings
+.claude/

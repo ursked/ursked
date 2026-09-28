@@ -4,9 +4,7 @@ from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
-from app.models.role import UserRole, Role
 from app.models.user import User
 
 
@@ -46,50 +44,11 @@ class HierarchyService:
 
         return subordinates
 
-    @staticmethod
-    async def get_approval_chain(db: AsyncSession, user_id: int, tenant_id: UUID) -> List[User]:
-        """Walk up the reports_to chain, collecting users with the leave_approver role."""
-        chain = []
-        current_id = user_id
-        visited = set()
-        depth = 0
-
-        while depth < HierarchyService.MAX_DEPTH:
-            stmt = (
-                select(User)
-                .options(selectinload(User.user_roles).selectinload(UserRole.role))
-                .where(User.id == current_id, User.tenant_id == tenant_id)
-            )
-            result = await db.execute(stmt)
-            current_user = result.scalar_one_or_none()
-
-            if not current_user or not current_user.reports_to_id:
-                break
-
-            next_id = current_user.reports_to_id
-            if next_id in visited:
-                break  # Circular reference detected
-            visited.add(next_id)
-
-            # Load the manager
-            mgr_stmt = (
-                select(User)
-                .options(selectinload(User.user_roles).selectinload(UserRole.role))
-                .where(User.id == next_id, User.tenant_id == tenant_id)
-            )
-            mgr_result = await db.execute(mgr_stmt)
-            manager = mgr_result.scalar_one_or_none()
-
-            if not manager:
-                break
-
-            if manager.has_role("leave_approver"):
-                chain.append(manager)
-
-            current_id = next_id
-            depth += 1
-
-        return chain
+    # get_approval_chain lived here: it walked reports_to collecting users
+    # with the leave_approver role. Nothing called it, and it described a
+    # different chain from the one filing actually builds, so anyone reading it
+    # to learn "who approves leave" was misled. The one resolver is
+    # LeaveApprovalService.resolve_approval_chain.
 
     @staticmethod
     async def is_manager_of(db: AsyncSession, manager_id: int, employee_id: int, tenant_id: UUID) -> bool:

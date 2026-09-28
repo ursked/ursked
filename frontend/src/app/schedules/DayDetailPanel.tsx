@@ -129,7 +129,7 @@ export default function DayDetailPanel({
                               <p className="text-[10px] text-gray-500 mt-1 truncate">{shift.notes}</p>
                             )}
                           </button>
-                          {isOwn && onSwapRequest && onChangeRequest && (
+                          {isOwn && onSwapRequest && onChangeRequest && !shift.leave_application_id && (
                             <div className="flex gap-1.5 mt-1">
                               <button
                                 onClick={() => onSwapRequest(shift)}

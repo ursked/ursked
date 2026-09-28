@@ -6,13 +6,16 @@ import { User } from '@/types';
 interface SeparationModalProps {
   employee: User;
   onClose: () => void;
-  onConfirm: (data: { separation_type: string; separation_date: string; separation_reason?: string }) => Promise<void>;
+  onConfirm: (data: { separation_type: string; separation_date: string; separation_reason?: string; delete_future_shifts: boolean }) => Promise<void>;
 }
 
 export default function SeparationModal({ employee, onClose, onConfirm }: SeparationModalProps) {
   const [separationType, setSeparationType] = useState<'resigned' | 'terminated'>('resigned');
   const [separationDate, setSeparationDate] = useState(new Date().toISOString().split('T')[0]);
   const [separationReason, setSeparationReason] = useState('');
+  // On by default: shifts after someone has left are cover that will never
+  // turn up, and they kept counting on the grid.
+  const [deleteFutureShifts, setDeleteFutureShifts] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -23,6 +26,7 @@ export default function SeparationModal({ employee, onClose, onConfirm }: Separa
         separation_type: separationType,
         separation_date: separationDate,
         separation_reason: separationReason || undefined,
+        delete_future_shifts: deleteFutureShifts,
       });
     } finally {
       setSubmitting(false);
@@ -121,6 +125,19 @@ export default function SeparationModal({ employee, onClose, onConfirm }: Separa
             />
           </div>
 
+          <label className="flex items-start gap-3 rounded-lg border border-gray-200 p-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={deleteFutureShifts}
+              onChange={(e) => setDeleteFutureShifts(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+            />
+            <span className="text-sm text-gray-700">
+              Delete their shifts after {separationDate || 'the separation date'}
+              <span className="block text-xs text-gray-500">Shifts on or before that date are kept for attendance and payroll.</span>
+            </span>
+          </label>
+
           {/* Info tooltip / notice */}
           <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
             <div className="flex gap-3">
@@ -133,6 +150,9 @@ export default function SeparationModal({ employee, onClose, onConfirm }: Separa
                   <li>
                     Marking <strong>{employee.first_name} {employee.last_name}</strong> as{' '}
                     <strong>{separationType}</strong> on <strong>{separationDate}</strong> will deactivate their account.
+                  </li>
+                  <li>
+                    They are signed out everywhere, and removed as head or deputy of any unit they lead. Their pending approvals move to someone else.
                   </li>
                   <li>
                     Their data will remain in your tenant database for record-keeping purposes.

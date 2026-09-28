@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.middleware.auth import get_current_user, require_role
+from app.middleware.auth import get_current_user, require_permission
 from app.models.user import User
 from app.schemas.org_hierarchy import (
     ApprovalChainResponse,
@@ -11,6 +11,7 @@ from app.schemas.org_hierarchy import (
     OrgLevelsResponse,
     OrgLevelsSet,
     OrgNodeCreate,
+    OrgNodeDeletePreview,
     OrgNodeMembersResponse,
     OrgNodeMemberSummary,
     OrgNodeResponse,
@@ -30,7 +31,7 @@ router = APIRouter(prefix="/organizations", tags=["Organizations"])
 async def get_levels(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_role(["tenant_admin", "hr"])),
+    _=Depends(require_permission("organization", "view")),
 ):
     levels = await OrgService.get_levels(db, current_user.tenant_id)
     return OrgLevelsResponse(
@@ -43,14 +44,20 @@ async def set_levels(
     payload: OrgLevelsSet,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_role(["tenant_admin"])),
+    _=Depends(require_permission("organization", "edit")),
 ):
+    from app.services.leave_access import has_permission
+
+    items = [item.model_dump() for item in payload.levels]
+    changes = OrgService.level_changes(
+        await OrgService.get_levels(db, current_user.tenant_id), items
+    )
+    if changes["added"] and not await has_permission(db, current_user, "organization", "create"):
+        raise HTTPException(status_code=403, detail="You do not have permission to add organization levels.")
+    if changes["removed"] and not await has_permission(db, current_user, "organization", "delete"):
+        raise HTTPException(status_code=403, detail="You do not have permission to remove organization levels.")
     try:
-        levels = await OrgService.set_levels(
-            db,
-            current_user.tenant_id,
-            [item.model_dump() for item in payload.levels],
-        )
+        levels = await OrgService.set_levels(db, current_user.tenant_id, items)
         await db.commit()
         return OrgLevelsResponse(
             levels=[OrgLevelResponse.model_validate(l) for l in levels]
@@ -80,11 +87,12 @@ async def create_node(
     data: OrgNodeCreate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_role(["tenant_admin", "hr"])),
+    _=Depends(require_permission("organization", "create")),
 ):
     try:
         node = await OrgService.create_node(
-            db, current_user.tenant_id, data.model_dump(exclude_none=True)
+            db, current_user.tenant_id, data.model_dump(exclude_none=True),
+            granted_by=current_user.id,
         )
         await db.commit()
         return _node_to_response(node)
@@ -115,7 +123,7 @@ async def update_node(
     data: OrgNodeUpdate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_role(["tenant_admin", "hr"])),
+    _=Depends(require_permission("organization", "edit")),
 ):
     node = await OrgService.get_node_by_id(db, node_id, current_user.tenant_id)
     if not node:
@@ -126,6 +134,7 @@ async def update_node(
             node,
             current_user.tenant_id,
             data.model_dump(exclude_unset=True),
+            granted_by=current_user.id,
         )
         await db.commit()
         return _node_to_response(updated)
@@ -134,15 +143,35 @@ async def update_node(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@router.get("/nodes/{node_id}/delete-preview", response_model=OrgNodeDeletePreview)
+async def delete_node_preview(
+    node_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_permission("organization", "delete")),
+):
+    """What deleting this unit would change, for the confirm dialog."""
+    preview = await OrgService.delete_preview(db, node_id, current_user.tenant_id)
+    if preview is None:
+        raise HTTPException(status_code=404, detail="Node not found")
+    return preview
+
+
 @router.delete("/nodes/{node_id}", status_code=204)
 async def delete_node(
     node_id: int,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_role(["tenant_admin"])),
+    _=Depends(require_permission("organization", "delete")),
 ):
-    deleted = await OrgService.delete_node(db, node_id, current_user.tenant_id)
-    if not deleted:
+    """Delete one unit. Its members and sub-units move to its parent; nothing
+    below it is deleted with it (see OrgService.delete_preview)."""
+    try:
+        deleted = await OrgService.delete_node(db, node_id, current_user.tenant_id)
+    except ValueError as e:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail=str(e))
+    if deleted is None:
         raise HTTPException(status_code=404, detail="Node not found")
     await db.commit()
 
@@ -155,7 +184,7 @@ async def get_node_members(
     node_id: int,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_role(["tenant_admin", "hr", "manager"])),
+    _=Depends(require_permission("organization", "view")),
 ):
     node = await OrgService.get_node_by_id(db, node_id, current_user.tenant_id)
     if not node:
@@ -177,7 +206,7 @@ async def assign_members(
     data: AssignMembersRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_role(["tenant_admin", "hr"])),
+    _=Depends(require_permission("organization", "edit")),
 ):
     node = await OrgService.get_node_by_id(db, node_id, current_user.tenant_id)
     if not node:
@@ -196,10 +225,10 @@ async def unassign_members(
     data: UnassignMembersRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_role(["tenant_admin", "hr"])),
+    _=Depends(require_permission("organization", "edit")),
 ):
     count = await OrgService.unassign_members(
-        db, data.user_ids, current_user.tenant_id
+        db, node_id, data.user_ids, current_user.tenant_id
     )
     await db.commit()
     return {"unassigned": count}
@@ -214,7 +243,7 @@ async def assign_secondary_members(
     data: AssignMembersRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_role(["tenant_admin", "hr"])),
+    _=Depends(require_permission("organization", "edit")),
 ):
     node = await OrgService.get_node_by_id(db, node_id, current_user.tenant_id)
     if not node:
@@ -233,7 +262,7 @@ async def remove_secondary_members(
     data: UnassignMembersRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_role(["tenant_admin", "hr"])),
+    _=Depends(require_permission("organization", "edit")),
 ):
     count = await OrgService.remove_secondary_members(
         db, node_id, data.user_ids, current_user.tenant_id,
@@ -252,26 +281,46 @@ async def get_approval_chain(
     user_id: int,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_role(["tenant_admin", "hr", "manager"])),
+    _=Depends(require_permission("organization", "view")),
 ):
-    # Get user info for the response
+    """Who would approve this employee's leave if they filed now.
+
+    This used to walk the org chart on its own (OrgService.get_approval_chain)
+    and so disagreed with filing whenever the policy used rules, a head was
+    inactive, or the fallback applied. It now calls the same resolver filing
+    uses, so the two cannot drift apart again.
+    """
     from sqlalchemy import select
 
-    user_stmt = select(User).where(
-        User.id == user_id, User.tenant_id == current_user.tenant_id
-    )
-    result = await db.execute(user_stmt)
-    user = result.scalar_one_or_none()
+    from app.services.access_scope import assert_manages
+    from app.services.leave_approval_service import LeaveApprovalService
+
+    await assert_manages(db, current_user, [user_id], "organization")
+    user = (
+        await db.execute(
+            select(User).where(User.id == user_id, User.tenant_id == current_user.tenant_id)
+        )
+    ).scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    chain = await OrgService.get_approval_chain(
-        db, user_id, current_user.tenant_id
+    chain = await LeaveApprovalService.resolve_chain_for_employee(
+        db, current_user.tenant_id, user
     )
     return ApprovalChainResponse(
         employee_id=user.id,
         employee_name=user.full_name,
-        chain=chain,
+        chain=[
+            {
+                "step_order": c["step_order"],
+                "approver_id": c["approver_id"],
+                "approver_name": c["approver_name"],
+                "source": c["source"],
+                "is_deputy": bool(c.get("is_deputy")),
+                "node_name": c.get("node_name"),
+            }
+            for c in chain
+        ],
     )
 
 

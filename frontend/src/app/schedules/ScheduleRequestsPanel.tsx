@@ -2,7 +2,8 @@
 
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { api } from '@/lib/api';
+import { api, isScheduleConflictError } from '@/lib/api';
+import { useToast } from '@/components/ui/Toast';
 import { ScheduleChangeRequest } from '@/types';
 import { getStatusLabel, formatShiftTime } from './scheduleHelpers';
 
@@ -242,8 +243,9 @@ export default function ScheduleRequestsPanel({ isOpen, onClose }: ScheduleReque
     enabled: isOpen,
   });
 
+  const { showToast } = useToast();
   const reviewMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: { action: 'approve' | 'reject'; notes?: string } }) =>
+    mutationFn: ({ id, data }: { id: number; data: { action: 'approve' | 'reject'; notes?: string; force?: boolean } }) =>
       api.reviewScheduleChangeRequest(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['my-schedule-requests'] });
@@ -258,14 +260,39 @@ export default function ScheduleRequestsPanel({ isOpen, onClose }: ScheduleReque
       queryClient.invalidateQueries({ queryKey: ['my-schedule-requests'] });
       queryClient.invalidateQueries({ queryKey: ['pending-schedule-approvals'] });
     },
+    onError: (err: Error) => showToast(err.message, 'error'),
   });
 
+  // Approving applies the change through the same checks as the grid. If it
+  // would break a rule, say which; when every reason is a guardrail the
+  // approver may override, ask. Approval failures used to be silent.
   const handleApprove = (id: number, notes: string) => {
-    reviewMutation.mutate({ id, data: { action: 'approve', notes: notes || undefined } });
+    const data = { action: 'approve' as const, notes: notes || undefined };
+    reviewMutation.mutate({ id, data }, {
+      onError: (err) => {
+        if (isScheduleConflictError(err)) {
+          const conflicts = err.detail.conflicts;
+          const lines = conflicts.map((c) => c.message).join('\n');
+          if (conflicts.every((c) => c.forceable)
+            && window.confirm(`${err.detail.message}\n\n${lines}\n\nApprove anyway?`)) {
+            reviewMutation.mutate({ id, data: { ...data, force: true } }, {
+              onError: (e) => showToast(e.message, 'error'),
+            });
+            return;
+          }
+          if (!conflicts.every((c) => c.forceable)) showToast(lines, 'error');
+          return;
+        }
+        showToast(err.message, 'error');
+      },
+    });
   };
 
   const handleReject = (id: number, notes: string) => {
-    reviewMutation.mutate({ id, data: { action: 'reject', notes: notes || undefined } });
+    reviewMutation.mutate(
+      { id, data: { action: 'reject', notes: notes || undefined } },
+      { onError: (err) => showToast(err.message, 'error') },
+    );
   };
 
   const handleCancel = (id: number) => {

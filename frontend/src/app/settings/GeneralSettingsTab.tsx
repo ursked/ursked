@@ -912,6 +912,85 @@ export default function GeneralSettingsTab() {
         </div>
       </div>
 
+      {/* ── Section: Working Hours (area S) ─────────────────────── */}
+      <div className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-xl">
+        <div className="border-b border-gray-200 px-6 py-4">
+          <h2 className="text-lg font-semibold text-gray-900">Working Hours</h2>
+          <p className="mt-1 text-sm text-gray-500">
+            Limits checked whenever a shift is created, edited, dragged, copied, swapped or
+            changed by an approved request. A shift that breaks one is flagged, and whoever
+            schedules it can still save it on purpose. Set a limit to 0 to turn it off.
+          </p>
+        </div>
+        <div className="px-6 py-6">
+          {settingsLoading ? (
+            <div className="text-sm text-gray-500">Loading...</div>
+          ) : (
+            <div className="space-y-6">
+              <NumberSetting
+                id="max-work-hours-per-day"
+                label="Maximum hours of work in a day"
+                help="All of a day's shifts together, split shifts included. 0 = no limit."
+                value={appSettings?.max_work_hours_per_day}
+                min={0} max={24} step={0.5}
+                disabled={updateSettingsMutation.isPending}
+                onCommit={(n) => updateSettingsMutation.mutate(
+                  { max_work_hours_per_day: n },
+                  { onSuccess: () => showToast('Daily hour limit saved', 'success'),
+                    onError: (err: Error) => showToast(err.message, 'error') },
+                )}
+              />
+              <NumberSetting
+                id="max-work-hours-per-week"
+                label="Maximum hours of work in a week"
+                help="Counted over the week as it starts in Schedule Settings. 0 = no limit."
+                value={appSettings?.max_work_hours_per_week}
+                min={0} max={168} step={0.5}
+                disabled={updateSettingsMutation.isPending}
+                onCommit={(n) => updateSettingsMutation.mutate(
+                  { max_work_hours_per_week: n },
+                  { onSuccess: () => showToast('Weekly hour limit saved', 'success'),
+                    onError: (err: Error) => showToast(err.message, 'error') },
+                )}
+              />
+              <NumberSetting
+                id="min-rest-hours"
+                label="Minimum rest between working days (hours)"
+                help="From the end of one day's last shift to the start of the next day's first, overnight shifts included. The break inside a split shift does not count. 0 = no minimum."
+                value={appSettings?.min_rest_hours_between_shifts}
+                min={0} max={48} step={0.5}
+                disabled={updateSettingsMutation.isPending}
+                onCommit={(n) => updateSettingsMutation.mutate(
+                  { min_rest_hours_between_shifts: n },
+                  { onSuccess: () => showToast('Rest requirement saved', 'success'),
+                    onError: (err: Error) => showToast(err.message, 'error') },
+                )}
+              />
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={!!appSettings?.check_overlapping_shifts}
+                  disabled={updateSettingsMutation.isPending}
+                  onChange={(e) => updateSettingsMutation.mutate(
+                    { check_overlapping_shifts: e.target.checked },
+                    { onSuccess: () => showToast('Overlap check saved', 'success'),
+                      onError: (err: Error) => showToast(err.message, 'error') },
+                  )}
+                  className="mt-0.5 h-4 w-4 rounded text-purple-600 border-gray-300 focus:ring-purple-500"
+                />
+                <div>
+                  <p className="text-sm font-medium text-gray-900">Flag overlapping shifts</p>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Warn when two shifts of the same person overlap, for example the two parts
+                    of a split shift, or a night shift running into the next morning&apos;s.
+                  </p>
+                </div>
+              </label>
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* ── Section: Time Clock ──────────────────────────────────── */}
       <div className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-xl">
         <div className="border-b border-gray-200 px-6 py-4">
@@ -996,6 +1075,102 @@ export default function GeneralSettingsTab() {
                 onError: (err: Error) => showToast(err.message, 'error') },
             )}
           />
+        </div>
+      </div>
+
+      {/* ── Section: Leave Days and Approvals (area L) ────────────── */}
+      <div className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-xl">
+        <div className="border-b border-gray-200 px-6 py-4">
+          <h2 className="text-lg font-semibold text-gray-900">Leave Days and Approvals</h2>
+          <p className="mt-1 text-sm text-gray-500">
+            How leave days are counted when someone has nothing on the schedule, and how long a request may
+            wait for an approver before the app follows up.
+          </p>
+        </div>
+        <div className="px-6 py-6 space-y-6">
+          <fieldset>
+            <legend className="text-sm font-medium text-gray-900">Normal working days</legend>
+            <p className="mt-0.5 text-xs text-gray-500">
+              A leave day counts when the employee is scheduled to work that day, and never on a holiday.
+              For days with nothing on the schedule, these are the days that count.
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((label, day) => {
+                const week = appSettings?.work_week_days ?? [0, 1, 2, 3, 4]
+                const on = week.includes(day)
+                return (
+                  <button
+                    key={label}
+                    type="button"
+                    aria-pressed={on}
+                    disabled={updateSettingsMutation.isPending || (on && week.length === 1)}
+                    onClick={() => updateSettingsMutation.mutate(
+                      { work_week_days: on ? week.filter((d) => d !== day) : [...week, day].sort() },
+                      { onSuccess: () => showToast('Working days saved', 'success'),
+                        onError: (err: Error) => showToast(err.message, 'error') },
+                    )}
+                    className={`min-w-[3rem] rounded-full border px-3 py-1.5 text-sm ${
+                      on ? 'border-purple-600 bg-purple-50 text-purple-700' : 'border-gray-300 text-gray-600 hover:bg-gray-50'
+                    } disabled:opacity-60`}
+                  >
+                    {label}
+                  </button>
+                )
+              })}
+            </div>
+          </fieldset>
+
+          <NumberSetting
+            id="leave_reminder_after_days"
+            label="Remind the approver after (days)"
+            help="Once a request has waited this many days for the same approver, they get a reminder each day until they decide."
+            value={appSettings?.leave_reminder_after_days}
+            min={1} max={60}
+            disabled={updateSettingsMutation.isPending}
+            onCommit={(n) => updateSettingsMutation.mutate(
+              { leave_reminder_after_days: n },
+              { onSuccess: () => showToast('Reminder timing saved', 'success'),
+                onError: (err: Error) => showToast(err.message, 'error') },
+            )}
+          />
+          <NumberSetting
+            id="leave_escalate_after_days"
+            label="Pass it on after (days, 0 = never)"
+            help="After this many days without a decision, the request moves to the approver's own manager, or to an administrator if they have none. Requests still waiting after their last day expire."
+            value={appSettings?.leave_escalate_after_days}
+            min={0} max={90}
+            disabled={updateSettingsMutation.isPending}
+            onCommit={(n) => updateSettingsMutation.mutate(
+              { leave_escalate_after_days: n },
+              { onSuccess: () => showToast('Escalation timing saved', 'success'),
+                onError: (err: Error) => showToast(err.message, 'error') },
+            )}
+          />
+
+          <div className="space-y-3 border-t border-gray-200 pt-5">
+            {([
+              ['notify_on_leave_request', 'Tell approvers about requests', 'New requests, changes, cancellations, reminders and reassignments, in the app and by email.'],
+              ['notify_on_leave_approval', 'Tell employees about decisions', 'Approvals, rejections, reversals, overrides and expiry, in the app and by email.'],
+            ] as const).map(([key, title, help]) => (
+              <label key={key} className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={appSettings ? appSettings[key] !== false : true}
+                  disabled={updateSettingsMutation.isPending}
+                  onChange={(e) => updateSettingsMutation.mutate(
+                    { [key]: e.target.checked } as Partial<AppSettings>,
+                    { onSuccess: () => showToast('Notification setting saved', 'success'),
+                      onError: (err: Error) => showToast(err.message, 'error') },
+                  )}
+                  className="mt-0.5 h-4 w-4 rounded text-purple-600 border-gray-300 focus:ring-purple-500"
+                />
+                <div>
+                  <p className="text-sm font-medium text-gray-900">{title}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">{help}</p>
+                </div>
+              </label>
+            ))}
+          </div>
         </div>
       </div>
 

@@ -1665,3 +1665,390 @@ export interface WorkArrangementRule {
   is_active: boolean;
   sort_order: number;
 }
+
+// ── Area E (employees, profile, audit) ───────────────────────────────
+// Added as interface merges so the shared declarations above stay untouched.
+
+export type CustomFieldValue = string | number | boolean | null;
+export type CustomFieldType = 'text' | 'number' | 'date' | 'select' | 'boolean';
+export type CustomFieldVisibility = 'hr_only' | 'managers' | 'employee_view' | 'employee_edit';
+
+export interface User {
+  middle_name?: string | null;
+  org_node_id?: number | null;
+  org_node_name?: string | null;
+  reports_to_name?: string | null;
+  invite_pending?: boolean;
+  invite_expired?: boolean;
+  custom_fields?: Record<string, CustomFieldValue>;
+}
+
+export interface AppSettings {
+  employee_number_label?: string | null;
+}
+
+export interface CustomFieldDefinition {
+  id: number;
+  key: string;
+  label: string;
+  field_type: CustomFieldType;
+  options: string[];
+  is_required: boolean;
+  is_unique: boolean;
+  regex: string | null;
+  visibility: CustomFieldVisibility;
+  is_sensitive: boolean;
+  help_text: string | null;
+  sort_order: number;
+  is_archived: boolean;
+}
+
+export interface CustomFieldConfig {
+  employee_number_label: string;
+  default_employee_number_label: string;
+  can_manage: boolean;
+  fields: CustomFieldDefinition[];
+}
+
+export interface EmployeeImportRow {
+  row: number;
+  email: string | null;
+  name: string;
+  action: 'create' | 'update' | 'unchanged' | 'error';
+  errors: string[];
+  changes: string[];
+  user_id?: number;
+  invited?: boolean;
+}
+
+export interface EmployeeImportResult {
+  dry_run: boolean;
+  total: number;
+  created: number;
+  updated: number;
+  unchanged: number;
+  failed: number;
+  ignored_columns: string[];
+  columns: string[];
+  rows: EmployeeImportRow[];
+}
+
+export type EmployeeBulkAction =
+  | 'set_employee_type'
+  | 'set_schedule_format'
+  | 'set_org_unit'
+  | 'set_reports_to'
+  | 'send_invite'
+  | 'separate';
+
+export interface EmployeeBulkRequest {
+  action: EmployeeBulkAction;
+  user_ids?: number[];
+  filter?: {
+    search?: string;
+    role?: string;
+    is_active?: boolean;
+    separation_type?: string;
+    org_node_id?: number;
+    custom?: Record<string, string>;
+  };
+  value?: string | number | null;
+  separation?: {
+    separation_type: 'resigned' | 'terminated';
+    separation_date: string;
+    separation_reason?: string;
+    delete_future_shifts: boolean;
+  };
+}
+
+export interface EmployeeBulkResponse {
+  action: EmployeeBulkAction;
+  total: number;
+  updated: number;
+  skipped: number;
+  failed: number;
+  results: { user_id: number; name: string; status: 'updated' | 'skipped' | 'error'; message?: string | null }[];
+}
+
+export interface AuditLogEntry {
+  user_name?: string | null;
+  action_label?: string;
+  description?: string;
+}
+
+export interface AuditLogPage {
+  items: AuditLogEntry[];
+  total: number;
+  page: number;
+  per_page: number;
+  total_pages: number;
+}
+
+export interface TwoFactorStatus {
+  enabled: boolean;
+  pending_setup: boolean;
+  recovery_codes_remaining: number;
+}
+
+export interface TwoFactorSetup {
+  secret: string;
+  qr_code_uri: string;
+  qr_code_base64: string;
+  backup_codes: string[];
+}
+
+export interface ActiveSession {
+  id: number;
+  ip_address: string | null;
+  user_agent: string | null;
+  login_at: string | null;
+  last_activity_at: string | null;
+  is_current: boolean;
+}
+
+export interface LoginEvent {
+  id: number;
+  user_email: string | null;
+  action: 'login_success' | 'login_failure';
+  ip_address: string | null;
+  user_agent: string | null;
+  created_at: string | null;
+}
+
+// ── Area L: leave approvals, day counting and organization (2026-09) ──
+// Declaration merging adds fields to the interfaces above without editing them.
+
+export type LeaveHalfDay = 'am' | 'pm';
+
+/** What the CALLER may do with a request, as the API will judge it. */
+export interface LeaveActions {
+  can_edit: boolean;
+  can_cancel: boolean;
+  can_review: boolean;
+  can_self_approve: boolean;
+  can_override: boolean;
+  can_reassign: boolean;
+  can_revoke: boolean;
+}
+
+export interface LeaveDayBreakdownItem {
+  date: string;
+  days: number;
+  reason: string;
+  label: string;
+}
+
+export interface LeaveRuleViolation {
+  rule: string;
+  mode: 'block' | 'warn';
+  message: string;
+  details?: Record<string, unknown>;
+}
+
+export interface LeaveApprovalEvent {
+  id: number;
+  action: string;
+  actor_id?: number | null;
+  actor_name?: string | null;
+  from_approver_id?: number | null;
+  from_approver_name?: string | null;
+  to_approver_id?: number | null;
+  to_approver_name?: string | null;
+  reason?: string | null;
+  created_at?: string | null;
+}
+
+export interface LeaveApplication {
+  leave_type_name?: string | null;
+  half_day?: LeaveHalfDay | null;
+  day_breakdown?: LeaveDayBreakdownItem[] | null;
+  rule_warnings?: LeaveRuleViolation[] | null;
+  events?: LeaveApprovalEvent[];
+  actions?: LeaveActions;
+}
+
+export interface LeaveApprovalStep {
+  /** The requester's own step: only when nobody else can approve leave. */
+  is_self?: boolean;
+}
+
+export interface LeavePrecheckResult {
+  allowed: boolean;
+  days_requested: number;
+  violations: LeaveRuleViolation[];
+  warnings: LeaveRuleViolation[];
+  day_breakdown: LeaveDayBreakdownItem[];
+  days_by_year: Record<string, number>;
+  problem: string | null;
+}
+
+export interface ApproverRuleStep {
+  step_order?: number;
+  approver_id?: number | null;
+  approver_name?: string | null;
+  approver_role?: ApproverRole | null;
+  approver_active?: boolean;
+}
+
+export interface LeaveApproverAssignment {
+  steps?: ApproverRuleStep[];
+  deactivated_reason?: string | null;
+  granted_role_to?: string[];
+}
+
+export interface ApproverCheck {
+  user_id: number;
+  name?: string | null;
+  found: boolean;
+  is_active: boolean;
+  has_reviewer_role: boolean;
+  will_grant_role: boolean;
+  message: string;
+}
+
+export interface ApprovalChainPreviewItem {
+  is_deputy?: boolean;
+  node_name?: string | null;
+}
+
+/** One step of GET /organizations/approval-chain (same resolver as filing). */
+export interface EffectiveChainStep {
+  step_order: number;
+  approver_id: number;
+  approver_name: string;
+  source: string;
+  is_deputy: boolean;
+  node_name?: string | null;
+}
+
+export interface EffectiveChainResponse {
+  employee_id: number;
+  employee_name: string;
+  chain: EffectiveChainStep[];
+}
+
+export interface OrgLevelItem {
+  /** Existing level being kept; omit for a new level. */
+  id?: number;
+}
+
+export interface OrgNodeDeletePreview {
+  node_id: number;
+  node_name: string;
+  parent_id: number | null;
+  parent_name: string | null;
+  can_delete: boolean;
+  blocked_reason: string | null;
+  members_moved: Array<{ id: number; name: string }>;
+  secondary_members: Array<{ id: number; name: string }>;
+  children_moved: Array<{ id: number; name: string }>;
+  approver_rules_deactivated: Array<{ id: number; description: string }>;
+  policy_rules_changed: Array<{ id: number; name: string; deactivated: boolean }>;
+}
+
+export interface AppSettings {
+  work_week_days?: number[];
+  leave_reminder_after_days?: number;
+  leave_escalate_after_days?: number;
+}
+
+// ── Area S: schedule grid, holidays (2026-09 audit) ─────────────────────────
+// Added as interface merges so the declarations above stay untouched.
+
+export interface ScheduleEmployee {
+  /** Whether the viewer may change this row. Visibility is wider than management. */
+  can_manage?: boolean;
+}
+
+export interface Shift {
+  /** Set when the shift is an approved leave day; such shifts cannot be moved or swapped. */
+  leave_application_id?: number | null;
+  /** Where the employee is expected to work (used by the time clock geofence). */
+  work_site_id?: number | null;
+}
+
+export interface ShiftBulkDeleteResult {
+  deleted_count: number;
+  leave_kept_count: number;
+  employee_count: number;
+  dry_run: boolean;
+}
+
+export interface PublishRangeResult {
+  published_count: number;
+  notified: number;
+  employee_count: number;
+  dry_run: boolean;
+}
+
+export interface UnpublishRangeResult {
+  unpublished_count: number;
+  notified: number;
+  employee_count: number;
+  dry_run: boolean;
+}
+
+export interface AppSettings {
+  // Area S: working-hour rules. 0 / false = off.
+  max_work_hours_per_day?: number;
+  max_work_hours_per_week?: number;
+  min_rest_hours_between_shifts?: number;
+  check_overlapping_shifts?: boolean;
+}
+
+export interface DateRemark {
+  /** For a recurring holiday listed in another year: the row's own date (edit this). */
+  stored_date?: string;
+  source?: 'manual' | 'feed';
+  is_tentative?: boolean;
+  /** ISO 3166-2 subdivision code of a regional holiday, e.g. PH-CEB. */
+  region?: string | null;
+  needs_review?: boolean;
+  locally_modified?: boolean;
+}
+
+export interface HolidayRegion {
+  code: string;
+  label: string;
+  count: number;
+  samples: string[];
+}
+
+export interface HolidaySourceConfig {
+  provider: 'officeholidays' | 'ics_url';
+  country_slug: string | null;
+  feed_url: string | null;
+  include_regions: string[];
+  auto_sync: boolean;
+  last_synced_at: string | null;
+  last_status: 'ok' | 'error' | null;
+  last_error: string | null;
+  last_counts: Record<string, number> | null;
+  discovered_regions: HolidayRegion[] | null;
+  configured: boolean;
+  /** The tenant's own country as a feed slug, used as the picker default. */
+  suggested_country_slug: string | null;
+  countries: { slug: string; name: string }[];
+}
+
+export interface HolidaySyncItem {
+  date: string;
+  title: string;
+  is_special: boolean;
+  is_tentative: boolean;
+  needs_review: boolean;
+  region: string | null;
+  reason?: string;
+  before?: { title: string; is_special: boolean; is_tentative: boolean } | null;
+}
+
+export interface HolidaySyncResult {
+  dry_run: boolean;
+  added: HolidaySyncItem[];
+  changed: HolidaySyncItem[];
+  removed: HolidaySyncItem[];
+  skipped: HolidaySyncItem[];
+  needs_review: HolidaySyncItem[];
+  regions: HolidayRegion[];
+  holiday_off_created: number;
+}

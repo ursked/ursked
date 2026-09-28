@@ -7,6 +7,9 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class OrgLevelItem(BaseModel):
+    # The existing level this item keeps. Omit for a new level. Levels are
+    # matched by id so deleting a middle level cannot rename the others.
+    id: Optional[int] = None
     level_number: int = Field(ge=1)
     name: str = Field(min_length=1, max_length=100)
 
@@ -157,12 +160,47 @@ class OrgNodeMembersResponse(BaseModel):
 
 
 class ApprovalChainStep(BaseModel):
-    node_id: int
-    node_name: str
-    level_name: str
+    """One step of the chain filing would produce (see LeaveApprovalService)."""
+    step_order: int = 1
     approver_id: int
     approver_name: str
+    # auto | hybrid_org_chart | manual_* | fallback_* | self_approval
+    source: str = "auto"
     is_deputy: bool = False
+    # The unit whose head (or deputy) this is, for org-chart steps.
+    node_id: Optional[int] = None
+    node_name: Optional[str] = None
+    level_name: Optional[str] = None
+
+
+class _NamedRef(BaseModel):
+    id: int
+    name: str
+
+
+class _RuleRef(BaseModel):
+    id: int
+    description: str
+
+
+class _PolicyRuleRef(BaseModel):
+    id: int
+    name: str
+    deactivated: bool
+
+
+class OrgNodeDeletePreview(BaseModel):
+    node_id: int
+    node_name: str
+    parent_id: Optional[int] = None
+    parent_name: Optional[str] = None
+    can_delete: bool
+    blocked_reason: Optional[str] = None
+    members_moved: List[_NamedRef] = []
+    secondary_members: List[_NamedRef] = []
+    children_moved: List[_NamedRef] = []
+    approver_rules_deactivated: List[_RuleRef] = []
+    policy_rules_changed: List[_PolicyRuleRef] = []
 
 
 class ApprovalChainResponse(BaseModel):

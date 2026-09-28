@@ -26,6 +26,8 @@ from app.api.v1.notifications import router as notifications_router
 from app.api.v1.backup import router as backup_router
 from app.api.v1.audit import router as audit_router
 from app.api.v1.user_import import router as user_import_router
+# Area E (employees): company-defined profile fields.
+from app.api.v1.employee_fields import router as employee_fields_router
 
 # Enterprise routes live in app/ee/, a package the Community Edition build does not
 # contain. That absence IS the gate: no package, no import, no routes — there is no
@@ -65,6 +67,8 @@ api_router.include_router(notifications_router)
 api_router.include_router(backup_router)
 api_router.include_router(audit_router)
 api_router.include_router(user_import_router)
+# Area E (employees)
+api_router.include_router(employee_fields_router)
 
 if EE:
     api_router.include_router(tenants_router)

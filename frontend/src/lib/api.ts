@@ -75,6 +75,9 @@ import {
   SnapshotPreview,
   SnapshotApplyResult,
   ScheduleLintViolation,
+  ShiftBulkDeleteResult,
+  PublishRangeResult,
+  UnpublishRangeResult,
   SalaryEnrollmentRow,
   SalaryRequestRow,
   MySalaryStatus,
@@ -85,6 +88,17 @@ import {
   WorkSite,
   WorkArrangementRule,
 } from '@/types';
+// Area L (leave, approvals, organization)
+import type {
+  ApproverCheck,
+  EffectiveChainResponse,
+  LeaveApplication as LeaveApplicationL,
+  LeavePrecheckResult,
+  OrgNodeDeletePreview,
+} from '@/types';
+
+// Area S: live holiday feed types.
+import type { HolidaySourceConfig, HolidayRegion, HolidaySyncResult } from '@/types';
 
 const CSRF_COOKIE = 'csrf_token';
 const CSRF_HEADER = 'X-CSRF-Token';
@@ -584,8 +598,16 @@ class ApiClient {
     return this.post('/api/v1/schedules/shifts/bulk', data) as Promise<ShiftBulkCreateResult>;
   }
 
-  async bulkDeleteShifts(data: { start_date: string; end_date: string; employee_ids?: number[] }): Promise<{ deleted_count: number }> {
-    return this.post('/api/v1/schedules/shifts/bulk-delete', data) as Promise<{ deleted_count: number }>;
+  // employee_ids is required: the exact rows to clear. dry_run returns the
+  // counts without deleting, so the confirmation matches the action.
+  async bulkDeleteShifts(data: {
+    start_date: string;
+    end_date: string;
+    employee_ids: number[];
+    include_leave?: boolean;
+    dry_run?: boolean;
+  }): Promise<ShiftBulkDeleteResult> {
+    return this.post('/api/v1/schedules/shifts/bulk-delete', data) as Promise<ShiftBulkDeleteResult>;
   }
 
   // Schedule Snapshots
@@ -593,7 +615,7 @@ class ApiClient {
     return this.get('/api/v1/schedules/snapshots') as Promise<ScheduleSnapshot[]>;
   }
 
-  async createSnapshot(data: { name: string; description?: string; start_date: string; end_date: string; range_type: string }): Promise<ScheduleSnapshot> {
+  async createSnapshot(data: { name: string; description?: string; start_date: string; end_date: string; range_type: string; employee_ids?: number[] }): Promise<ScheduleSnapshot> {
     return this.post('/api/v1/schedules/snapshots', data) as Promise<ScheduleSnapshot>;
   }
 
@@ -655,16 +677,18 @@ class ApiClient {
     start_date: string;
     end_date: string;
     employee_ids?: number[];
-  }): Promise<{ published_count: number; notified: number }> {
-    return this.post('/api/v1/schedules/publish', data) as Promise<{ published_count: number; notified: number }>;
+    dry_run?: boolean;
+  }): Promise<PublishRangeResult> {
+    return this.post('/api/v1/schedules/publish', data) as Promise<PublishRangeResult>;
   }
 
   async unpublishSchedule(data: {
     start_date: string;
     end_date: string;
     employee_ids?: number[];
-  }): Promise<{ unpublished_count: number }> {
-    return this.post('/api/v1/schedules/unpublish', data) as Promise<{ unpublished_count: number }>;
+    dry_run?: boolean;
+  }): Promise<UnpublishRangeResult> {
+    return this.post('/api/v1/schedules/unpublish', data) as Promise<UnpublishRangeResult>;
   }
 
   // Schedule Change Requests
@@ -694,7 +718,7 @@ class ApiClient {
     return this.get(`/api/v1/schedules/change-requests/${id}`) as Promise<ScheduleChangeRequest>;
   }
 
-  async reviewScheduleChangeRequest(id: number, data: { action: 'approve' | 'reject'; notes?: string }): Promise<ScheduleChangeRequest> {
+  async reviewScheduleChangeRequest(id: number, data: { action: 'approve' | 'reject'; notes?: string; force?: boolean }): Promise<ScheduleChangeRequest> {
     return this.post(`/api/v1/schedules/change-requests/${id}/review`, data) as Promise<ScheduleChangeRequest>;
   }
 
@@ -1564,6 +1588,163 @@ class ApiClient {
 
   async markAllNotificationsRead(): Promise<void> {
     await this.post('/api/v1/notifications/read-all', {});
+  }
+
+  // ── Area E (employees, profile, audit) ─────────────────────────────
+  // Custom fields, CSV import, bulk edit, the audit log and My Profile's
+  // security section.
+
+  async getEmployeeFieldConfig(includeArchived = false): Promise<import('@/types').CustomFieldConfig> {
+    const q = includeArchived ? '?include_archived=true' : '';
+    return this.get(`/api/v1/employee-fields${q}`) as Promise<import('@/types').CustomFieldConfig>;
+  }
+
+  async createEmployeeField(data: Partial<import('@/types').CustomFieldDefinition>): Promise<import('@/types').CustomFieldDefinition> {
+    return this.post('/api/v1/employee-fields', data) as Promise<import('@/types').CustomFieldDefinition>;
+  }
+
+  async updateEmployeeField(id: number, data: Partial<import('@/types').CustomFieldDefinition>): Promise<import('@/types').CustomFieldDefinition> {
+    return this.patch(`/api/v1/employee-fields/${id}`, data) as Promise<import('@/types').CustomFieldDefinition>;
+  }
+
+  async deleteEmployeeField(id: number): Promise<{ result: 'archived' | 'deleted' }> {
+    return this.del(`/api/v1/employee-fields/${id}`) as Promise<{ result: 'archived' | 'deleted' }>;
+  }
+
+  async reorderEmployeeFields(ids: number[]): Promise<void> {
+    await this.post('/api/v1/employee-fields/reorder', { ids });
+  }
+
+  async setEmployeeNumberLabel(label: string | null): Promise<{ employee_number_label: string }> {
+    return this.put('/api/v1/employee-fields/employee-number-label', { label }) as Promise<{ employee_number_label: string }>;
+  }
+
+  async bulkUpdateUsers(body: import('@/types').EmployeeBulkRequest): Promise<import('@/types').EmployeeBulkResponse> {
+    return this.patch('/api/v1/users/bulk', body) as Promise<import('@/types').EmployeeBulkResponse>;
+  }
+
+  // Multipart, so it cannot go through request(), which always sends JSON.
+  // Same cookie credentials and CSRF header; one refresh-and-retry on 401.
+  async importUsersCsv(file: File, dryRun: boolean): Promise<import('@/types').EmployeeImportResult> {
+    const send = () => {
+      const form = new FormData();
+      form.append('file', file);
+      const headers: Record<string, string> = {};
+      const csrf = readCookie(CSRF_COOKIE);
+      if (csrf) headers[CSRF_HEADER] = csrf;
+      return fetch(`${this.baseUrl}/api/v1/users/import-csv?dry_run=${dryRun ? 'true' : 'false'}`, {
+        method: 'POST',
+        credentials: 'include',
+        headers,
+        body: form,
+      });
+    };
+    let response = await send();
+    if (response.status === 401 && (await this.refreshToken())) {
+      response = await send();
+    }
+    return this.handleResponse(response) as Promise<import('@/types').EmployeeImportResult>;
+  }
+
+  async downloadImportTemplate(): Promise<Blob> {
+    const response = await fetch(`${this.baseUrl}/api/v1/users/import-csv/template`, { credentials: 'include' });
+    if (!response.ok) {
+      await this.handleResponse(response);
+    }
+    return response.blob();
+  }
+
+  async getAuditLogs(params: Record<string, string>): Promise<import('@/types').AuditLogPage> {
+    const q = new URLSearchParams(params).toString();
+    return this.get(`/api/v1/audit/logs${q ? '?' + q : ''}`) as Promise<import('@/types').AuditLogPage>;
+  }
+
+  async getAuditActions(): Promise<{ action: string; label: string }[]> {
+    return this.get('/api/v1/audit/actions') as Promise<{ action: string; label: string }[]>;
+  }
+
+  async getTwoFactorStatus(): Promise<import('@/types').TwoFactorStatus> {
+    return this.get('/api/v1/auth/2fa/status') as Promise<import('@/types').TwoFactorStatus>;
+  }
+
+  async setupTwoFactor(): Promise<import('@/types').TwoFactorSetup> {
+    return this.post('/api/v1/auth/2fa/setup') as Promise<import('@/types').TwoFactorSetup>;
+  }
+
+  async confirmTwoFactor(code: string): Promise<{ message: string }> {
+    return this.post('/api/v1/auth/2fa/confirm', { code }) as Promise<{ message: string }>;
+  }
+
+  async disableTwoFactor(password: string): Promise<{ message: string }> {
+    return this.post('/api/v1/auth/2fa/disable', { password }) as Promise<{ message: string }>;
+  }
+
+  async getMySessions(): Promise<import('@/types').ActiveSession[]> {
+    return this.get('/api/v1/auth/sessions') as Promise<import('@/types').ActiveSession[]>;
+  }
+
+  async revokeSession(id: number): Promise<void> {
+    await this.del(`/api/v1/auth/sessions/${id}`);
+  }
+
+  async getMyLoginEvents(perPage = 10): Promise<{ items: import('@/types').LoginEvent[]; total: number }> {
+    return this.get(`/api/v1/auth/login-events?mine=true&per_page=${perPage}`) as Promise<{ items: import('@/types').LoginEvent[]; total: number }>;
+  }
+
+  // ── Area L: leave approvals, day counting and organization ──────────
+  async previewLeave(data: {
+    leave_type: string; start_date: string; end_date: string;
+    half_day?: 'am' | 'pm' | null; employee_id?: number; application_id?: number;
+    supporting_documents?: string[];
+  }): Promise<LeavePrecheckResult> {
+    return this.post('/api/v1/leave/applications/precheck', data) as Promise<LeavePrecheckResult>;
+  }
+
+  async overrideLeaveApplication(id: number, data: { action: 'approve' | 'reject'; reason: string }): Promise<LeaveApplicationL> {
+    return this.post(`/api/v1/leave/applications/${id}/override`, data) as Promise<LeaveApplicationL>;
+  }
+
+  async reassignLeaveApprover(id: number, data: { approver_id: number; reason: string; step_id?: number }): Promise<LeaveApplicationL> {
+    return this.post(`/api/v1/leave/applications/${id}/reassign`, data) as Promise<LeaveApplicationL>;
+  }
+
+  async selfApproveLeaveApplication(id: number, data: { reason: string }): Promise<LeaveApplicationL> {
+    return this.post(`/api/v1/leave/applications/${id}/self-approve`, data) as Promise<LeaveApplicationL>;
+  }
+
+  async checkLeaveApprover(userId: number): Promise<ApproverCheck> {
+    return this.get(`/api/v1/leave/approver-check?user_id=${userId}`) as Promise<ApproverCheck>;
+  }
+
+  async getEffectiveApprovalChain(userId: number): Promise<EffectiveChainResponse> {
+    return this.get(`/api/v1/organizations/approval-chain/${userId}`) as Promise<EffectiveChainResponse>;
+  }
+
+  async getOrgNodeDeletePreview(nodeId: number): Promise<OrgNodeDeletePreview> {
+    return this.get(`/api/v1/organizations/nodes/${nodeId}/delete-preview`) as Promise<OrgNodeDeletePreview>;
+  }
+
+  // ── Area S: live holiday feed (officeholidays.com or any https iCal) ──
+  async getHolidaySource(): Promise<HolidaySourceConfig> {
+    return this.get('/api/v1/schedules/holidays/source') as Promise<HolidaySourceConfig>;
+  }
+
+  async setHolidaySource(data: {
+    provider: 'officeholidays' | 'ics_url';
+    country_slug?: string | null;
+    feed_url?: string | null;
+    include_regions: string[];
+    auto_sync: boolean;
+  }): Promise<HolidaySourceConfig> {
+    return this.put('/api/v1/schedules/holidays/source', data) as Promise<HolidaySourceConfig>;
+  }
+
+  async getHolidayRegions(refresh = false): Promise<HolidayRegion[]> {
+    return this.get(`/api/v1/schedules/holidays/source/regions${refresh ? '?refresh=true' : ''}`) as Promise<HolidayRegion[]>;
+  }
+
+  async syncHolidays(dryRun: boolean): Promise<HolidaySyncResult> {
+    return this.post(`/api/v1/schedules/holidays/sync${dryRun ? '?dry_run=true' : ''}`, {}) as Promise<HolidaySyncResult>;
   }
 }
 

@@ -19,9 +19,14 @@ const ACCESS_COOKIE = 'access_token';
 const REFRESH_COOKIE = 'refresh_token';
 
 // Reachable without a session. The Community build has no /auth/signup.
+// (Every /auth/* route is let through below anyway; this list is what the
+// guard treats as public outside that rule. Keep it in step with
+// src/lib/publicRoutes.ts.)
 const PUBLIC_PATHS = [
   '/auth/login',
   '/auth/activate',
+  '/auth/forgot-password',
+  '/auth/reset-password',
 ];
 
 function isPublic(pathname: string): boolean {

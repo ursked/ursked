@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Shift, ScheduleEmployee } from '@/types';
+import { Shift, ScheduleEmployee, WorkSite } from '@/types';
 import { ScheduleConflict, ShiftBulkCreateResult, isScheduleConflictError } from '@/lib/api';
 import { ALL_STATUSES, ALL_WORK_ARRANGEMENTS, isWorkStatus } from './scheduleHelpers';
 
@@ -17,6 +17,8 @@ interface ShiftModalProps {
   statusOptions?: { value: string; label: string }[];
   statusCategories?: Record<string, string>;
   onBulkSave?: (data: Record<string, unknown>) => Promise<ShiftBulkCreateResult>;
+  /** Active work sites, for the time clock's "where should they be" check. */
+  workSites?: WorkSite[];
 }
 
 const PRESET_COLORS = [
@@ -36,8 +38,12 @@ export default function ShiftModal({
   statusOptions,
   statusCategories,
   onBulkSave,
+  workSites,
 }: ShiftModalProps) {
   const isEdit = !!shift;
+  // An approved-leave day belongs to its leave request: its date, status and
+  // times change through the leave workflow, only notes and colour here.
+  const isLeaveDay = !!shift?.leave_application_id;
   const [activeTab, setActiveTab] = useState<'details' | 'notes'>('details');
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -63,6 +69,7 @@ export default function ShiftModal({
   const [color, setColor] = useState('');
   const [notes, setNotes] = useState('');
   const [remarks, setRemarks] = useState('');
+  const [workSiteId, setWorkSiteId] = useState<number | ''>('');
 
   // Range fields
   const [rangeStartDate, setRangeStartDate] = useState('');
@@ -96,6 +103,7 @@ export default function ShiftModal({
       setColor(shift.color ?? '');
       setNotes(shift.notes ?? '');
       setRemarks(shift.remarks ?? '');
+      setWorkSiteId(shift.work_site_id ?? '');
       setDateMode('single');
     } else {
       setEmployeeId(prefillEmployeeId ?? 0);
@@ -108,6 +116,7 @@ export default function ShiftModal({
       setColor('');
       setNotes('');
       setRemarks('');
+      setWorkSiteId('');
       setDateMode('single');
       setRangeStartDate(prefillDate ?? '');
       setRangeEndDate('');
@@ -146,6 +155,7 @@ export default function ShiftModal({
           color: color || null,
           notes: notes || null,
           remarks: remarks || null,
+          work_site_id: isWork && workSiteId !== '' ? workSiteId : null,
           skip_days: skipDays,
           skip_holidays: skipHolidays,
           force,
@@ -163,13 +173,21 @@ export default function ShiftModal({
         }
         // Nothing skipped → the parent closed the modal on success.
       } else {
-        await onSave({
+        // Empty fields are sent as null, which clears them on an edit (the
+        // backend used to ignore nulls, so a note could never be removed).
+        await onSave(isLeaveDay ? {
+          role_name: roleName || null,
+          color: color || null,
+          notes: notes || null,
+          remarks: remarks || null,
+        } : {
           employee_id: employeeId,
           date,
           status,
           start_time: isWork ? (startTime || null) : null,
           end_time: isWork ? (endTime || null) : null,
           work_arrangement: isWork ? (workArrangement || null) : null,
+          work_site_id: isWork && workSiteId !== '' ? workSiteId : null,
           role_name: roleName || null,
           color: color || null,
           notes: notes || null,
@@ -249,6 +267,13 @@ export default function ShiftModal({
 
         {/* Body */}
         <div className="px-6 py-4 space-y-4">
+          {isLeaveDay && (
+            <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-800">
+              This is an approved leave day. Its date, status and times follow the leave
+              request; to change them, unapprove or cancel the leave. You can still add
+              notes or a colour here.
+            </div>
+          )}
           {/* Conflict banner: leave overlaps and schedule-policy breaches */}
           {conflicts.length > 0 && (
             <div
@@ -278,7 +303,7 @@ export default function ShiftModal({
           )}
 
           {activeTab === 'details' && (
-            <>
+            <fieldset disabled={isLeaveDay} className="space-y-4 disabled:opacity-60">
               {/* Date mode toggle (create only) */}
               {!isEdit && onBulkSave && (
                 <div>
@@ -482,6 +507,27 @@ export default function ShiftModal({
                       ))}
                     </div>
                   </div>
+
+                  {workSites && workSites.length > 0 && (
+                    <div>
+                      <label htmlFor="shift-work-site" className="block text-xs font-medium text-gray-500 uppercase mb-1">Work Site</label>
+                      <select
+                        id="shift-work-site"
+                        value={workSiteId}
+                        onChange={(e) => setWorkSiteId(e.target.value ? Number(e.target.value) : '')}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                      >
+                        <option value="">No specific site</option>
+                        {workSites.filter((s) => s.is_active || s.id === workSiteId).map((s) => (
+                          <option key={s.id} value={s.id}>{s.name}</option>
+                        ))}
+                      </select>
+                      <p className="mt-1 text-xs text-gray-500">
+                        Where they are expected to clock in. Used by the time clock when the
+                        work arrangement requires being on site.
+                      </p>
+                    </div>
+                  )}
                 </>
               )}
 
@@ -496,7 +542,7 @@ export default function ShiftModal({
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                 />
               </div>
-            </>
+            </fieldset>
           )}
 
           {activeTab === 'notes' && (
@@ -560,7 +606,7 @@ export default function ShiftModal({
         {/* Footer */}
         <div className="flex items-center justify-between px-6 py-4 border-t bg-gray-50 rounded-b-xl">
           <div>
-            {isEdit && onDelete && (
+            {isEdit && onDelete && !isLeaveDay && (
               <button
                 onClick={handleDelete}
                 disabled={deleting}

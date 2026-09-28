@@ -1,7 +1,7 @@
 import re
 from typing import List, Optional
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from app.schemas.user import UserResponse
 
@@ -41,6 +41,14 @@ class TwoFactorSetupResponse(BaseModel):
 class TwoFactorVerifyRequest(BaseModel):
     code: str
     remember_device: bool = False
+
+
+class TwoFactorConfirmRequest(BaseModel):
+    code: str = Field(min_length=6, max_length=12)
+
+
+class TwoFactorDisableRequest(BaseModel):
+    password: str = Field(min_length=1, max_length=200)
 
 
 class ActivateAccountRequest(BaseModel):

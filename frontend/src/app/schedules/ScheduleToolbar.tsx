@@ -31,6 +31,10 @@ interface ScheduleToolbarProps {
   onExport: () => void;
   onExportXlsx?: () => void;
   canEdit: boolean;
+  /** schedules:create and at least one row the viewer manages. Defaults to canEdit. */
+  canAddShift?: boolean;
+  /** schedules:view, which the CSV export requires. Defaults to true. */
+  canExport?: boolean;
   /** Overlay recorded attendance + approved overtime on the planning grid. */
   showActuals?: boolean;
   onShowActualsChange?: (v: boolean) => void;
@@ -50,6 +54,10 @@ interface ScheduleToolbarProps {
   onCopyWeek?: () => void;
   // Clear all
   onClearAll?: () => void;
+  // Schedule templates panel
+  onOpenTemplates?: () => void;
+  // Return the published shifts in view to draft
+  onUnpublish?: () => void;
 }
 
 export default function ScheduleToolbar({
@@ -71,6 +79,8 @@ export default function ScheduleToolbar({
   onExport,
   onExportXlsx,
   canEdit,
+  canAddShift = canEdit,
+  canExport = true,
   showActuals,
   onShowActualsChange,
   clipboard,
@@ -85,6 +95,8 @@ export default function ScheduleToolbar({
   onOpenSnapshots,
   onCopyWeek,
   onClearAll,
+  onOpenTemplates,
+  onUnpublish,
 }: ScheduleToolbarProps) {
   // On a phone the toolbar was three stacked rows -- range, search, actions --
   // which pushed the grid itself off the screen. Everything except date
@@ -393,8 +405,33 @@ export default function ScheduleToolbar({
                   </button>
                 )}
 
-                {(onOpenSnapshots || onCopyWeek) && <div className="border-t border-gray-100 my-1" />}
+                {onOpenTemplates && (
+                  <button
+                    onClick={() => { onOpenTemplates(); setShowMore(false); }}
+                    className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2 transition-colors"
+                  >
+                    <svg className="w-3.5 h-3.5 text-purple-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 5h16M4 12h16M4 19h10" />
+                    </svg>
+                    Schedule Templates
+                  </button>
+                )}
 
+                {onUnpublish && (
+                  <button
+                    onClick={() => { onUnpublish(); setShowMore(false); }}
+                    className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2 transition-colors"
+                  >
+                    <svg className="w-3.5 h-3.5 text-amber-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 3l18 18M10.5 6.2A9.8 9.8 0 0112 6c4.5 0 8.3 2.9 9.5 7a10 10 0 01-2.6 4.2M6.2 6.2A10 10 0 002.5 13c1.2 4.1 5 7 9.5 7 1.7 0 3.3-.4 4.7-1.2" />
+                    </svg>
+                    Unpublish shifts in view
+                  </button>
+                )}
+
+                {(onOpenSnapshots || onCopyWeek || onOpenTemplates || onUnpublish) && <div className="border-t border-gray-100 my-1" />}
+
+                {canExport && (
                 <button
                   onClick={() => { onExport(); setShowMore(false); }}
                   className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2 transition-colors"
@@ -404,6 +441,7 @@ export default function ScheduleToolbar({
                   </svg>
                   Export CSV
                 </button>
+                )}
 
                 {onExportXlsx && (
                   <button
@@ -458,7 +496,7 @@ export default function ScheduleToolbar({
         )}
 
         {/* Export (non-editor fallback) */}
-        {!canEdit && (
+        {!canEdit && canExport && (
           <button
             onClick={onExport}
             className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-1.5"
@@ -471,7 +509,7 @@ export default function ScheduleToolbar({
         )}
 
         {/* Add Shift */}
-        {canEdit && (
+        {canAddShift && (
           <button
             onClick={onAddShift}
             className="px-3 py-1.5 text-xs font-medium text-white bg-purple-600 rounded-lg hover:bg-purple-700 transition-colors flex items-center gap-1.5"

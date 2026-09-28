@@ -23,6 +23,8 @@ interface LinearGridViewProps {
   savedRowOrder?: number[] | null;
   onRowOrderChange?: (order: number[]) => void;
   canEdit?: boolean;
+  /** Whether the viewer may change this employee's row (the grid's can_manage). */
+  canEditEmployee?: (employeeId: number) => boolean;
   currentUserId?: number;
   onSwapRequest?: (shift: Shift) => void;
   onChangeRequest?: (shift: Shift) => void;
@@ -63,6 +65,7 @@ export default function LinearGridView({
   savedRowOrder,
   onRowOrderChange,
   canEdit,
+  canEditEmployee,
   currentUserId,
   onSwapRequest,
   onChangeRequest,
@@ -454,13 +457,15 @@ export default function LinearGridView({
                         isSelected={isCellSelected}
                         hasClipboard={!!clipboard}
                         onShiftClick={onShiftClick}
-                        {...(canEdit
+                        {...(canEdit && (canEditEmployee?.(emp.employee_id) ?? true)
                           ? { onCellClick: () => onCellClick(emp.employee_id, dateStr) }
                           : {})}
                         onCellSelect={onCellSelect}
                         onCopyShift={onCopyShift}
                         onPasteShift={onPasteShift}
-                        onMoveShift={onMoveShift}
+                        // Rows the viewer does not manage are read-only: no drag
+                        // from them (drops onto them are refused by the page).
+                        onMoveShift={(canEditEmployee?.(emp.employee_id) ?? true) ? onMoveShift : undefined}
                         isOwnShift={currentUserId === emp.employee_id}
                         onSwapRequest={onSwapRequest}
                         onChangeRequest={onChangeRequest}

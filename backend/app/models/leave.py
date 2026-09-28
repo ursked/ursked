@@ -23,6 +23,15 @@ class LeaveApplication(Base):
     # Snapshot of non-blocking rule violations at filing time, shown to approvers.
     # [{"rule": str, "mode": "warn", "message": str, "details": {...}}, ...]
     rule_warnings = Column(JSON, nullable=True)
+    # "am" / "pm" for a half-day request (single day only), else NULL. A half day
+    # counts 0.5 against the balance.
+    half_day = Column(String(2), nullable=True)
+    # How days_requested was reached, one entry per calendar day:
+    # [{"date": "2026-12-31", "days": 1.0, "reason": "shift", "label": "..."}].
+    # Kept so balances can split a request that spans New Year by the year each
+    # day falls in, and so the employee and approver can see why a day did or
+    # did not count. NULL on requests filed before 2026-09 (counted Mon-Fri).
+    day_breakdown = Column(JSON, nullable=True)
     reviewed_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     reviewed_at = Column(DateTime(timezone=True), nullable=True)
     reviewer_notes = Column(Text, nullable=True)
@@ -33,6 +42,7 @@ class LeaveApplication(Base):
     employee = relationship("User", foreign_keys=[employee_id])
     reviewer = relationship("User", foreign_keys=[reviewed_by])
     approval_steps = relationship("LeaveApprovalStep", back_populates="leave_application", cascade="all, delete-orphan", order_by="LeaveApprovalStep.step_order")
+    events = relationship("LeaveApprovalEvent", back_populates="leave_application", cascade="all, delete-orphan", order_by="LeaveApprovalEvent.id")
 
 
 class LeaveType(Base):
@@ -169,6 +179,10 @@ class LeaveApproverAssignment(Base):
     cascade = Column(Boolean, default=False)
     exclude = Column(Boolean, default=False)
     is_active = Column(Boolean, default=True)
+    # Why the system switched this rule off, shown next to it so an admin is not
+    # left guessing (e.g. "Its unit, Finance, was deleted", "Ana Cruz left the
+    # company"). NULL for rules an admin deactivated or never touched.
+    deactivated_reason = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -176,3 +190,71 @@ class LeaveApproverAssignment(Base):
     employee = relationship("User", foreign_keys=[employee_id])
     org_node = relationship("OrgNode", foreign_keys=[org_node_id])
     approver = relationship("User", foreign_keys=[approver_id])
+    steps = relationship(
+        "LeaveApproverRuleStep",
+        back_populates="assignment",
+        cascade="all, delete-orphan",
+        order_by="LeaveApproverRuleStep.step_order",
+    )
+
+
+class LeaveApproverRuleStep(Base):
+    """One approver in a rule's ordered chain (step 1, step 2, ...).
+
+    A rule used to hold exactly one approver, and a two-level chain meant two
+    separate rules at the same priority that happened to match together, so
+    editing one rule silently changed the other's chain. Now the rule's priority
+    only decides WHICH rule applies, and the chain is this ordered list.
+    Rules created before 2026-09 were given one step each by migration 063, and
+    the resolver still merges legacy same-scope, same-priority rows so their
+    chains keep working unchanged.
+    """
+
+    __tablename__ = "leave_approver_rule_steps"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    assignment_id = Column(Integer, ForeignKey("leave_approver_assignments.id", ondelete="CASCADE"), nullable=False, index=True)
+    step_order = Column(Integer, nullable=False, default=1)
+    approver_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    approver_role = Column(String(30), nullable=True)  # node_head, node_deputy, parent_head, parent_deputy
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+    assignment = relationship("LeaveApproverAssignment", back_populates="steps")
+    approver = relationship("User", foreign_keys=[approver_id])
+
+
+class LeaveApprovalEvent(Base):
+    """What happened to a request outside the normal approve/reject click.
+
+    Overrides, reassignments, self-approvals, reminders, escalations and expiry
+    each leave a row here. It is shown on the request so an employee and their
+    approvers can see who stepped in and why, and it doubles as the reminder
+    ledger: a reminder is only sent if no row for that step, action and day
+    exists yet, which the unique index enforces even if two workers race.
+    """
+
+    __tablename__ = "leave_approval_events"
+    __table_args__ = (
+        Index("ix_leave_approval_events_once", "step_id", "action", "on_date", unique=True),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    leave_application_id = Column(Integer, ForeignKey("leave_applications.id", ondelete="CASCADE"), nullable=False, index=True)
+    step_id = Column(Integer, ForeignKey("leave_approval_steps.id", ondelete="SET NULL"), nullable=True)
+    # override_approve, override_reject, override_revoke, reassign, self_approve,
+    # reminder, escalate, expire, auto_reassign, steps_reset
+    action = Column(String(30), nullable=False)
+    actor_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    from_approver_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    to_approver_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    reason = Column(Text, nullable=True)
+    # Set only for once-a-day system actions (reminder); NULL otherwise, and
+    # NULLs never collide in the unique index.
+    on_date = Column(Date, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+    leave_application = relationship("LeaveApplication", back_populates="events")
+    actor = relationship("User", foreign_keys=[actor_id])
+    from_approver = relationship("User", foreign_keys=[from_approver_id])
+    to_approver = relationship("User", foreign_keys=[to_approver_id])

@@ -6,10 +6,10 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { useAuth } from '@/contexts/AuthContext';
-import { hasAnyRole } from '@/lib/roles';
-import { api } from '@/lib/api';
-import { ScheduleGrid, Shift, AppSettings, ShiftStatusType, UserPreferences, OrgTreeNode, ShiftActuals } from '@/types';
-import { buildStatusMaps, toLocalDateStr } from './scheduleHelpers';
+import { usePermissions } from '@/contexts/PermissionsContext';
+import { api, isScheduleConflictError } from '@/lib/api';
+import { ScheduleGrid, Shift, AppSettings, ShiftStatusType, UserPreferences, OrgTreeNode, ShiftActuals, ShiftBulkDeleteResult, PublishRangeResult, UnpublishRangeResult } from '@/types';
+import { buildStatusMaps, requestableStatuses, toLocalDateStr } from './scheduleHelpers';
 import { useToast } from '@/components/ui/Toast';
 import { ErrorMessage } from '@/components/ui/ErrorBoundary';
 
@@ -43,8 +43,8 @@ const ChangeRequestModal = dynamic(() => import('./ChangeRequestModal'));
 import ScheduleRequestsPanel from './ScheduleRequestsPanel';
 import SnapshotPanel from './SnapshotPanel';
 import CopyWeekModal from './CopyWeekModal';
+import TemplatesPanel from './TemplatesPanel';
 
-const EDITOR_ROLES = ['tenant_admin', 'hr', 'manager', 'schedule_editor'];
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
@@ -124,7 +124,16 @@ function SchedulesPageInner() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { showToast } = useToast();
-  const canEdit = user ? hasAnyRole(user, EDITOR_ROLES) : false;
+  // What the viewer may do is the permission matrix (the same module/action
+  // the API checks); to whom is the row's can_manage flag from the grid. This
+  // used to be a hard-coded role list, so unticking a box on the Permissions
+  // screen changed nothing here either.
+  const { hasPermission } = usePermissions();
+  const canView = hasPermission('schedules', 'view');
+  const canCreate = hasPermission('schedules', 'create');
+  const canEditShifts = hasPermission('schedules', 'edit');
+  const canDeleteShifts = hasPermission('schedules', 'delete');
+  const canEdit = canCreate || canEditShifts || canDeleteShifts;
 
   // Fetch tenant settings (no staleTime — always refetch on mount so week-start changes take effect immediately)
   const { data: appSettings, isLoading: settingsLoading } = useQuery<AppSettings>({
@@ -272,8 +281,16 @@ function SchedulesPageInner() {
   // Copy-week modal state
   const [copyWeekOpen, setCopyWeekOpen] = useState(false);
 
-  // Clear all confirmation state
+  // Clear all confirmation state. The preview is the server's own count for
+  // exactly the rows shown, so the confirmation states what the button does.
   const [clearAllConfirm, setClearAllConfirm] = useState(false);
+  const [clearPreview, setClearPreview] = useState<ShiftBulkDeleteResult | null>(null);
+  const [clearIncludeLeave, setClearIncludeLeave] = useState(false);
+  // Publish confirmation, likewise counted by the server before anything changes.
+  const [publishPreview, setPublishPreview] = useState<PublishRangeResult | null>(null);
+  // Unpublish (return published shifts in view to draft), same pattern.
+  const [unpublishPreview, setUnpublishPreview] = useState<UnpublishRangeResult | null>(null);
+  const [templatesOpen, setTemplatesOpen] = useState(false);
 
   // Range calculation
   const { start, end } = useMemo(() => {
@@ -351,6 +368,14 @@ function SchedulesPageInner() {
     return m;
   }, [gridData]);
 
+  // Work sites for the shift modal's site picker (the time clock geofence).
+  const { data: workSites } = useQuery({
+    queryKey: ['work-sites'],
+    queryFn: () => api.listWorkSites(),
+    enabled: shiftModalOpen,
+    staleTime: 5 * 60_000,
+  });
+
   const { data: orgTree } = useQuery({
     queryKey: ['org-tree'],
     queryFn: () => api.getOrgTree(),
@@ -393,14 +418,18 @@ function SchedulesPageInner() {
     return out;
   }, [orgTree, accessible]);
 
-  // Guardrail lint for the visible range (editors only) → inline cell warnings.
+  // Guardrail lint for the rows on screen → inline cell warnings. It sends
+  // the ids shown, so a filtered view is linted as filtered (it used to lint
+  // the whole company and count warnings for people not on screen).
+  const shownIds = useMemo(() => (gridData?.employees ?? []).map((e) => e.employee_id), [gridData]);
   const { data: lintData } = useQuery({
-    queryKey: ['schedule-lint', formatDate(start), formatDate(end), orgNodeId],
+    queryKey: ['schedule-lint', formatDate(start), formatDate(end), shownIds.join(',')],
     queryFn: () => api.lintSchedule({
       start_date: formatDate(start),
       end_date: formatDate(end),
+      employee_ids: shownIds,
     }),
-    enabled: canEdit && !settingsLoading,
+    enabled: canView && !settingsLoading && !!gridData,
     staleTime: 30_000,
   });
   // Map employee_id → date → violation messages.
@@ -429,12 +458,29 @@ function SchedulesPageInner() {
     leave_count: 0,
     rest_day_count: 0,
   };
-  // Draft (unpublished) shifts in the current view — only editors see these.
-  const draftCount = useMemo(
-    () => employees.reduce(
-      (acc, e) => acc + e.shifts.filter((s) => s.is_published === false).length, 0,
-    ),
+  // The rows the viewer may change. Every bulk action (clear, publish, copy
+  // week, snapshot) sends exactly these ids; the backend never widens an
+  // absent or empty list to the whole company any more.
+  const manageableIds = useMemo(
+    () => employees.filter((e) => e.can_manage !== false).map((e) => e.employee_id),
     [employees],
+  );
+  const manageable = useMemo(() => new Set(manageableIds), [manageableIds]);
+  const canManage = useCallback((employeeId: number) => manageable.has(employeeId), [manageable]);
+
+  // Day view also loads tomorrow for its preview; actions apply to the day shown.
+  const actionStart = formatDate(viewMode === 'day' ? currentDate : start);
+  const actionEnd = formatDate(viewMode === 'day' ? currentDate : end);
+
+  // Draft (unpublished) shifts in the current view that Publish would release.
+  const draftCount = useMemo(
+    () => employees.filter((e) => manageable.has(e.employee_id)).reduce(
+      (acc, e) => acc + e.shifts.filter(
+        (s) => s.is_published === false && s.date >= actionStart && s.date <= actionEnd,
+      ).length,
+      0,
+    ),
+    [employees, manageable, actionStart, actionEnd],
   );
 
   // Shared post-mutation handler: refetch grid + reset UI state
@@ -462,29 +508,83 @@ function SchedulesPageInner() {
     onSuccess: onMutationSuccess,
   });
 
-  // Bulk delete mutation
+  // Clear all shifts in view: first ask the server what it would delete for
+  // exactly the rows shown, then delete that.
+  const clearPreviewMutation = useMutation({
+    mutationFn: () => api.bulkDeleteShifts({
+      start_date: actionStart,
+      end_date: actionEnd,
+      employee_ids: manageableIds,
+      dry_run: true,
+    }),
+    onSuccess: (data) => setClearPreview(data),
+    onError: (err: Error) => {
+      setClearAllConfirm(false);
+      showToast(err.message, 'error');
+    },
+  });
+
   const bulkDeleteMutation = useMutation({
     mutationFn: () => api.bulkDeleteShifts({
-      start_date: formatDate(start),
-      end_date: formatDate(end),
+      start_date: actionStart,
+      end_date: actionEnd,
+      employee_ids: manageableIds,
+      include_leave: clearIncludeLeave,
     }),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['schedule-grid'] });
       setClearAllConfirm(false);
-      showToast(`${(data as { deleted_count: number }).deleted_count} shifts cleared`, 'success');
+      setClearPreview(null);
+      setClearIncludeLeave(false);
+      const kept = data.leave_kept_count
+        ? ` · ${data.leave_kept_count} approved-leave day${data.leave_kept_count !== 1 ? 's' : ''} kept`
+        : '';
+      showToast(`${data.deleted_count} shift${data.deleted_count !== 1 ? 's' : ''} cleared${kept}`, 'success');
     },
     onError: (err: Error) => showToast(err.message, 'error'),
   });
 
-  // Publish the current visible range (respect the org/dept filter).
-  const publishMutation = useMutation({
-    mutationFn: () => api.publishSchedule({
-      start_date: formatDate(start),
-      end_date: formatDate(end),
-      ...(orgNodeId ? { employee_ids: employees.map((e) => e.employee_id) } : {}),
-    }),
+  const openClearAll = () => {
+    setClearAllConfirm(true);
+    setClearPreview(null);
+    setClearIncludeLeave(false);
+    clearPreviewMutation.mutate();
+  };
+
+  // Publish the drafts of exactly the rows shown. The confirmation carries the
+  // server's own count, so the banner, the dialog and the result agree.
+  const publishBody = { start_date: actionStart, end_date: actionEnd, employee_ids: manageableIds };
+  const publishPreviewMutation = useMutation({
+    mutationFn: () => api.publishSchedule({ ...publishBody, dry_run: true }),
+    onSuccess: (res) => setPublishPreview(res),
+    onError: (err: Error) => showToast(err.message, 'error'),
+  });
+  // Unpublish: take the published shifts of the rows shown back to draft so
+  // they can be reworked. The employees are told their schedule was withdrawn.
+  const unpublishPreviewMutation = useMutation({
+    mutationFn: () => api.unpublishSchedule({ ...publishBody, dry_run: true }),
+    onSuccess: (res) => setUnpublishPreview(res),
+    onError: (err: Error) => showToast(err.message, 'error'),
+  });
+  const unpublishMutation = useMutation({
+    mutationFn: () => api.unpublishSchedule(publishBody),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['schedule-grid'] });
+      setUnpublishPreview(null);
+      showToast(
+        `${res.unpublished_count} shift${res.unpublished_count !== 1 ? 's' : ''} back to draft` +
+        (res.notified ? ` · ${res.notified} employee${res.notified !== 1 ? 's' : ''} notified` : ''),
+        'success',
+      );
+    },
+    onError: (err: Error) => showToast(err.message, 'error'),
+  });
+
+  const publishMutation = useMutation({
+    mutationFn: () => api.publishSchedule(publishBody),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ['schedule-grid'] });
+      setPublishPreview(null);
       showToast(
         `Published ${res.published_count} shift${res.published_count !== 1 ? 's' : ''}` +
         (res.notified ? ` · ${res.notified} employee${res.notified !== 1 ? 's' : ''} notified` : ''),
@@ -503,7 +603,7 @@ function SchedulesPageInner() {
   };
 
   const handleShiftClick = (shift: Shift) => {
-    if (canEdit) {
+    if ((canEditShifts || canDeleteShifts) && canManage(shift.employee_id)) {
       setEditingShift(shift);
       setPrefillEmployeeId(undefined);
       setPrefillDate(undefined);
@@ -524,7 +624,7 @@ function SchedulesPageInner() {
   }, []);
 
   const handleCellClick = (employeeId: number, dateStr: string) => {
-    if (!canEdit) return;
+    if (!canCreate || (employeeId && !canManage(employeeId))) return;
     setEditingShift(null);
     setPrefillEmployeeId(employeeId);
     setPrefillDate(dateStr);
@@ -566,18 +666,41 @@ function SchedulesPageInner() {
     });
   }, []);
 
+  // Paste and drag have no modal to show a refusal in, and a paste that hit
+  // approved leave used to fail with no message at all. A refusal is now said
+  // out loud; when every reason is a guardrail the editor may override (as the
+  // modal's "Schedule Anyway" allows), they are asked whether to go ahead.
+  const handleQuickWriteError = useCallback(
+    (err: unknown, verb: string, retry: () => void) => {
+      if (isScheduleConflictError(err)) {
+        const conflicts = err.detail.conflicts;
+        const lines = conflicts.map((c) => c.message).join('\n');
+        if (conflicts.length > 0 && conflicts.every((c) => c.forceable)) {
+          if (window.confirm(`${lines}\n\n${verb} anyway?`)) retry();
+          return;
+        }
+        showToast(lines || err.message, 'error');
+        return;
+      }
+      showToast(err instanceof Error ? err.message : `Could not ${verb.toLowerCase()} the shift`, 'error');
+    },
+    [showToast],
+  );
+
   const handlePasteShift = useCallback(
     (employeeId: number, dateStr: string) => {
-      if (!clipboard || !canEdit) return;
+      if (!clipboard || !canCreate || !canManage(employeeId)) return;
       // Clear selection immediately for visual feedback
       setSelectedCell(null);
-      createShiftMutation.mutate({
-        employee_id: employeeId,
-        date: dateStr,
-        ...clipboard,
+      const body = { employee_id: employeeId, date: dateStr, ...clipboard };
+      createShiftMutation.mutate(body, {
+        onError: (err) => handleQuickWriteError(err, 'Paste', () =>
+          createShiftMutation.mutate({ ...body, force: true }, {
+            onError: (e) => handleQuickWriteError(e, 'Paste', () => {}),
+          })),
       });
     },
-    [clipboard, canEdit, createShiftMutation],
+    [clipboard, canCreate, canManage, createShiftMutation, handleQuickWriteError],
   );
 
   const handleCellSelect = useCallback((employeeId: number, dateStr: string, shift?: Shift) => {
@@ -591,13 +714,16 @@ function SchedulesPageInner() {
   // Drag-and-drop move handler
   const handleMoveShift = useCallback(
     (shiftId: number, targetEmployeeId: number, targetDateStr: string) => {
-      if (!canEdit) return;
-      updateShiftMutation.mutate({
-        id: shiftId,
-        data: { employee_id: targetEmployeeId, date: targetDateStr },
+      if (!canEditShifts || !canManage(targetEmployeeId)) return;
+      const data = { employee_id: targetEmployeeId, date: targetDateStr };
+      updateShiftMutation.mutate({ id: shiftId, data }, {
+        onError: (err) => handleQuickWriteError(err, 'Move', () =>
+          updateShiftMutation.mutate({ id: shiftId, data: { ...data, force: true } }, {
+            onError: (e) => handleQuickWriteError(e, 'Move', () => {}),
+          })),
       });
     },
-    [canEdit, updateShiftMutation],
+    [canEditShifts, canManage, updateShiftMutation, handleQuickWriteError],
   );
 
   // Keyboard shortcuts for copy/paste
@@ -671,7 +797,7 @@ function SchedulesPageInner() {
         {/* Toolbar */}
         <ScheduleToolbar
           showActuals={showActuals}
-          onShowActualsChange={setShowActuals}
+          onShowActualsChange={canView ? setShowActuals : undefined}
           viewMode={viewMode}
           onViewModeChange={setViewMode}
           rangeMode={rangeMode}
@@ -688,8 +814,11 @@ function SchedulesPageInner() {
           onOrgNodeChange={setOrgNodeId}
           onAddShift={handleAddShift}
           onExport={handleExport}
-          onExportXlsx={handleExportXlsx}
+          // The workbook covers the whole company, so only for people who see everyone.
+          onExportXlsx={canView && accessible?.can_see_all ? handleExportXlsx : undefined}
           canEdit={canEdit}
+          canAddShift={canCreate && manageableIds.length > 0}
+          canExport={canView}
           clipboard={clipboard}
           onClearClipboard={handleClearClipboard}
           rowOrderDirty={rowOrderDirty}
@@ -699,16 +828,18 @@ function SchedulesPageInner() {
           customStartDate={customStartDate}
           customEndDate={customEndDate}
           onCustomRangeChange={handleCustomRangeChange}
-          onOpenSnapshots={() => setSnapshotPanelOpen(true)}
-          onCopyWeek={() => setCopyWeekOpen(true)}
-          onClearAll={() => setClearAllConfirm(true)}
+          onOpenSnapshots={canEditShifts ? () => setSnapshotPanelOpen(true) : undefined}
+          onCopyWeek={canCreate && manageableIds.length > 0 ? () => setCopyWeekOpen(true) : undefined}
+          onClearAll={canDeleteShifts && manageableIds.length > 0 ? openClearAll : undefined}
+          onOpenTemplates={canCreate && manageableIds.length > 0 ? () => setTemplatesOpen(true) : undefined}
+          onUnpublish={canEditShifts && manageableIds.length > 0 ? () => unpublishPreviewMutation.mutate() : undefined}
         />
 
         {/* Stats bar */}
         <StatsBar stats={stats} loading={isLoading} />
 
-        {/* Guardrail warnings summary (editors only) */}
-        {canEdit && violationCount > 0 && (
+        {/* Guardrail warnings summary */}
+        {canView && violationCount > 0 && (
           <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-700">
             <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="currentColor">
               <path d="M12 2L1 21h22L12 2zm0 6l7.53 13H4.47L12 8zm-1 3v4h2v-4h-2zm0 5v2h2v-2h-2z" />
@@ -719,46 +850,128 @@ function SchedulesPageInner() {
           </div>
         )}
 
-        {/* Draft / publish banner (editors only) */}
-        {canEdit && draftCount > 0 && (
-          <div className="flex items-center justify-between gap-3 rounded-lg border border-purple-200 bg-purple-50 px-4 py-2.5">
-            <div className="flex items-center gap-2 text-xs text-purple-800">
-              <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-              </svg>
-              <span>
-                <span className="font-semibold">{draftCount}</span> draft shift{draftCount !== 1 ? 's' : ''} in this range are hidden from employees until published.
-              </span>
+        {/* Draft / publish banner */}
+        {canEditShifts && draftCount > 0 && (
+          <div className="rounded-lg border border-purple-200 bg-purple-50 px-4 py-2.5">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-xs text-purple-800">
+                <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                </svg>
+                <span>
+                  <span className="font-semibold">{draftCount}</span> draft shift{draftCount !== 1 ? 's' : ''} for the employees shown are hidden from them until published.
+                </span>
+              </div>
+              {!publishPreview && (
+                <button
+                  onClick={() => publishPreviewMutation.mutate()}
+                  disabled={publishPreviewMutation.isPending}
+                  className="rounded-md bg-purple-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-purple-700 disabled:opacity-50"
+                >
+                  {publishPreviewMutation.isPending ? 'Checking…' : `Publish ${draftCount} shift${draftCount !== 1 ? 's' : ''}…`}
+                </button>
+              )}
             </div>
-            <button
-              onClick={() => publishMutation.mutate()}
-              disabled={publishMutation.isPending}
-              className="rounded-md bg-purple-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-purple-700 disabled:opacity-50"
-            >
-              {publishMutation.isPending ? 'Publishing…' : `Publish ${draftCount} shift${draftCount !== 1 ? 's' : ''}`}
-            </button>
+            {publishPreview && (
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-purple-200 pt-2">
+                <p className="text-xs text-purple-900">
+                  {publishPreview.published_count === 0
+                    ? 'Nothing left to publish for the employees shown.'
+                    : `Publish ${publishPreview.published_count} shift${publishPreview.published_count !== 1 ? 's' : ''} for ${publishPreview.employee_count} employee${publishPreview.employee_count !== 1 ? 's' : ''} (${actionStart} to ${actionEnd})? Each of them is notified.`}
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setPublishPreview(null)}
+                    className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => publishMutation.mutate()}
+                    disabled={publishMutation.isPending || publishPreview.published_count === 0}
+                    className="rounded-md bg-purple-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-purple-700 disabled:opacity-50"
+                  >
+                    {publishMutation.isPending ? 'Publishing…' : 'Publish and notify'}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
-        {/* Clear all confirmation banner */}
-        {clearAllConfirm && (
-          <div className="bg-red-50 border border-red-200 rounded-xl px-5 py-4 flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-red-800">Clear all shifts in current view?</p>
-              <p className="text-xs text-red-600 mt-0.5">
-                This will permanently delete all {stats.total_shifts} shift{stats.total_shifts !== 1 ? 's' : ''} from {formatDate(start)} to {formatDate(end)} for all employees.
+        {/* Unpublish confirmation, with the server's own count. */}
+        {unpublishPreview && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-amber-900">Unpublish the shifts in current view?</p>
+              <p className="text-xs text-amber-800 mt-0.5">
+                {unpublishPreview.unpublished_count === 0
+                  ? 'Nothing published here for the employees shown.'
+                  : `${unpublishPreview.unpublished_count} published shift${unpublishPreview.unpublished_count !== 1 ? 's' : ''} for ${unpublishPreview.employee_count} employee${unpublishPreview.employee_count !== 1 ? 's' : ''} (${actionStart} to ${actionEnd}) go back to draft and disappear from their schedule until you publish again. They are told. Approved leave stays visible.`}
               </p>
             </div>
-            <div className="flex items-center gap-2 ml-4 flex-shrink-0">
+            <div className="flex items-center gap-2 flex-shrink-0">
               <button
-                onClick={() => setClearAllConfirm(false)}
+                onClick={() => setUnpublishPreview(null)}
+                className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => unpublishMutation.mutate()}
+                disabled={unpublishMutation.isPending || unpublishPreview.unpublished_count === 0}
+                className="px-3 py-1.5 text-xs font-medium text-white bg-amber-600 rounded-lg hover:bg-amber-700 disabled:opacity-50"
+              >
+                {unpublishMutation.isPending ? 'Unpublishing…' : 'Unpublish and notify'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Clear all confirmation banner. The numbers come from the server's
+            dry run for exactly the rows shown, so they are what will happen. */}
+        {clearAllConfirm && (
+          <div className="bg-red-50 border border-red-200 rounded-xl px-5 py-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-red-800">Clear all shifts in current view?</p>
+              {!clearPreview ? (
+                <p className="text-xs text-red-600 mt-0.5">Counting the shifts that would be deleted…</p>
+              ) : (
+                <>
+                  <p className="text-xs text-red-600 mt-0.5">
+                    This permanently deletes {clearPreview.deleted_count + (clearIncludeLeave ? clearPreview.leave_kept_count : 0)} shift
+                    {clearPreview.deleted_count + (clearIncludeLeave ? clearPreview.leave_kept_count : 0) !== 1 ? 's' : ''} from {actionStart} to {actionEnd} for
+                    the {manageableIds.length} employee{manageableIds.length !== 1 ? 's' : ''} shown{manageableIds.length < employees.length ? ' that you manage' : ''}. Nobody else is affected.
+                  </p>
+                  {clearPreview.leave_kept_count > 0 && (
+                    <label className="mt-1.5 flex items-center gap-2 text-xs text-red-700">
+                      <input
+                        type="checkbox"
+                        checked={clearIncludeLeave}
+                        onChange={(e) => setClearIncludeLeave(e.target.checked)}
+                        className="rounded border-red-300 text-red-600 focus:ring-red-500"
+                      />
+                      {clearIncludeLeave
+                        ? `Also deleting ${clearPreview.leave_kept_count} approved-leave day${clearPreview.leave_kept_count !== 1 ? 's' : ''}. The leave requests stay approved.`
+                        : `${clearPreview.leave_kept_count} approved-leave day${clearPreview.leave_kept_count !== 1 ? 's are' : ' is'} kept. Tick to delete them too.`}
+                    </label>
+                  )}
+                </>
+              )}
+            </div>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <button
+                onClick={() => { setClearAllConfirm(false); setClearPreview(null); }}
                 className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={() => bulkDeleteMutation.mutate()}
-                disabled={bulkDeleteMutation.isPending}
+                disabled={
+                  bulkDeleteMutation.isPending || !clearPreview ||
+                  clearPreview.deleted_count + (clearIncludeLeave ? clearPreview.leave_kept_count : 0) === 0
+                }
                 className="px-3 py-1.5 text-xs font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors flex items-center gap-1.5"
               >
                 {bulkDeleteMutation.isPending ? (
@@ -804,7 +1017,7 @@ function SchedulesPageInner() {
             dateRemarks={dateRemarks}
             onShiftClick={handleShiftClick}
             onCellClick={handleCellClick}
-            canEdit={canEdit}
+            canEdit={canCreate}
             statusMaps={statusMaps}
             currentUserId={user?.id}
             onSwapRequest={handleSwapRequest}
@@ -826,10 +1039,11 @@ function SchedulesPageInner() {
             onCellSelect={handleCellSelect}
             onCopyShift={handleCopyShift}
             onPasteShift={handlePasteShift}
-            onMoveShift={canEdit ? handleMoveShift : undefined}
+            onMoveShift={canEditShifts ? handleMoveShift : undefined}
             savedRowOrder={savedRowOrder}
             onRowOrderChange={setCurrentRowOrder}
-            canEdit={canEdit}
+            canEdit={canCreate}
+            canEditEmployee={canManage}
             currentUserId={user?.id}
             onSwapRequest={handleSwapRequest}
             onChangeRequest={handleChangeRequest}
@@ -846,7 +1060,7 @@ function SchedulesPageInner() {
             currentDate={currentDate}
             onShiftClick={handleShiftClick}
             onAddShift={handleCalendarAddShift}
-            canEdit={canEdit}
+            canEdit={canCreate}
             weekStartDay={weekStartDay}
             statusTypes={statusTypes}
             statusMaps={statusMaps}
@@ -862,13 +1076,14 @@ function SchedulesPageInner() {
         isOpen={shiftModalOpen}
         onClose={() => setShiftModalOpen(false)}
         onSave={handleSave}
-        onDelete={editingShift ? handleDelete : undefined}
+        onDelete={editingShift && canDeleteShifts ? handleDelete : undefined}
         shift={editingShift}
-        employees={employees}
+        employees={employees.filter((e) => manageable.has(e.employee_id))}
         prefillEmployeeId={prefillEmployeeId}
         prefillDate={prefillDate}
         statusOptions={statusMaps?.allStatuses}
         statusCategories={statusMaps?.categories}
+        workSites={workSites}
         onBulkSave={async (data) => {
           const result = await api.bulkCreateShifts(data);
           // Always refresh the grid so created shifts show immediately.
@@ -900,7 +1115,7 @@ function SchedulesPageInner() {
           onClose={() => { setChangeModalOpen(false); setRequestTargetShift(null); }}
           shift={requestTargetShift}
           dateStr={requestTargetDate}
-          statusOptions={statusMaps?.allStatuses}
+          statusOptions={statusMaps ? requestableStatuses(statusMaps) : undefined}
         />
       )}
 
@@ -914,18 +1129,28 @@ function SchedulesPageInner() {
       <SnapshotPanel
         isOpen={snapshotPanelOpen}
         onClose={() => setSnapshotPanelOpen(false)}
-        currentStartDate={formatDate(start)}
-        currentEndDate={formatDate(end)}
+        currentStartDate={actionStart}
+        currentEndDate={actionEnd}
         currentRangeType={viewMode === 'day' ? 'day' : rangeMode}
+        employeeIds={shownIds}
       />
 
-      {/* Copy week → next */}
+      <TemplatesPanel
+        isOpen={templatesOpen}
+        onClose={() => setTemplatesOpen(false)}
+        employees={employees.filter((e) => manageable.has(e.employee_id))}
+        weekStart={actionStart}
+        statusMaps={statusMaps}
+      />
+
+      {/* Copy week → next. Always the rows shown (it used to send nothing when
+          only the search box was used, which copied the whole company). */}
       <CopyWeekModal
         isOpen={copyWeekOpen}
         onClose={() => setCopyWeekOpen(false)}
-        sourceStart={formatDate(start)}
-        sourceEnd={formatDate(end)}
-        employeeIds={orgNodeId ? employees.map((e) => e.employee_id) : undefined}
+        sourceStart={actionStart}
+        sourceEnd={actionEnd}
+        employeeIds={manageableIds}
       />
     </DashboardLayout>
   );

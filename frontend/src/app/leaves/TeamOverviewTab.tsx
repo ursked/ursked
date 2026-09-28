@@ -4,13 +4,11 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { TeamStats, LeaveApplication, PaginatedResponse } from '@/types'
+import { STATUS_COLORS, STATUS_FILTERS, StepDots, daysLabel, typeLabel } from './leaveUi'
 
-const STATUS_COLORS: Record<string, string> = {
-  pending: 'bg-yellow-100 text-yellow-800',
-  approved: 'bg-green-100 text-green-800',
-  rejected: 'bg-red-100 text-red-800',
-  cancelled: 'bg-gray-100 text-gray-600',
-}
+// The table and the statistics above it use the same server-side scope
+// ("team": requests routed to you plus, with leave:view, everyone you manage;
+// never your own), so the numbers always describe the rows below them.
 
 export default function TeamOverviewTab() {
   const [page, setPage] = useState(1)
@@ -131,7 +129,7 @@ export default function TeamOverviewTab() {
         <div className="border-b border-gray-200 px-6 py-4">
           <h3 className="text-lg font-semibold text-gray-900">Team Leave Applications</h3>
           <div className="mt-3 flex gap-2">
-            {['all', 'pending', 'approved', 'rejected', 'cancelled'].map((s) => (
+            {STATUS_FILTERS.map((s) => (
               <button
                 key={s}
                 onClick={() => { setStatusFilter(s); setPage(1) }}
@@ -173,37 +171,18 @@ export default function TeamOverviewTab() {
                     {teamApps.items.map((app) => (
                       <tr key={app.id} className="hover:bg-gray-50 transition-colors">
                         <td className="px-4 py-3 text-sm font-medium text-gray-900">{app.employee_name}</td>
-                        <td className="px-4 py-3 text-sm text-gray-700">{app.leave_type.replace(/_/g, ' ')}</td>
+                        <td className="px-4 py-3 text-sm text-gray-700">{typeLabel(app)}</td>
                         <td className="px-4 py-3 text-sm text-gray-600">
                           {app.start_date} to {app.end_date}
                         </td>
-                        <td className="px-4 py-3 text-sm text-gray-700 font-medium">{app.days_requested}</td>
+                        <td className="px-4 py-3 text-sm text-gray-700 font-medium">{daysLabel(app)}</td>
                         <td className="px-4 py-3">
                           <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_COLORS[app.status] ?? 'bg-gray-100 text-gray-600'}`}>
                             {app.status}
                           </span>
                         </td>
                         <td className="px-4 py-3">
-                          {app.approval_steps && app.approval_steps.length > 0 ? (
-                            <div className="flex items-center gap-1">
-                              {app.approval_steps.map((step) => (
-                                <div
-                                  key={step.id}
-                                  title={`Step ${step.step_order}: ${step.approver_name} - ${step.status}`}
-                                  className={`h-2.5 w-2.5 rounded-full ${
-                                    step.status === 'approved' ? 'bg-green-500' :
-                                    step.status === 'rejected' ? 'bg-red-500' :
-                                    'bg-yellow-400'
-                                  }`}
-                                />
-                              ))}
-                              <span className="ml-1 text-xs text-gray-500">
-                                {app.approval_steps.filter((s) => s.status === 'approved').length}/{app.approval_steps.length}
-                              </span>
-                            </div>
-                          ) : (
-                            <span className="text-xs text-gray-500">--</span>
-                          )}
+                          <StepDots app={app} />
                         </td>
                       </tr>
                     ))}

@@ -4,7 +4,9 @@ from typing import Dict, List, Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 
-LeaveStatus = Literal["pending", "approved", "rejected", "cancelled"]
+# "expired": still pending when its last day passed (see leave_reminder_service).
+LeaveStatus = Literal["pending", "approved", "rejected", "cancelled", "expired"]
+HalfDay = Literal["am", "pm"]
 
 # ── Type aliases for policy configuration ───────────────────────────
 
@@ -24,25 +26,67 @@ class LeaveApprovalStepResponse(BaseModel):
     step_order: int
     approver_id: Optional[int] = None
     approver_name: str = ""
-    status: str
+    status: str  # pending | approved | rejected | skipped
     decided_at: Optional[datetime] = None
     notes: Optional[str] = None
+    # The requester's own step: only created when nobody else in the company
+    # can approve leave, and only completed through the self-approve action.
+    is_self: bool = False
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class LeaveApprovalEventResponse(BaseModel):
+    """An override, reassignment, reminder etc., shown on the request."""
+    id: int
+    action: str
+    actor_id: Optional[int] = None
+    actor_name: Optional[str] = None
+    from_approver_id: Optional[int] = None
+    from_approver_name: Optional[str] = None
+    to_approver_id: Optional[int] = None
+    to_approver_name: Optional[str] = None
+    reason: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+
+class LeaveActions(BaseModel):
+    """What the CALLER may do with this request, as the API will judge it.
+
+    The UI shows a button only when its flag is true, so it never offers an
+    action the server would refuse (reviewers used to see Cancel on other
+    people's requests and get a 403).
+    """
+    can_edit: bool = False
+    can_cancel: bool = False
+    can_review: bool = False
+    can_self_approve: bool = False
+    can_override: bool = False
+    can_reassign: bool = False
+    can_revoke: bool = False
+
+
+class DayBreakdownItem(BaseModel):
+    date: date
+    days: float
+    reason: str
+    label: str = ""
 
 
 # ── Leave Application Schemas (existing, updated) ──────────────────
 
 
 class LeaveApplicationCreate(BaseModel):
-    # Reviewers (HR, managers, admins) may file on an employee's behalf — sick
-    # leave phoned in on the day is the common case. Omit it, or set it to your
-    # own id, to file for yourself. A non-reviewer supplying someone else's id
+    # Someone with leave:create may file on behalf of an employee they manage —
+    # sick leave phoned in on the day is the common case. Omit it, or set it to
+    # your own id, to file for yourself. Anyone else supplying someone else's id
     # is refused rather than silently redirected to their own record.
     employee_id: Optional[int] = None
     leave_type: str = Field(..., min_length=1, max_length=50)
     start_date: date
     end_date: date
+    # Morning or afternoon off; only for a single-day request. Counts 0.5.
+    half_day: Optional[HalfDay] = None
     reason: str = Field(..., min_length=1, max_length=2000)
     supporting_documents: Optional[List[str]] = None
 
@@ -55,18 +99,49 @@ class RuleViolation(BaseModel):
 
 
 class LeavePrecheckResponse(BaseModel):
-    """Dry-run enforcement result for the filing form."""
+    """Dry-run of filing: what the request would cost and what it breaks,
+    shown in the form before the employee submits."""
     allowed: bool  # False when any block-mode rule fails
     days_requested: float
     violations: List[RuleViolation] = []  # failing block-mode rules
     warnings: List[RuleViolation] = []  # failing warn-mode rules
+    day_breakdown: List[DayBreakdownItem] = []
+    days_by_year: Dict[int, float] = {}
+    # Readable reason the request cannot be filed at all (e.g. no working day
+    # in the range), or None.
+    problem: Optional[str] = None
 
 
 class LeaveApplicationUpdate(BaseModel):
     leave_type: Optional[str] = Field(None, min_length=1, max_length=50)
     start_date: Optional[date] = None
     end_date: Optional[date] = None
+    half_day: Optional[HalfDay] = None
     reason: Optional[str] = Field(None, min_length=1, max_length=2000)
+    supporting_documents: Optional[List[str]] = None
+
+
+class LeaveOverrideRequest(BaseModel):
+    """Approve or reject a request without waiting for its approver.
+
+    For people with leave:edit over the employee, when an approver is absent or
+    stuck. The reason is required and is shown on the request and in the
+    audit log: an override is a decision made on someone else's behalf.
+    """
+    action: Literal["approve", "reject"]
+    reason: str = Field(min_length=1, max_length=2000)
+
+
+class LeaveReassignRequest(BaseModel):
+    """Move a pending step to a different approver."""
+    approver_id: int
+    reason: str = Field(min_length=1, max_length=2000)
+    # Defaults to the step currently waiting for a decision.
+    step_id: Optional[int] = None
+
+
+class LeaveSelfApproveRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=2000)
 
 
 class LeaveReviewRequest(BaseModel):
@@ -107,6 +182,11 @@ class LeaveApplicationResponse(BaseModel):
     rule_warnings: Optional[List[RuleViolation]] = None
     approval_steps: List[LeaveApprovalStepResponse] = []
     current_step: Optional[int] = None
+    leave_type_name: Optional[str] = None
+    half_day: Optional[str] = None
+    day_breakdown: Optional[List[DayBreakdownItem]] = None
+    events: List[LeaveApprovalEventResponse] = []
+    actions: LeaveActions = LeaveActions()
     created_at: datetime
     updated_at: datetime
 
@@ -114,10 +194,15 @@ class LeaveApplicationResponse(BaseModel):
 
 
 class LeavePrecheckRequest(BaseModel):
+    # Filing on someone's behalf previews THEIR roster and balance.
+    employee_id: Optional[int] = None
     leave_type: str = Field(..., min_length=1, max_length=50)
     start_date: date
     end_date: date
+    half_day: Optional[HalfDay] = None
     supporting_documents: Optional[List[str]] = None
+    # When editing an existing request, exclude it from overlap and balance.
+    application_id: Optional[int] = None
 
 
 class LeaveApplicationListResponse(BaseModel):
@@ -152,12 +237,14 @@ class LeaveTypeCreate(BaseModel):
     code: str = Field(..., min_length=1, max_length=50, pattern=r"^[a-z][a-z0-9_]*$")
     name: str = Field(..., min_length=1, max_length=100)
     description: Optional[str] = None
+    export_code: Optional[str] = Field(None, max_length=20)
     sort_order: int = 0
 
 
 class LeaveTypeUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=100)
     description: Optional[str] = None
+    export_code: Optional[str] = Field(None, max_length=20)
     is_active: Optional[bool] = None
     sort_order: Optional[int] = None
 
@@ -167,6 +254,7 @@ class LeaveTypeResponse(BaseModel):
     code: str
     name: str
     description: Optional[str] = None
+    export_code: Optional[str] = None
     is_system: bool
     is_active: bool
     sort_order: int
@@ -360,7 +448,11 @@ class ApprovalChainPreviewItem(BaseModel):
     approver_id: int
     approver_name: str
     step_order: int
-    source: str  # "auto", "manual", "hybrid"
+    # auto | hybrid_org_chart | manual_* | fallback_* | self_approval
+    source: str
+    # True when a unit's deputy stands in for its head.
+    is_deputy: bool = False
+    node_name: Optional[str] = None
 
 
 class ApprovalChainPreviewResponse(BaseModel):
@@ -371,23 +463,49 @@ class ApprovalChainPreviewResponse(BaseModel):
 
 
 ApproverRole = Literal["node_head", "node_deputy", "parent_head", "parent_deputy"]
+RuleScope = Literal["default", "employee", "org_node"]
+
+
+class ApproverRuleStepIn(BaseModel):
+    """One approver in a rule's chain: a named person or a position."""
+    approver_id: Optional[int] = None
+    approver_role: Optional[ApproverRole] = None
+
+
+class ApproverRuleStepOut(BaseModel):
+    step_order: int
+    approver_id: Optional[int] = None
+    approver_name: Optional[str] = None
+    approver_role: Optional[str] = None
+    approver_active: bool = True
 
 
 class LeaveApproverAssignmentCreate(BaseModel):
     employee_id: Optional[int] = None
     org_node_id: Optional[int] = None
+    # Ordered approvers: step 1, step 2, ... The single approver_id /
+    # approver_role pair is still accepted and means a one-step rule.
+    steps: Optional[List[ApproverRuleStepIn]] = None
     approver_id: Optional[int] = None
     approver_role: Optional[ApproverRole] = None
     step_order: int = Field(1, ge=1)
-    priority: int = Field(100, ge=1)
+    # Omit to add the rule at the bottom of the list.
+    priority: Optional[int] = Field(None, ge=1)
     cascade: bool = False
     exclude: bool = False
 
 
 class LeaveApproverAssignmentUpdate(BaseModel):
+    # Changing who the rule applies to. "default" clears the employee/unit and
+    # the exclude/cascade flags that only make sense with them.
+    scope: Optional[RuleScope] = None
+    employee_id: Optional[int] = None
+    org_node_id: Optional[int] = None
+    steps: Optional[List[ApproverRuleStepIn]] = None
     approver_id: Optional[int] = None
     approver_role: Optional[ApproverRole] = None
     step_order: Optional[int] = Field(None, ge=1)
+    # Only the reorder action should send this; editing a rule keeps its place.
     priority: Optional[int] = Field(None, ge=1)
     is_active: Optional[bool] = None
     cascade: Optional[bool] = None
@@ -403,13 +521,27 @@ class LeaveApproverAssignmentResponse(BaseModel):
     approver_id: Optional[int] = None
     approver_name: Optional[str] = None
     approver_role: Optional[str] = None
+    steps: List[ApproverRuleStepOut] = []
     step_order: int
     priority: int = 100
     cascade: bool = False
     exclude: bool = False
     is_active: bool
+    deactivated_reason: Optional[str] = None
+    # Names of people this save gave the Leave Approver role to.
+    granted_role_to: List[str] = []
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ApproverCheckResponse(BaseModel):
+    user_id: int
+    name: Optional[str] = None
+    found: bool
+    is_active: bool
+    has_reviewer_role: bool
+    will_grant_role: bool
+    message: str = ""
 
 
 # ── Team Stats Schemas ────────────────────────────────────────────

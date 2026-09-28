@@ -12,6 +12,8 @@ interface SnapshotPanelProps {
   currentStartDate: string;
   currentEndDate: string;
   currentRangeType: string;
+  /** The rows on screen: "Save current" captures exactly these. */
+  employeeIds?: number[];
 }
 
 export default function SnapshotPanel({
@@ -20,6 +22,7 @@ export default function SnapshotPanel({
   currentStartDate,
   currentEndDate,
   currentRangeType,
+  employeeIds,
 }: SnapshotPanelProps) {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
@@ -55,6 +58,7 @@ export default function SnapshotPanel({
       start_date: currentStartDate,
       end_date: currentEndDate,
       range_type: currentRangeType,
+      employee_ids: employeeIds,
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['schedule-snapshots'] });
@@ -151,6 +155,11 @@ export default function SnapshotPanel({
                 <p className="text-xs font-medium text-purple-800 mb-1">Capturing schedule from</p>
                 <p className="text-sm text-purple-900">{currentStartDate} to {currentEndDate}</p>
                 <p className="text-xs text-purple-600 mt-0.5 capitalize">{currentRangeType} view</p>
+                {employeeIds && (
+                  <p className="text-xs text-purple-600 mt-0.5">
+                    {employeeIds.length} employee{employeeIds.length !== 1 ? 's' : ''} currently shown
+                  </p>
+                )}
               </div>
 
               <div>

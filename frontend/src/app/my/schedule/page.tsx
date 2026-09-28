@@ -9,7 +9,10 @@ import { api } from '@/lib/api'
 import type { Shift, ShiftStatusType, UserPreferences } from '@/types'
 import { Card, CardBody, Badge, Button, EmptyState } from '@/components/ui'
 import ChangeRequestModal from '@/app/schedules/ChangeRequestModal'
-import { buildStatusMaps } from '@/app/schedules/scheduleHelpers'
+import {
+  buildStatusMaps, requestableStatuses, resolveStatus, readableOnTint, toLocalDateStr,
+  type StatusMaps,
+} from '@/app/schedules/scheduleHelpers'
 import { convertShiftTime, COMMON_TIMEZONES } from '@/lib/scheduleTimezone'
 import { useToast } from '@/components/ui/Toast'
 
@@ -31,8 +34,11 @@ function startOfWeek(d: Date) {
   copy.setHours(0, 0, 0, 0)
   return copy
 }
+// The local calendar date. This used toISOString(), which is UTC: in
+// Manila (UTC+8) local midnight is the previous day in UTC, so every shift
+// showed a day late and the last day of the range was never fetched.
 function iso(d: Date) {
-  return d.toISOString().slice(0, 10)
+  return toLocalDateStr(d)
 }
 function addDays(d: Date, n: number) {
   const c = new Date(d)
@@ -46,12 +52,20 @@ function endOfMonth(d: Date) {
   return new Date(d.getFullYear(), d.getMonth() + 1, 0)
 }
 
-const STATUS_TONE: Record<string, 'purple' | 'green' | 'yellow' | 'gray' | 'blue'> = {
-  scheduled: 'purple',
-  worked: 'green',
-  absent: 'yellow',
-  rest_day: 'gray',
-  leave: 'blue',
+/** The status as the company named and coloured it (Settings > Shift status
+ *  types), through the same resolver the grid uses. This page used to print
+ *  the raw code ("sick", "vacation") in a fixed tone. */
+function StatusChip({ status, maps }: { status: string; maps?: StatusMaps }) {
+  const r = resolveStatus(status, maps)
+  return (
+    <span
+      className="inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium"
+      style={{ color: readableOnTint(r.color), backgroundColor: `${r.color}18`, borderColor: `${r.color}55` }}
+      title={r.label}
+    >
+      {r.label}
+    </span>
+  )
 }
 
 type ViewMode = 'week' | 'month'
@@ -76,8 +90,9 @@ export default function MySchedulePage() {
   const { data, isLoading } = useQuery<GridResponse>({
     queryKey: ['my-schedule', startStr, endStr],
     queryFn: () =>
-      // Employees only ever see PUBLISHED shifts (drafts stay hidden).
-      api.getScheduleGrid({ start_date: startStr, end_date: endStr, published_only: 'true' }) as Promise<GridResponse>,
+      // Employees only ever see PUBLISHED shifts (drafts stay hidden), and
+      // only their own row: `mine` asks the server for exactly that.
+      api.getScheduleGrid({ start_date: startStr, end_date: endStr, published_only: 'true', mine: 'true' }) as Promise<GridResponse>,
   })
 
   const { data: statusTypes } = useQuery<ShiftStatusType[]>({
@@ -85,9 +100,14 @@ export default function MySchedulePage() {
     queryFn: () => api.getStatusTypes(),
     staleTime: 5 * 60_000,
   })
-  const statusOptions = useMemo(
-    () => (statusTypes ? buildStatusMaps(statusTypes).allStatuses : []),
+  const statusMaps = useMemo(
+    () => (statusTypes ? buildStatusMaps(statusTypes) : undefined),
     [statusTypes],
+  )
+  // Leave is requested through My Leave, not as a schedule change.
+  const statusOptions = useMemo(
+    () => (statusMaps ? requestableStatuses(statusMaps) : []),
+    [statusMaps],
   )
 
   // Display timezone: tenant tz is the source of truth; the employee can view
@@ -114,7 +134,7 @@ export default function MySchedulePage() {
   /** Format a shift's time range in the viewer's tz, with a +1d marker if the
    *  local day rolls over. Falls back to the stored time when tz matches. */
   const fmtTime = (dateStr: string, s: Shift): string => {
-    if (!s.start_time) return s.status
+    if (!s.start_time) return resolveStatus(s.status, statusMaps).label
     const cs = convertShiftTime(dateStr, s.start_time, orgTz, myTz)
     const ce = s.end_time ? convertShiftTime(dateStr, s.end_time, orgTz, myTz) : null
     const startT = cs ? cs.time : s.start_time.slice(0, 5)
@@ -123,8 +143,10 @@ export default function MySchedulePage() {
     return endT ? `${startT}–${endT}${roll}` : `${startT}${roll}`
   }
 
+  // Never fall back to another row: the first row used to be shown when
+  // yours was missing, which put a colleague's shifts under "My Schedule".
   const myRow = useMemo(
-    () => data?.employees.find((e) => e.employee_id === user?.id) ?? data?.employees[0],
+    () => data?.employees.find((e) => e.employee_id === user?.id),
     [data, user?.id]
   )
   const holidayByDate = useMemo(() => {
@@ -221,7 +243,7 @@ export default function MySchedulePage() {
         {isLoading ? (
           <div className="text-sm text-gray-500">Loading…</div>
         ) : view === 'month' ? (
-          <MonthGrid anchor={anchor} shiftsByDate={shiftsByDate} holidayByDate={holidayByDate} todayIso={todayIso} fmtTime={fmtTime} />
+          <MonthGrid anchor={anchor} shiftsByDate={shiftsByDate} holidayByDate={holidayByDate} todayIso={todayIso} fmtTime={fmtTime} statusMaps={statusMaps} />
         ) : (
           <WeekList
             weekStart={weekStart}
@@ -229,6 +251,7 @@ export default function MySchedulePage() {
             holidayByDate={holidayByDate}
             todayIso={todayIso}
             fmtTime={fmtTime}
+            statusMaps={statusMaps}
             onRequestChange={(shift, date) => setChangeShift({ shift, date })}
           />
         )}
@@ -258,13 +281,14 @@ export default function MySchedulePage() {
 }
 
 function WeekList({
-  weekStart, shiftsByDate, holidayByDate, todayIso, fmtTime, onRequestChange,
+  weekStart, shiftsByDate, holidayByDate, todayIso, fmtTime, statusMaps, onRequestChange,
 }: {
   weekStart: Date
   shiftsByDate: Map<string, Shift[]>
   holidayByDate: Map<string, string>
   todayIso: string
   fmtTime: (dateStr: string, s: Shift) => string
+  statusMaps?: StatusMaps
   onRequestChange: (shift: Shift, date: string) => void
 }) {
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
@@ -298,14 +322,17 @@ function WeekList({
                         {s.role_name ? ` · ${s.role_name}` : ''}
                       </span>
                       <div className="flex items-center gap-2">
-                        <Badge tone={STATUS_TONE[s.status] ?? 'gray'}>{s.status}</Badge>
-                        <button
-                          onClick={() => onRequestChange(s, key)}
-                          className="rounded border border-gray-300 px-2 py-0.5 text-[11px] font-medium text-gray-600 hover:bg-gray-50"
-                          title="Request a change to this shift"
-                        >
-                          Request change
-                        </button>
+                        <StatusChip status={s.status} maps={statusMaps} />
+                        {/* Leave days change through My Leave, not here. */}
+                        {!s.leave_application_id && (
+                          <button
+                            onClick={() => onRequestChange(s, key)}
+                            className="rounded border border-gray-300 px-2 py-0.5 text-[11px] font-medium text-gray-600 hover:bg-gray-50"
+                            title="Request a change to this shift"
+                          >
+                            Request change
+                          </button>
+                        )}
                       </div>
                     </div>
                   ))
@@ -320,13 +347,14 @@ function WeekList({
 }
 
 function MonthGrid({
-  anchor, shiftsByDate, holidayByDate, todayIso, fmtTime,
+  anchor, shiftsByDate, holidayByDate, todayIso, fmtTime, statusMaps,
 }: {
   anchor: Date
   shiftsByDate: Map<string, Shift[]>
   holidayByDate: Map<string, string>
   todayIso: string
   fmtTime: (dateStr: string, s: Shift) => string
+  statusMaps?: StatusMaps
 }) {
   const monthStart = startOfMonth(anchor)
   const last = endOfMonth(anchor)
@@ -351,6 +379,7 @@ function MonthGrid({
           const holiday = holidayByDate.get(key)
           const isToday = key === todayIso
           const first = shifts[0]
+          const firstStatus = first ? resolveStatus(first.status, statusMaps) : null
           return (
             <div
               key={key}
@@ -365,10 +394,10 @@ function MonthGrid({
               {first && (
                 <div
                   className="mt-0.5 truncate rounded px-1 text-[9px] font-medium text-white"
-                  style={{ backgroundColor: first.color || '#7c3aed' }}
-                  title={`${first.status}${first.start_time ? ` ${fmtTime(key, first)}` : ''}`}
+                  style={{ backgroundColor: first.color || firstStatus?.color }}
+                  title={`${firstStatus?.label}${first.start_time ? ` ${fmtTime(key, first)}` : ''}`}
                 >
-                  {first.start_time ? fmtTime(key, first) : first.status}
+                  {first.start_time ? fmtTime(key, first) : firstStatus?.short}
                 </div>
               )}
               {shifts.length > 1 && (

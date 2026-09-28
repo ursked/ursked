@@ -2,7 +2,7 @@ import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -17,7 +17,6 @@ from app.middleware.auth import (
     dummy_verify_password,
     get_current_user,
     get_password_hash,
-    require_role,
     verify_password,
 )
 from app.middleware.security import (
@@ -38,6 +37,8 @@ from app.schemas.auth import (
     ResetPasswordRequest,
     SessionResponse,
     TokenRefreshResponse,
+    TwoFactorConfirmRequest,
+    TwoFactorDisableRequest,
     TwoFactorSetupResponse,
     TwoFactorVerifyRequest,
     ValidateTokenResponse,
@@ -152,23 +153,38 @@ async def login(
             ),
         )
 
+    # Case-insensitive on both username and email (audit E-16): emails are
+    # stored lowercased now, but older rows and usernames may not be, and
+    # "Ana@X.com" typed on a phone keyboard must still sign in. More than one
+    # row can match (the same email in two tenants, or two usernames that
+    # differ only by case); the password decides which account is meant,
+    # instead of scalar_one_or_none() raising a 500.
     stmt = (
         select(User)
         .options(*_user_with_roles_options())
         .where(
-            (User.username == request.username) | (User.email == request.username),
+            (func.lower(User.username) == identifier) | (func.lower(User.email) == identifier),
             User.is_active == True,
         )
+        .order_by(User.id)
     )
     result = await db.execute(stmt)
-    user = result.scalar_one_or_none()
+    candidates = list(result.scalars().all())
+    user = None
+    for candidate in candidates:
+        if verify_password(request.password, candidate.password_hash):
+            user = candidate
+            break
 
-    if not user:
+    if not candidates:
         # Spend the same time as a real bcrypt comparison so response latency
         # does not reveal whether the account exists.
         dummy_verify_password(request.password)
 
-    if not user or not verify_password(request.password, user.password_hash):
+    if user is None:
+        # For the audit entry and the lockout alert: the account the attempt
+        # was aimed at, if any.
+        user = candidates[0] if candidates else None
         just_locked = await AccountLockout.record_failure(identifier)
         logger.warning("Login failed for username=%s ip=%s", request.username, ip)
         # Record the failed attempt in the audit log so a tenant admin can review.
@@ -528,41 +544,138 @@ async def get_me(current_user: User = Depends(get_current_user)):
     return UserResponse.model_validate(current_user)
 
 
+@router.get("/2fa/status")
+async def two_factor_status(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Whether two-factor sign-in is on for the caller, and how many unused
+    recovery codes remain (the codes themselves are only ever shown once)."""
+    stmt = (
+        select(User).options(selectinload(User.two_factor)).where(User.id == current_user.id)
+        .execution_options(populate_existing=True)
+    )
+    user = (await db.execute(stmt)).scalar_one()
+    tf = user.two_factor
+    enabled = bool(tf and tf.status == "enabled" and tf.totp_verified)
+    return {
+        "enabled": enabled,
+        "pending_setup": bool(tf and tf.status == "pending_setup"),
+        "recovery_codes_remaining": len(tf.backup_codes or []) if enabled else 0,
+    }
+
+
 @router.post("/2fa/setup", response_model=TwoFactorSetupResponse)
 async def setup_2fa(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    stmt = select(User).options(selectinload(User.two_factor)).where(User.id == current_user.id)
+    """Start enrolment: a new secret, QR code and recovery codes. Nothing is
+    switched on until /2fa/confirm proves the authenticator app works, so a
+    half-finished setup can never lock anyone out."""
+    stmt = (
+        select(User).options(selectinload(User.two_factor)).where(User.id == current_user.id)
+        .execution_options(populate_existing=True)
+    )
     result = await db.execute(stmt)
     user = result.scalar_one()
 
-    setup_data = await AuthService.setup_2fa(db, user)
+    tf = user.two_factor
+    if tf and tf.status == "enabled" and tf.totp_verified:
+        raise HTTPException(
+            status_code=400,
+            detail="Two-factor sign-in is already on. Turn it off first to set up a new device.",
+        )
 
-    # Send 2FA enabled confirmation email (fire-and-forget)
+    setup_data = await AuthService.setup_2fa(db, user)
+    return TwoFactorSetupResponse(**setup_data)
+
+
+@router.post("/2fa/confirm")
+async def confirm_2fa(
+    body: TwoFactorConfirmRequest,
+    http_request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Finish enrolment with a code from the authenticator app.
+
+    Before this existed nothing ever moved a setup from pending to enabled
+    outside the sign-in flow, and sign-in only asks for a code once enabled,
+    so two-factor could not actually be turned on.
+    """
+    if await RateLimiter.hit(
+        f"2fa-confirm:{current_user.id}",
+        settings.TWO_FACTOR_RATE_LIMIT_ATTEMPTS,
+        settings.TWO_FACTOR_RATE_LIMIT_WINDOW_SECONDS,
+    ):
+        raise HTTPException(status_code=429, detail="Too many attempts. Wait a few minutes and try again.")
+    stmt = (
+        select(User).options(selectinload(User.two_factor)).where(User.id == current_user.id)
+        .execution_options(populate_existing=True)
+    )
+    user = (await db.execute(stmt)).scalar_one()
+    tf = user.two_factor
+    if not tf or tf.status != "pending_setup" or not tf.totp_secret:
+        raise HTTPException(status_code=400, detail="Start two-factor setup first.")
+    # Only a live TOTP code confirms: a recovery code proves nothing about the app.
+    import pyotp
+
+    if not pyotp.TOTP(tf.totp_secret).verify(body.code.strip().replace(" ", ""), valid_window=1):
+        raise HTTPException(status_code=400, detail="That code is not correct. Check the time on your phone and try again.")
+    tf.status = "enabled"
+    tf.totp_verified = True
+    db.add(AuditLog(
+        tenant_id=user.tenant_id, user_id=user.id, user_email=user.email,
+        action="two_factor_enabled", resource_type="user", resource_id=str(user.id),
+        ip_address=_client_ip(http_request),
+    ))
+    await db.flush()
+
     EmailService.fire_and_forget(
-        lambda db: EmailService.send_2fa_enabled_email(
-            db,
-            to_email=current_user.email,
-            first_name=current_user.first_name,
+        lambda db, to=user.email, name=user.first_name: EmailService.send_2fa_enabled_email(
+            db, to_email=to, first_name=name,
         )
     )
-
-    return TwoFactorSetupResponse(**setup_data)
+    return {"message": "Two-factor sign-in is on.", "recovery_codes_remaining": len(tf.backup_codes or [])}
 
 
 @router.post("/2fa/disable")
 async def disable_2fa(
+    body: TwoFactorDisableRequest,
+    http_request: Request,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    stmt = select(User).options(selectinload(User.two_factor)).where(User.id == current_user.id)
+    """Turn two-factor off. Needs the account password, so a session left open
+    on someone else's screen cannot quietly remove the second factor."""
+    if await RateLimiter.hit(
+        f"2fa-disable:{current_user.id}",
+        settings.TWO_FACTOR_RATE_LIMIT_ATTEMPTS,
+        settings.TWO_FACTOR_RATE_LIMIT_WINDOW_SECONDS,
+    ):
+        raise HTTPException(status_code=429, detail="Too many attempts. Wait a few minutes and try again.")
+    if not verify_password(body.password, current_user.password_hash):
+        raise HTTPException(status_code=400, detail="Your password is not correct.")
+
+    stmt = (
+        select(User).options(selectinload(User.two_factor)).where(User.id == current_user.id)
+        .execution_options(populate_existing=True)
+    )
     result = await db.execute(stmt)
     user = result.scalar_one()
 
+    was_enabled = bool(user.two_factor and user.two_factor.status == "enabled")
     success = await AuthService.disable_2fa(db, user)
     if not success:
         raise HTTPException(status_code=400, detail="2FA is not enabled")
+    if was_enabled:
+        db.add(AuditLog(
+            tenant_id=user.tenant_id, user_id=user.id, user_email=user.email,
+            action="two_factor_disabled", resource_type="user", resource_id=str(user.id),
+            ip_address=_client_ip(http_request),
+        ))
+        await db.flush()
 
     return {"message": "2FA disabled successfully"}
 
@@ -680,13 +793,17 @@ async def revoke_session(
 async def list_login_events(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_role(["tenant_admin"])),
     page: int = Query(1, ge=1),
     per_page: int = Query(50, ge=1, le=200),
+    mine: bool = Query(False, description="Only my own sign-ins (always true for non-admins)"),
 ):
-    """Recent login successes and failures for THIS tenant.
+    """Recent sign-in successes and failures.
 
-    CE scope: tenant admins see their own tenant's login history.
+    Everyone may see their own (My Profile > Security: "was that me?"); a
+    tenant admin may also see the whole tenant's. Failed attempts are matched
+    to an account only when the account exists, so this never reveals which
+    usernames someone tried.
+
     EE scope (not built): cross-tenant security dashboard.
     """
     from sqlalchemy import func
@@ -695,12 +812,14 @@ async def list_login_events(
         AuditLog.tenant_id == current_user.tenant_id,
         AuditLog.action.in_(["login_success", "login_failure"]),
     )
+    if mine or not current_user.has_role("tenant_admin"):
+        base = base.where(AuditLog.user_id == current_user.id)
 
     total = await db.scalar(select(func.count()).select_from(base.subquery()))
 
     stmt = (
         base
-        .order_by(AuditLog.created_at.desc())
+        .order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
         .offset((page - 1) * per_page)
         .limit(per_page)
     )

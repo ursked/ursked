@@ -104,9 +104,36 @@ class AppSettings(Base):
     # Fallback radius for a site that does not set its own.
     timeclock_default_radius_m = Column(Integer, nullable=False, default=200, server_default="200")
 
+    # ── Area S: working-hour rules (migration 062) ────────────────────────────
+    # Checked by the one shift validator on every write path (create, edit,
+    # drag, bulk, copy, templates, snapshots, change requests), as warnings an
+    # editor may override like the consecutive-days rule. 0 / false = off, so
+    # nothing changes until an admin sets them.
+    max_work_hours_per_day = Column(Float, nullable=False, default=0, server_default="0")
+    max_work_hours_per_week = Column(Float, nullable=False, default=0, server_default="0")
+    # Between the end of one working day's last shift and the start of the
+    # next day's first, overnight shifts included. Segments of the same day
+    # (a split shift) are not "rest".
+    min_rest_hours_between_shifts = Column(Float, nullable=False, default=0, server_default="0")
+    check_overlapping_shifts = Column(Boolean, nullable=False, default=False, server_default="false")
+
     custom_settings = Column(JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # ── Area E (employees): what this company calls Personnel # (e.g. "Badge
+    # no."). NULL = the default wording. Set from Employees > Custom fields.
+    employee_number_label = Column(String(50), nullable=True)
+
+    # ── Area L: leave day counting and approval reminders (migration 063) ──
+    # The company's normal working days, 0 = Monday ... 6 = Sunday. Leave only
+    # falls back to this for days with nothing on the roster; a rostered work
+    # shift always counts and a rostered rest day never does.
+    work_week_days = Column(JSONB, nullable=False, default=lambda: [0, 1, 2, 3, 4], server_default="[0, 1, 2, 3, 4]")
+    # Remind the current approver once a day after a step has waited this long.
+    leave_reminder_after_days = Column(Integer, nullable=False, default=2, server_default="2")
+    # Hand a step to the approver's fallback after this many days. 0 = never.
+    leave_escalate_after_days = Column(Integer, nullable=False, default=5, server_default="5")
 
 
 class ShiftStatusType(Base):

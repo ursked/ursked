@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from sqlalchemy import (
-    Boolean, Column, Date, DateTime, ForeignKey, Integer, String, Text, Time, UniqueConstraint
+    JSON, Boolean, Column, Date, DateTime, ForeignKey, Integer, String, Text, Time, UniqueConstraint
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
@@ -39,6 +39,18 @@ class Shift(Base):
     is_published = Column(Boolean, nullable=False, default=False)
     published_at = Column(DateTime(timezone=True), nullable=True)
     published_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    # Where the employee is expected to be. The column has existed since
+    # migration 057 (the time clock geofence reads it) but was never mapped, so
+    # nothing could set it.
+    work_site_id = Column(Integer, ForeignKey("work_sites.id", ondelete="SET NULL"), nullable=True)
+    # Publish state before a leave overlay published this shift, so reverting
+    # the leave puts back a draft as a draft. NULL = not overlaid / unknown.
+    original_is_published = Column(Boolean, nullable=True)
+    # Provenance of an automatic 'holiday_off' shift: the holiday that
+    # generated it. Cleared the moment anyone edits the shift, so "generated
+    # and still untouched" is exactly `holiday_remark_id IS NOT NULL`, and
+    # editing or deleting the holiday removes only those.
+    holiday_remark_id = Column(Integer, ForeignKey("date_remarks.id", ondelete="SET NULL"), nullable=True)
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -60,7 +72,57 @@ class DateRemark(Base):
     is_holiday = Column(Boolean, default=False)
     is_special = Column(Boolean, default=False)
     is_recurring = Column(Boolean, default=False)
+    # ── Live holiday feed (holiday_sync_service) ──
+    # 'manual' rows are the admin's; 'feed' rows came from the tenant's
+    # holiday source and are kept up to date by sync unless edited locally.
+    source = Column(String(20), nullable=False, default="manual", server_default="manual")
+    # The feed's event UID(s), space-separated when two feed holidays share a
+    # date (one row per date is enforced by uq_date_remark_tenant_date).
+    external_uid = Column(Text, nullable=True)
+    # The feed said "Date to be confirmed" (e.g. Eid, which follows the moon).
+    is_tentative = Column(Boolean, nullable=False, default=False, server_default="false")
+    # ISO 3166-2 subdivision code for a regional holiday (e.g. PH-CEB), else NULL.
+    region = Column(String(100), nullable=True)
+    # The feed did not say whether this is a regular or special holiday; it was
+    # saved as regular and someone should confirm.
+    needs_review = Column(Boolean, nullable=False, default=False, server_default="false")
+    # An admin edited a feed holiday; sync never overwrites it again.
+    locally_modified = Column(Boolean, nullable=False, default=False, server_default="false")
+    # Tombstone: an admin deleted a feed holiday. The row stays (with
+    # is_holiday false, so nothing treats it as a holiday) so the next sync
+    # does not add it back.
+    is_suppressed = Column(Boolean, nullable=False, default=False, server_default="false")
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+
+class HolidaySource(Base):
+    """Where a tenant's public holidays come from, and how the last sync went.
+
+    One row per tenant. provider 'officeholidays' reads the free per-country
+    iCal feed at https://www.officeholidays.com/ics/<country_slug>;
+    'ics_url' reads any https iCal URL the admin supplies.
+    """
+    __tablename__ = "holiday_sources"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, unique=True)
+    provider = Column(String(30), nullable=False, default="officeholidays")
+    country_slug = Column(String(100), nullable=True)
+    feed_url = Column(Text, nullable=True)
+    # Regional holidays are only imported for these subdivision codes.
+    include_regions = Column(JSON, nullable=False, default=list)
+    auto_sync = Column(Boolean, nullable=False, default=False)
+    last_synced_at = Column(DateTime(timezone=True), nullable=True)
+    # Last try, successful or not: a failing feed is retried hourly, not on
+    # every scheduler tick.
+    last_attempt_at = Column(DateTime(timezone=True), nullable=True)
+    last_status = Column(String(20), nullable=True)  # ok | error
+    last_error = Column(Text, nullable=True)
+    last_counts = Column(JSON, nullable=True)  # {added, changed, removed, needs_review, skipped}
+    # Regions seen in the feed at the last fetch: [{code, label, count, samples}].
+    discovered_regions = Column(JSON, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class ScheduleChangeRequest(Base):

@@ -4,21 +4,27 @@ import { useState } from 'react'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import { useAuth } from '@/contexts/AuthContext'
 import { hasAnyRole } from '@/lib/roles'
+import { usePermissions } from '@/contexts/PermissionsContext'
 import MyLeaveTab from './MyLeaveTab'
 import ApprovalsTab from './ApprovalsTab'
 import TeamOverviewTab from './TeamOverviewTab'
 
+// Anyone named as an approver is given one of these roles by the server, so
+// this is exactly the set of people who can have requests to act on.
 const REVIEWER_ROLES = ['tenant_admin', 'hr', 'manager', 'leave_approver'] as const
-const TEAM_ROLES = ['tenant_admin', 'hr', 'manager'] as const
 
 type TabKey = 'my-leave' | 'approvals' | 'team'
 
 export default function LeavePage() {
   const { user } = useAuth()
+  const { hasPermission } = usePermissions()
   const [activeTab, setActiveTab] = useState<TabKey>('my-leave')
 
-  const isReviewer = user && hasAnyRole(user, [...REVIEWER_ROLES])
-  const isTeamViewer = user && hasAnyRole(user, [...TEAM_ROLES])
+  // Approvals: people with requests routed to them, plus leave:edit holders who
+  // can reassign or override a stuck one. Team: leave:view, the permission the
+  // API checks for reading other people's leave.
+  const isReviewer = !!user && (hasAnyRole(user, [...REVIEWER_ROLES]) || hasPermission('leave', 'edit'))
+  const isTeamViewer = !!user && (hasPermission('leave', 'view') || hasAnyRole(user, [...REVIEWER_ROLES]))
 
   const tabs: { key: TabKey; label: string; visible: boolean }[] = [
     { key: 'my-leave', label: 'My Leave', visible: true },

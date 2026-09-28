@@ -3,10 +3,9 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import DashboardLayout from '@/components/layout/DashboardLayout';
-import { useAuth } from '@/contexts/AuthContext';
+import { usePermissions } from '@/contexts/PermissionsContext';
 import { useToast } from '@/components/ui/Toast';
 import { ErrorMessage } from '@/components/ui/ErrorBoundary';
-import { hasAnyRole } from '@/lib/roles';
 import { api } from '@/lib/api';
 import { OrgTreeNode as OrgTreeNodeType } from '@/types';
 import LevelConfigModal from './LevelConfigModal';
@@ -15,13 +14,18 @@ import OrgChart from './OrgChart';
 import NodeDetailPanel from './NodeDetailPanel';
 import NodeCreateModal from './NodeCreateModal';
 
-const EDITOR_ROLES = ['tenant_admin', 'hr'];
-
 export default function OrganizationPage() {
-  const { user } = useAuth();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
-  const canEdit = user ? hasAnyRole(user, EDITOR_ROLES) : false;
+  // Each control follows the permission the API checks for it. The page used
+  // to show every button to HR and admins alike, so HR saw Delete and level
+  // editing that the API then refused.
+  const { hasPermission } = usePermissions();
+  const canCreate = hasPermission('organization', 'create');
+  const canEdit = hasPermission('organization', 'edit');
+  const canDelete = hasPermission('organization', 'delete');
+  const canView = hasPermission('organization', 'view');
+  const canConfigureLevels = canEdit;
 
   const [showLevelsModal, setShowLevelsModal] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -77,8 +81,9 @@ export default function OrganizationPage() {
             <h1 className="text-2xl font-bold text-gray-900">Organization</h1>
             <p className="text-gray-500 mt-1">Manage your organizational hierarchy and structure</p>
           </div>
-          {canEdit && (
+          {(canConfigureLevels || canCreate) && (
             <div className="flex flex-wrap gap-2">
+              {canConfigureLevels && (
               <button
                 onClick={() => setShowLevelsModal(true)}
                 className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2"
@@ -89,7 +94,8 @@ export default function OrganizationPage() {
                 </svg>
                 Configure Levels
               </button>
-              {hasLevels && (
+              )}
+              {hasLevels && canCreate && (
                 <button
                   onClick={() => handleAddChild(null)}
                   className="px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors flex items-center gap-2"
@@ -134,7 +140,7 @@ export default function OrganizationPage() {
               Start by defining your organization levels (e.g., Department, Division, Section).
               Add as many levels as you need — shallow or deep.
             </p>
-            {canEdit && (
+            {canConfigureLevels && (
               <button
                 onClick={() => setShowLevelsModal(true)}
                 className="px-6 py-2.5 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors"
@@ -153,7 +159,7 @@ export default function OrganizationPage() {
             <h3 className="text-lg font-semibold text-gray-900 mb-2">No organization units yet</h3>
             <p className="text-gray-500 mb-2">Levels configured: {levels.map(l => l.name).join(' → ')}</p>
             <p className="text-gray-500 mb-6">Add your first root organization unit to get started.</p>
-            {canEdit && (
+            {canCreate && (
               <button
                 onClick={() => handleAddChild(null)}
                 className="px-6 py-2.5 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors"
@@ -212,7 +218,7 @@ export default function OrganizationPage() {
                   levels={levels}
                   selectedNodeId={selectedNodeId}
                   onSelectNode={setSelectedNodeId}
-                  onAddChild={canEdit ? handleAddChild : undefined}
+                  onAddChild={canCreate ? handleAddChild : undefined}
                 />
               ) : (
                 <OrgChart
@@ -220,7 +226,7 @@ export default function OrganizationPage() {
                   levels={levels}
                   selectedNodeId={selectedNodeId}
                   onSelectNode={setSelectedNodeId}
-                  onAddChild={canEdit ? handleAddChild : undefined}
+                  onAddChild={canCreate ? handleAddChild : undefined}
                 />
               )}
             </div>
@@ -231,10 +237,13 @@ export default function OrganizationPage() {
                 <NodeDetailPanel
                   nodeId={selectedNodeId}
                   canEdit={canEdit}
+                  canDelete={canDelete}
+                  canViewMembers={canView}
+                  nodes={nodes}
                   onClose={() => setSelectedNodeId(null)}
                   onUpdated={handleNodeUpdated}
                   onDeleted={handleNodeDeleted}
-                  onAddChild={canEdit ? handleAddChild : undefined}
+                  onAddChild={canCreate ? handleAddChild : undefined}
                 />
               </div>
             )}
@@ -246,6 +255,8 @@ export default function OrganizationPage() {
       {showLevelsModal && (
         <LevelConfigModal
           currentLevels={levels}
+          canAdd={canCreate}
+          canRemove={canDelete}
           onClose={() => setShowLevelsModal(false)}
           onSaved={handleLevelsSaved}
         />

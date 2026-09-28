@@ -32,6 +32,9 @@ class ScheduleConflictError(Exception):
         super().__init__(f"{len(conflicts)} scheduling conflict(s)")
 
 
+_HOUR_RULE_TYPES = {"max_hours_per_day", "max_hours_per_week", "min_rest_hours", "overlapping_shifts"}
+
+
 class ScheduleService:
     # ── Schedule Visibility ──────────────────────────────────────────────
 
@@ -381,18 +384,10 @@ class ScheduleService:
             dates.append(current.isoformat())
             current += timedelta(days=1)
 
-        # 4. Load date remarks
-        remark_stmt = (
-            select(DateRemark)
-            .where(
-                DateRemark.tenant_id == tenant_id,
-                DateRemark.date >= start_date,
-                DateRemark.date <= end_date,
-            )
-            .order_by(DateRemark.date)
+        # 4. Date remarks, with recurring holidays on this range's dates.
+        remark_dicts = await ScheduleService.get_calendar_remarks(
+            db, tenant_id, start_date, end_date
         )
-        remark_result = await db.execute(remark_stmt)
-        date_remarks = remark_result.scalars().all()
 
         # 5. Load tenant status types for category-based stats
         status_stmt = select(ShiftStatusType).where(ShiftStatusType.tenant_id == tenant_id)
@@ -437,6 +432,8 @@ class ScheduleService:
                     "notes": s.notes,
                     "remarks": s.remarks,
                     "is_published": s.is_published,
+                    "leave_application_id": s.leave_application_id,
+                    "work_site_id": s.work_site_id,
                 })
 
             employees.append({
@@ -445,19 +442,6 @@ class ScheduleService:
                 "section_name": user.section.name if user.section else None,
                 "unit_name": user.unit.name if user.unit else None,
                 "shifts": shift_dicts,
-            })
-
-        # 7. Serialize date remarks
-        remark_dicts = []
-        for r in date_remarks:
-            remark_dicts.append({
-                "id": r.id,
-                "date": r.date,
-                "title": r.title,
-                "description": r.description,
-                "is_holiday": r.is_holiday,
-                "is_special": r.is_special,
-                "is_recurring": r.is_recurring,
             })
 
         # 8. Actuals (opt-in). Left empty otherwise, so the planning payload is
@@ -601,80 +585,157 @@ class ScheduleService:
                 d += timedelta(days=1)
         return blocked
 
+    # ── One validator for every write path ─────────────────────────────
+    #
+    # Until 2026-09 only "create" was checked. Editing a shift, dragging it to
+    # another day or employee, swapping, approving a change request, applying
+    # a template and copying all wrote straight past approved leave and the
+    # guardrails, so the same roster could be refused through one button and
+    # accepted through another. Every path now builds the shifts it is about
+    # to write as "placements" and asks `validate_placements`, which answers
+    # against the employee's schedule as it WILL be (the shifts being moved or
+    # replaced are left out via ignore_shift_ids).
+    #
+    # Leave conflicts can never be overridden. Everything else is a guardrail
+    # the editor may force, exactly as the consecutive-days rule always was.
+
     @staticmethod
-    async def check_scheduling_conflicts(
+    async def _load_app_settings(db: AsyncSession, tenant_id: UUID):
+        return (await db.execute(
+            select(AppSettings).where(AppSettings.tenant_id == tenant_id)
+        )).scalar_one_or_none()
+
+    @staticmethod
+    def _as_time(v):
+        """JSON-sourced times (snapshots, templates, copies) arrive as strings."""
+        from datetime import time as _time
+        if v is None or isinstance(v, _time):
+            return v
+        try:
+            return _time.fromisoformat(str(v))
+        except ValueError:
+            return None
+
+    @staticmethod
+    def _interval(d: date, start, end):
+        """A shift as a real datetime span. An end at or before the start runs
+        past midnight (22:00-06:00 is eight hours, not minus sixteen)."""
+        from datetime import datetime as _dt
+        if start is None or end is None:
+            return None
+        s = _dt.combine(d, start)
+        e = _dt.combine(d, end)
+        if e <= s:
+            e += timedelta(days=1)
+        return (s, e)
+
+    @staticmethod
+    def _hours(v: float) -> str:
+        return f"{v:.2f}".rstrip("0").rstrip(".")
+
+    @staticmethod
+    async def validate_placements(
         db: AsyncSession,
         tenant_id: UUID,
-        employee_id: int,
-        target_dates: List[date],
-        status: str,
+        placements: List[dict],
         *,
         force: bool = False,
+        ignore_shift_ids=(),
+        category_map: Optional[Dict[str, str]] = None,
+        settings=None,
     ) -> List[dict]:
-        """Evaluate scheduling guardrails for a set of work dates.
+        """Check shifts that are about to be written.
 
-        Returns a list of conflict dicts. Leave-overlap conflicts are ALWAYS
-        returned (cannot be forced). Guardrail conflicts (consecutive-days /
-        rest-days) are suppressed when ``force=True``.
+        Each placement is {employee_id, date, status, start_time?, end_time?}.
+        Returns [{employee_id, date, type, forceable, message}]:
 
-        Only "work"-category statuses are checked — assigning a rest_day or a
-        leave status never conflicts.
+          approved_leave             work on a day of approved leave (never forceable)
+          max_consecutive_work_days  a run of work days longer than the limit
+          min_rest_days_per_week     too few rest days in the 7 days from a date
+          max_hours_per_day          more work hours on a date than the limit
+          max_hours_per_week         more work hours in the tenant's week
+          min_rest_hours             too little rest between two working days
+          overlapping_shifts         two shifts (or split-shift segments) overlap
+
+        Only non-work statuses (rest, leave) never conflict. A violation is
+        reported only when it involves a placement, so a problem that already
+        exists elsewhere in the calendar does not block unrelated edits.
+        With force=True only the non-forceable conflicts are returned.
         """
-        if not target_dates:
+        if not placements:
             return []
+        if category_map is None:
+            category_map = await ScheduleService._get_category_map(db, tenant_id)
+        if settings is None:
+            settings = await ScheduleService._load_app_settings(db, tenant_id)
+        max_consec = getattr(settings, "max_consecutive_work_days", 0) or 0
+        min_rest_days = getattr(settings, "min_rest_days_per_week", 0) or 0
+        max_day_h = float(getattr(settings, "max_work_hours_per_day", 0) or 0)
+        max_week_h = float(getattr(settings, "max_work_hours_per_week", 0) or 0)
+        min_rest_h = float(getattr(settings, "min_rest_hours_between_shifts", 0) or 0)
+        check_overlap = bool(getattr(settings, "check_overlapping_shifts", False))
+        week_starts_on = getattr(settings, "week_starts_on", None) or "monday"
+        ws = {"monday": 0, "sunday": 6, "saturday": 5}.get(week_starts_on, 0)
+        ignore = set(ignore_shift_ids or ())
+        H = ScheduleService._hours
 
-        category_map = await ScheduleService._get_category_map(db, tenant_id)
-        if category_map.get(status, "leave") != "work":
-            return []
+        by_emp: Dict[int, List[dict]] = defaultdict(list)
+        for p in placements:
+            by_emp[p["employee_id"]].append(p)
 
         conflicts: List[dict] = []
-        target_set = set(target_dates)
-        span_start = min(target_dates)
-        span_end = max(target_dates)
+        for emp_id, items in by_emp.items():
+            work = [p for p in items if category_map.get(p.get("status") or "scheduled", "leave") == "work"]
+            if not work:
+                continue
+            seen: set = set()
 
-        # 1. Approved-leave overlap (never forceable).
-        leave_dates = await ScheduleService._approved_leave_dates(
-            db, tenant_id, employee_id, span_start, span_end
-        )
-        for d in sorted(target_set & leave_dates):
-            conflicts.append({
-                "employee_id": employee_id,
-                "date": d.isoformat(),
-                "type": "approved_leave",
-                "forceable": False,
-                "message": f"Employee is on approved leave on {d.isoformat()}.",
-            })
+            def add(d: date, type_: str, forceable: bool, message: str):
+                if (d, type_) in seen:
+                    return
+                seen.add((d, type_))
+                conflicts.append({
+                    "employee_id": emp_id,
+                    "date": d.isoformat(),
+                    "type": type_,
+                    "forceable": forceable,
+                    "message": message,
+                })
 
-        # 2. Tenant guardrails (consecutive-days / rest-days).
-        settings_result = await db.execute(
-            select(AppSettings).where(AppSettings.tenant_id == tenant_id)
-        )
-        settings = settings_result.scalar_one_or_none()
-        max_consec = getattr(settings, "max_consecutive_work_days", 0) or 0
-        min_rest = getattr(settings, "min_rest_days_per_week", 0) or 0
+            dates = sorted({p["date"] for p in work})
+            span_start, span_end = dates[0], dates[-1]
 
-        if max_consec or min_rest:
-            # Build the employee's projected work-day set: existing work shifts
-            # plus the new target dates, over a window padded to catch runs that
-            # straddle the edges.
-            window_start = span_start - timedelta(days=7)
-            window_end = span_end + timedelta(days=7)
-            existing = await db.execute(
-                select(Shift.date, Shift.status).where(
-                    Shift.tenant_id == tenant_id,
-                    Shift.employee_id == employee_id,
-                    Shift.date >= window_start,
-                    Shift.date <= window_end,
-                )
+            # 1. Approved leave (never forceable).
+            leave = await ScheduleService._approved_leave_dates(
+                db, tenant_id, emp_id, span_start, span_end
             )
-            work_days: set = set(target_set)
-            for d, st in existing.all():
-                if category_map.get(st, "leave") == "work":
-                    work_days.add(d)
+            for d in dates:
+                if d in leave:
+                    add(d, "approved_leave", False,
+                        f"Employee is on approved leave on {d.isoformat()}.")
 
+            if not (max_consec or min_rest_days or max_day_h or max_week_h or min_rest_h or check_overlap):
+                continue
+
+            # The employee's schedule as it will be: existing work shifts
+            # (minus the ones being moved/replaced) plus the placements.
+            rows = (await db.execute(
+                select(Shift.id, Shift.date, Shift.status, Shift.start_time, Shift.end_time).where(
+                    Shift.tenant_id == tenant_id,
+                    Shift.employee_id == emp_id,
+                    Shift.date >= span_start - timedelta(days=8),
+                    Shift.date <= span_end + timedelta(days=8),
+                )
+            )).all()
+            existing = [
+                r for r in rows
+                if r.id not in ignore and category_map.get(r.status, "leave") == "work"
+            ]
+            work_days = {r.date for r in existing} | set(dates)
+
+            # 2. Consecutive work days / rest days per week.
             if max_consec:
-                for d in sorted(target_set):
-                    # Count the consecutive work-day run containing d.
+                for d in dates:
                     run = 1
                     p = d - timedelta(days=1)
                     while p in work_days:
@@ -685,43 +746,175 @@ class ScheduleService:
                         run += 1
                         n += timedelta(days=1)
                     if run > max_consec:
-                        conflicts.append({
-                            "employee_id": employee_id,
-                            "date": d.isoformat(),
-                            "type": "max_consecutive_work_days",
-                            "forceable": True,
-                            "message": (
-                                f"Scheduling {d.isoformat()} makes a run of {run} "
-                                f"consecutive work days (limit {max_consec})."
-                            ),
-                        })
+                        add(d, "max_consecutive_work_days", True,
+                            f"Scheduling {d.isoformat()} makes a run of {run} "
+                            f"consecutive work days (limit {max_consec}).")
                         break  # one guardrail hit per run is enough
-
-            if min_rest:
-                max_work_per_week = 7 - min_rest
-                for d in sorted(target_set):
-                    # Rolling 7-day window centred so d is included; check the
-                    # window starting at d for simplicity/determinism.
+            if min_rest_days:
+                max_work_per_week = 7 - min_rest_days
+                for d in dates:
                     work_in_window = sum(
                         1 for i in range(7) if (d + timedelta(days=i)) in work_days
                     )
                     if work_in_window > max_work_per_week:
-                        conflicts.append({
-                            "employee_id": employee_id,
-                            "date": d.isoformat(),
-                            "type": "min_rest_days_per_week",
-                            "forceable": True,
-                            "message": (
-                                f"The 7 days from {d.isoformat()} contain "
-                                f"{work_in_window} work days, leaving fewer than "
-                                f"{min_rest} rest day(s)."
-                            ),
-                        })
+                        add(d, "min_rest_days_per_week", True,
+                            f"The 7 days from {d.isoformat()} contain "
+                            f"{work_in_window} work days, leaving fewer than "
+                            f"{min_rest_days} rest day(s).")
                         break
+
+            # 3. Hours. Each shift counts on the date it starts.
+            entries = []  # (date, (start, end) or None, is_new)
+            for r in existing:
+                entries.append((r.date, ScheduleService._interval(r.date, r.start_time, r.end_time), False))
+            for p in work:
+                entries.append((
+                    p["date"],
+                    ScheduleService._interval(
+                        p["date"],
+                        ScheduleService._as_time(p.get("start_time")),
+                        ScheduleService._as_time(p.get("end_time")),
+                    ),
+                    True,
+                ))
+
+            def hours_of(iv):
+                return (iv[1] - iv[0]).total_seconds() / 3600 if iv else 0.0
+
+            if max_day_h:
+                for d in dates:
+                    total = sum(hours_of(iv) for ed, iv, _ in entries if ed == d)
+                    if total > max_day_h + 1e-9:
+                        add(d, "max_hours_per_day", True,
+                            f"{H(total)} hours of work on {d.isoformat()} "
+                            f"(limit {H(max_day_h)}).")
+
+            if max_week_h:
+                def week_of(d: date) -> date:
+                    return d - timedelta(days=(d.weekday() - ws) % 7)
+
+                weeks = {week_of(d) for d in dates}
+                for wk in weeks:
+                    base = sum(hours_of(iv) for ed, iv, new in entries if not new and week_of(ed) == wk)
+                    running = base
+                    news = sorted(
+                        ((ed, iv) for ed, iv, new in entries if new and week_of(ed) == wk),
+                        key=lambda x: (x[0], x[1][0] if x[1] else x[0]),
+                    )
+                    for ed, iv in news:
+                        running += hours_of(iv)
+                        if running > max_week_h + 1e-9:
+                            add(ed, "max_hours_per_week", True,
+                                f"{H(running)} hours of work in the week of "
+                                f"{wk.isoformat()} (limit {H(max_week_h)}).")
+
+            timed = sorted((e for e in entries if e[1]), key=lambda e: e[1][0])
+            if check_overlap:
+                for i, (d_i, iv_i, new_i) in enumerate(timed):
+                    for d_j, iv_j, new_j in timed[:i]:
+                        if iv_j[1] > iv_i[0] and (new_i or new_j):
+                            add(d_i if new_i else d_j, "overlapping_shifts", True,
+                                f"Two shifts overlap on {(d_i if new_i else d_j).isoformat()} "
+                                f"({iv_j[0]:%H:%M}-{iv_j[1]:%H:%M} and "
+                                f"{iv_i[0]:%H:%M}-{iv_i[1]:%H:%M}).")
+            if min_rest_h:
+                # Rest is between working DAYS: the segments of one day's split
+                # shift are not rest periods.
+                days: Dict[date, list] = {}
+                for d, iv, new in timed:
+                    w = days.setdefault(d, [iv[0], iv[1], False])
+                    w[0] = min(w[0], iv[0])
+                    w[1] = max(w[1], iv[1])
+                    w[2] = w[2] or new
+                ordered = sorted(days.items(), key=lambda kv: kv[1][0])
+                for (d_a, a), (d_b, b) in zip(ordered, ordered[1:]):
+                    if not (a[2] or b[2]):
+                        continue
+                    gap = (b[0] - a[1]).total_seconds() / 3600
+                    if 0 <= gap < min_rest_h:
+                        flagged = d_b if b[2] else d_a
+                        add(flagged, "min_rest_hours", True,
+                            f"Only {H(gap)} hours of rest between the shifts on "
+                            f"{d_a.isoformat()} and {d_b.isoformat()} "
+                            f"(minimum {H(min_rest_h)}).")
 
         if force:
             conflicts = [c for c in conflicts if not c["forceable"]]
         return conflicts
+
+    @staticmethod
+    async def check_scheduling_conflicts(
+        db: AsyncSession,
+        tenant_id: UUID,
+        employee_id: int,
+        target_dates: List[date],
+        status: str,
+        *,
+        force: bool = False,
+        start_time=None,
+        end_time=None,
+    ) -> List[dict]:
+        """`validate_placements` for one employee, one status, many dates."""
+        return await ScheduleService.validate_placements(
+            db, tenant_id,
+            [
+                {"employee_id": employee_id, "date": d, "status": status,
+                 "start_time": start_time, "end_time": end_time}
+                for d in target_dates
+            ],
+            force=force,
+        )
+
+    # ── Domain events ──────────────────────────────────────────────────
+    #
+    # Every write to shifts, including the system's own (leave overlay and
+    # revert, automatic holiday-off), announces itself through
+    # domain_events: shift.before_write before anything is persisted, so a
+    # handler can veto by raising (e.g. "that payroll period is finalized"),
+    # and shift.after_write once flushed, so attendance and the like can be
+    # re-derived. `changes` lists every (employee_id, date) touched, both the
+    # old and the new key of a move.
+
+    @staticmethod
+    async def _emit(event: str, db: AsyncSession, tenant_id: UUID, actor, changes) -> None:
+        from app.services import domain_events
+
+        keys = sorted({(e, d) for e, d in changes if e is not None and d is not None})
+        if keys:
+            await domain_events.emit(
+                event, db=db, tenant_id=tenant_id, actor=actor, changes=keys,
+            )
+
+    @staticmethod
+    async def _before(db, tenant_id, actor, changes) -> None:
+        await ScheduleService._emit("shift.before_write", db, tenant_id, actor, changes)
+
+    @staticmethod
+    async def _after(db, tenant_id, actor, changes) -> None:
+        await ScheduleService._emit("shift.after_write", db, tenant_id, actor, changes)
+
+    @staticmethod
+    def _leave_locked(shift: Shift) -> ScheduleConflictError:
+        return ScheduleConflictError([{
+            "employee_id": shift.employee_id,
+            "date": shift.date.isoformat(),
+            "type": "approved_leave_locked",
+            "forceable": False,
+            "message": (
+                f"{shift.date.isoformat()} is an approved leave day. Change it "
+                "through the leave request (unapprove or cancel it), not on the "
+                "schedule."
+            ),
+        }])
+
+    # Fields an edit may set. Everything but employee, date and status may be
+    # cleared with an explicit null.
+    _EDITABLE = {
+        "employee_id", "date", "start_time", "end_time", "status",
+        "work_arrangement", "role_name", "color", "notes", "remarks", "work_site_id",
+    }
+    _NOT_NULL = {"employee_id", "date", "status"}
+    _PLACEMENT_FIELDS = {"employee_id", "date", "status", "start_time", "end_time"}
 
     @staticmethod
     async def create_shift(
@@ -731,32 +924,34 @@ class ScheduleService:
         created_by: Optional[int] = None,
         *,
         force: bool = False,
+        actor: Optional[User] = None,
     ) -> Shift:
         """Create a new shift. Auto-calculates sequence_number.
 
         Raises ScheduleConflictError if the shift lands on approved leave or
         breaches a tenant guardrail (unless force=True for guardrails).
         """
-        status = data.get("status", "scheduled")
+        status = data.get("status") or "scheduled"
+        category_map = await ScheduleService._get_category_map(db, tenant_id)
+        is_work = category_map.get(status, "leave") == "work"
+        # If status is not a "work" category, clear time fields
+        start_time = data.get("start_time") if is_work else None
+        end_time = data.get("end_time") if is_work else None
 
-        conflicts = await ScheduleService.check_scheduling_conflicts(
-            db, tenant_id, data["employee_id"], [data["date"]], status, force=force
+        conflicts = await ScheduleService.validate_placements(
+            db, tenant_id,
+            [{"employee_id": data["employee_id"], "date": data["date"], "status": status,
+              "start_time": start_time, "end_time": end_time}],
+            force=force, category_map=category_map,
         )
         if conflicts:
             raise ScheduleConflictError(conflicts)
 
+        key = [(data["employee_id"], data["date"])]
+        await ScheduleService._before(db, tenant_id, actor, key)
         sequence_number = await ScheduleService._next_sequence_number(
             db, tenant_id, data["employee_id"], data["date"]
         )
-
-        # If status is not a "work" category, clear time fields
-        start_time = data.get("start_time")
-        end_time = data.get("end_time")
-        category_map = await ScheduleService._get_category_map(db, tenant_id)
-        if category_map.get(status, "leave") != "work":
-            start_time = None
-            end_time = None
-
         shift = Shift(
             tenant_id=tenant_id,
             employee_id=data["employee_id"],
@@ -770,11 +965,13 @@ class ScheduleService:
             color=data.get("color"),
             notes=data.get("notes"),
             remarks=data.get("remarks"),
+            work_site_id=data.get("work_site_id"),
             created_by=created_by,
         )
         db.add(shift)
         await db.flush()
         await db.refresh(shift)
+        await ScheduleService._after(db, tenant_id, actor, key)
         return shift
 
     @staticmethod
@@ -785,6 +982,7 @@ class ScheduleService:
         created_by: Optional[int] = None,
         *,
         force: bool = False,
+        actor: Optional[User] = None,
     ) -> tuple:
         """
         Create shifts for multiple employees across a date range.
@@ -794,6 +992,8 @@ class ScheduleService:
         on approved leave (or breach a guardrail when force=False) are skipped
         rather than failing the whole batch, and reported back to the caller.
         """
+        from app.services.holiday_calendar import holidays_between
+
         employee_ids: List[int] = data["employee_ids"]
         start_date: date = data["start_date"]
         end_date: date = data["end_date"]
@@ -808,24 +1008,14 @@ class ScheduleService:
         }
         skip_day_nums: set = {DAY_NAME_TO_NUM[d.lower()] for d in skip_days_names if d.lower() in DAY_NAME_TO_NUM}
 
-        # Load holiday dates if needed
+        # Recurring holidays count too (they used to be missed here).
         holiday_dates: set = set()
         if skip_holidays:
-            from app.models.schedule import DateRemark
-            stmt = select(DateRemark.date).where(
-                DateRemark.tenant_id == tenant_id,
-                DateRemark.date >= start_date,
-                DateRemark.date <= end_date,
-                DateRemark.is_holiday == True,
-            )
-            result = await db.execute(stmt)
-            holiday_dates = {row[0] for row in result.all()}
+            holiday_dates = set(await holidays_between(db, tenant_id, start_date, end_date))
 
-        # Determine category for time clearing
-        status = data.get("status", "scheduled")
+        status = data.get("status") or "scheduled"
         category_map = await ScheduleService._get_category_map(db, tenant_id)
         is_work = category_map.get(status, "leave") == "work"
-
         start_time = data.get("start_time") if is_work else None
         end_time = data.get("end_time") if is_work else None
 
@@ -845,44 +1035,49 @@ class ScheduleService:
             eligible_dates.append(current)
             current += timedelta(days=1)
 
-        created_shifts: List[Shift] = []
+        settings = await ScheduleService._load_app_settings(db, tenant_id)
         skipped_conflicts: List[dict] = []
-
+        to_create: List[tuple] = []
         for employee_id in employee_ids:
-            # Determine which eligible dates conflict for this employee.
-            conflicts = await ScheduleService.check_scheduling_conflicts(
-                db, tenant_id, employee_id, eligible_dates, status, force=force
+            conflicts = await ScheduleService.validate_placements(
+                db, tenant_id,
+                [{"employee_id": employee_id, "date": d, "status": status,
+                  "start_time": start_time, "end_time": end_time} for d in eligible_dates],
+                force=force, category_map=category_map, settings=settings,
             )
             blocked_dates = {c["date"] for c in conflicts}
             skipped_conflicts.extend(conflicts)
+            to_create.extend(
+                (employee_id, d) for d in eligible_dates if d.isoformat() not in blocked_dates
+            )
 
-            for d in eligible_dates:
-                if d.isoformat() in blocked_dates:
-                    continue
-                seq = await ScheduleService._next_sequence_number(
-                    db, tenant_id, employee_id, d
-                )
-                shift = Shift(
-                    tenant_id=tenant_id,
-                    employee_id=employee_id,
-                    date=d,
-                    start_time=start_time,
-                    end_time=end_time,
-                    sequence_number=seq,
-                    status=status,
-                    work_arrangement=data.get("work_arrangement"),
-                    role_name=data.get("role_name"),
-                    color=data.get("color"),
-                    notes=data.get("notes"),
-                    remarks=data.get("remarks"),
-                    created_by=created_by,
-                )
-                db.add(shift)
-                created_shifts.append(shift)
+        await ScheduleService._before(db, tenant_id, actor, to_create)
+        created_shifts: List[Shift] = []
+        for employee_id, d in to_create:
+            seq = await ScheduleService._next_sequence_number(db, tenant_id, employee_id, d)
+            shift = Shift(
+                tenant_id=tenant_id,
+                employee_id=employee_id,
+                date=d,
+                start_time=start_time,
+                end_time=end_time,
+                sequence_number=seq,
+                status=status,
+                work_arrangement=data.get("work_arrangement"),
+                role_name=data.get("role_name"),
+                color=data.get("color"),
+                notes=data.get("notes"),
+                remarks=data.get("remarks"),
+                work_site_id=data.get("work_site_id"),
+                created_by=created_by,
+            )
+            db.add(shift)
+            created_shifts.append(shift)
 
         await db.flush()
         for shift in created_shifts:
             await db.refresh(shift)
+        await ScheduleService._after(db, tenant_id, actor, to_create)
 
         return created_shifts, skipped_conflicts
 
@@ -892,47 +1087,83 @@ class ScheduleService:
         shift_id: int,
         tenant_id: UUID,
         data: dict,
+        *,
+        force: bool = False,
+        actor: Optional[User] = None,
     ) -> Optional[Shift]:
-        """Update shift fields using PATCH semantics (only provided keys)."""
-        stmt = select(Shift).where(Shift.id == shift_id, Shift.tenant_id == tenant_id)
-        result = await db.execute(stmt)
-        shift = result.scalar_one_or_none()
+        """Update a shift with PATCH semantics: only the keys given change, and
+        an explicit null clears an optional field (notes, remarks, colour, role,
+        times, work arrangement, work site). It used to skip every None, so a
+        note once written could never be removed.
 
+        Editing, dragging to another day and moving to another employee all go
+        through the same validator as create. A shift that belongs to an
+        approved leave cannot be moved or have its status/times changed (its
+        notes can): leave changes go through the leave request.
+        """
+        stmt = select(Shift).where(Shift.id == shift_id, Shift.tenant_id == tenant_id)
+        shift = (await db.execute(stmt)).scalar_one_or_none()
         if not shift:
             return None
 
-        # If employee_id or date will change, pre-compute the new sequence_number
-        # BEFORE applying changes (to avoid autoflush unique constraint violation)
-        new_sequence_number = None
-        if "employee_id" in data or "date" in data:
-            target_emp = data.get("employee_id", shift.employee_id)
-            target_date = data.get("date", shift.date)
-            if target_emp != shift.employee_id or target_date != shift.date:
-                seq_stmt = select(func.max(Shift.sequence_number)).where(
-                    Shift.tenant_id == tenant_id,
-                    Shift.employee_id == target_emp,
-                    Shift.date == target_date,
-                )
-                seq_result = await db.execute(seq_stmt)
-                max_seq = seq_result.scalar()
-                new_sequence_number = (max_seq or 0) + 1
-
+        changed = {}
         for key, value in data.items():
-            if value is not None and hasattr(shift, key):
-                setattr(shift, key, value)
+            if key not in ScheduleService._EDITABLE:
+                continue
+            if value is None and key in ScheduleService._NOT_NULL:
+                continue
+            if getattr(shift, key) != value:
+                changed[key] = value
+        if not changed:
+            return shift
 
+        placement_change = bool(changed.keys() & ScheduleService._PLACEMENT_FIELDS)
+        if shift.leave_application_id is not None and placement_change:
+            raise ScheduleService._leave_locked(shift)
+
+        category_map = await ScheduleService._get_category_map(db, tenant_id)
+        target_emp = changed.get("employee_id", shift.employee_id)
+        target_date = changed.get("date", shift.date)
+        status = changed.get("status", shift.status)
+        is_work = category_map.get(status, "leave") == "work"
+        start_time = changed.get("start_time", shift.start_time) if is_work else None
+        end_time = changed.get("end_time", shift.end_time) if is_work else None
+
+        if placement_change:
+            conflicts = await ScheduleService.validate_placements(
+                db, tenant_id,
+                [{"employee_id": target_emp, "date": target_date, "status": status,
+                  "start_time": start_time, "end_time": end_time}],
+                force=force, ignore_shift_ids={shift.id}, category_map=category_map,
+            )
+            if conflicts:
+                raise ScheduleConflictError(conflicts)
+
+        keys = [(shift.employee_id, shift.date), (target_emp, target_date)]
+        await ScheduleService._before(db, tenant_id, actor, keys)
+
+        # Pre-compute the new sequence_number BEFORE applying changes (to avoid
+        # an autoflush unique-constraint violation).
+        new_sequence_number = None
+        if target_emp != shift.employee_id or target_date != shift.date:
+            new_sequence_number = await ScheduleService._next_sequence_number(
+                db, tenant_id, target_emp, target_date
+            )
+
+        for key, value in changed.items():
+            setattr(shift, key, value)
         if new_sequence_number is not None:
             shift.sequence_number = new_sequence_number
-
-        # If status was changed to a non-"work" category, clear times
-        if "status" in data and data["status"] is not None:
-            category_map = await ScheduleService._get_category_map(db, tenant_id)
-            if category_map.get(data["status"], "leave") != "work":
-                shift.start_time = None
-                shift.end_time = None
+        if not is_work:
+            shift.start_time = None
+            shift.end_time = None
+        # An edited holiday-off shift is the editor's now; deleting or moving
+        # the holiday must leave it alone.
+        shift.holiday_remark_id = None
 
         await db.flush()
         await db.refresh(shift)
+        await ScheduleService._after(db, tenant_id, actor, keys)
         return shift
 
     @staticmethod
@@ -940,17 +1171,25 @@ class ScheduleService:
         db: AsyncSession,
         shift_id: int,
         tenant_id: UUID,
+        *,
+        actor: Optional[User] = None,
     ) -> bool:
-        """Delete a shift by id and tenant_id. Returns True if deleted."""
-        stmt = select(Shift).where(Shift.id == shift_id, Shift.tenant_id == tenant_id)
-        result = await db.execute(stmt)
-        shift = result.scalar_one_or_none()
+        """Delete a shift by id and tenant_id. Returns True if deleted.
 
+        An approved-leave day is refused: deleting it would silently undo a
+        leave decision that still stands."""
+        stmt = select(Shift).where(Shift.id == shift_id, Shift.tenant_id == tenant_id)
+        shift = (await db.execute(stmt)).scalar_one_or_none()
         if not shift:
             return False
+        if shift.leave_application_id is not None:
+            raise ScheduleService._leave_locked(shift)
 
+        keys = [(shift.employee_id, shift.date)]
+        await ScheduleService._before(db, tenant_id, actor, keys)
         await db.delete(shift)
         await db.flush()
+        await ScheduleService._after(db, tenant_id, actor, keys)
         return True
 
     # ── Copy Shifts ─────────────────────────────────────────────────────
@@ -965,15 +1204,20 @@ class ScheduleService:
         target_employee_ids: List[int],
         target_start_date: date,
         created_by: Optional[int] = None,
+        *,
+        actor: Optional[User] = None,
+        skipped: Optional[list] = None,
     ) -> List[Shift]:
         """
         Copy shifts from a source employee in a date range to one or more
         target employees, offsetting dates so that source_start_date maps
-        to target_start_date.
+        to target_start_date. Days that conflict for a target (approved leave,
+        guardrails) are skipped and appended to `skipped`; the source's own
+        leave days are not copied (they are that person's leave, not a
+        pattern).
         """
         day_offset = (target_start_date - source_start_date).days
 
-        # Load source shifts
         stmt = (
             select(Shift)
             .where(
@@ -981,46 +1225,73 @@ class ScheduleService:
                 Shift.employee_id == source_employee_id,
                 Shift.date >= source_start_date,
                 Shift.date <= source_end_date,
+                Shift.leave_application_id.is_(None),
             )
             .order_by(Shift.date, Shift.sequence_number)
         )
-        result = await db.execute(stmt)
-        source_shifts = result.scalars().all()
+        source_shifts = (await db.execute(stmt)).scalars().all()
 
-        created_shifts: List[Shift] = []
-
+        category_map = await ScheduleService._get_category_map(db, tenant_id)
+        settings = await ScheduleService._load_app_settings(db, tenant_id)
+        plan: List[tuple] = []
         for target_employee_id in target_employee_ids:
-            for src in source_shifts:
-                new_date = src.date + timedelta(days=day_offset)
-                seq = await ScheduleService._next_sequence_number(
-                    db, tenant_id, target_employee_id, new_date
-                )
-                new_shift = Shift(
-                    tenant_id=tenant_id,
-                    employee_id=target_employee_id,
-                    date=new_date,
-                    start_time=src.start_time,
-                    end_time=src.end_time,
-                    sequence_number=seq,
-                    status=src.status,
-                    work_arrangement=src.work_arrangement,
-                    role_id=src.role_id,
-                    role_name=src.role_name,
-                    color=src.color,
-                    notes=src.notes,
-                    remarks=src.remarks,
-                    created_by=created_by,
-                )
-                db.add(new_shift)
-                created_shifts.append(new_shift)
+            placements = [
+                {"employee_id": target_employee_id,
+                 "date": src.date + timedelta(days=day_offset),
+                 "status": src.status, "start_time": src.start_time, "end_time": src.end_time}
+                for src in source_shifts
+            ]
+            conflicts = await ScheduleService.validate_placements(
+                db, tenant_id, placements, category_map=category_map, settings=settings,
+            )
+            if skipped is not None:
+                skipped.extend(conflicts)
+            blocked = {c["date"] for c in conflicts}
+            plan.extend(
+                (target_employee_id, src) for src in source_shifts
+                if (src.date + timedelta(days=day_offset)).isoformat() not in blocked
+            )
+
+        keys = [(e, src.date + timedelta(days=day_offset)) for e, src in plan]
+        await ScheduleService._before(db, tenant_id, actor, keys)
+        created_shifts: List[Shift] = []
+        for target_employee_id, src in plan:
+            new_date = src.date + timedelta(days=day_offset)
+            seq = await ScheduleService._next_sequence_number(
+                db, tenant_id, target_employee_id, new_date
+            )
+            new_shift = Shift(
+                tenant_id=tenant_id,
+                employee_id=target_employee_id,
+                date=new_date,
+                start_time=src.start_time,
+                end_time=src.end_time,
+                sequence_number=seq,
+                status=src.status,
+                work_arrangement=src.work_arrangement,
+                role_id=src.role_id,
+                role_name=src.role_name,
+                color=src.color,
+                notes=src.notes,
+                remarks=src.remarks,
+                work_site_id=src.work_site_id,
+                created_by=created_by,
+            )
+            db.add(new_shift)
+            created_shifts.append(new_shift)
 
         await db.flush()
         for shift in created_shifts:
             await db.refresh(shift)
-
+        await ScheduleService._after(db, tenant_id, actor, keys)
         return created_shifts
 
     # ── Date Remarks ────────────────────────────────────────────────────
+    #
+    # Holidays are DateRemark rows with is_holiday=True. Which days ARE
+    # holidays is always answered by holiday_calendar.holidays_between (it
+    # expands recurring ones); this section only manages the rows and the
+    # consequences of changing them.
 
     @staticmethod
     async def get_date_remarks(
@@ -1029,13 +1300,14 @@ class ScheduleService:
         start_date: date,
         end_date: date,
     ) -> List[DateRemark]:
-        """Get date remarks for a date range and tenant."""
+        """Date remark rows stored for a date range (tombstones excluded)."""
         stmt = (
             select(DateRemark)
             .where(
                 DateRemark.tenant_id == tenant_id,
                 DateRemark.date >= start_date,
                 DateRemark.date <= end_date,
+                DateRemark.is_suppressed == False,  # noqa: E712
             )
             .order_by(DateRemark.date)
         )
@@ -1043,19 +1315,149 @@ class ScheduleService:
         return list(result.scalars().all())
 
     @staticmethod
+    def remark_view(r: DateRemark, on_date: Optional[date] = None) -> dict:
+        """A remark as the API shows it. For a recurring holiday shown in
+        another year, `date` is that year's occurrence and `stored_date` the
+        row's own date, which is what an edit must change."""
+        return {
+            "id": r.id,
+            "date": on_date or r.date,
+            "stored_date": r.date,
+            "title": r.title,
+            "description": r.description,
+            "is_holiday": bool(r.is_holiday),
+            "is_special": bool(r.is_special),
+            "is_recurring": bool(r.is_recurring),
+            "source": r.source or "manual",
+            "is_tentative": bool(r.is_tentative),
+            "region": r.region,
+            "needs_review": bool(r.needs_review),
+            "locally_modified": bool(r.locally_modified),
+        }
+
+    @staticmethod
+    async def get_calendar_remarks(
+        db: AsyncSession, tenant_id: UUID, start_date: date, end_date: date
+    ) -> List[dict]:
+        """Everything the grid marks on its date headers: plain notes stored
+        in the range, plus every holiday in the range including recurring ones
+        stored in another year (the grid used to miss those)."""
+        from app.services.holiday_calendar import holidays_between
+
+        rows = await ScheduleService.get_date_remarks(db, tenant_id, start_date, end_date)
+        by_date: Dict[date, dict] = {
+            r.date: ScheduleService.remark_view(r) for r in rows if not r.is_holiday
+        }
+        holidays = await holidays_between(db, tenant_id, start_date, end_date)
+        if holidays:
+            ids = {h.remark_id for h in holidays.values()}
+            remark_rows = {
+                r.id: r for r in (await db.execute(
+                    select(DateRemark).where(DateRemark.id.in_(ids))
+                )).scalars().all()
+            }
+            for d, h in holidays.items():
+                r = remark_rows.get(h.remark_id)
+                if r is not None:
+                    by_date[d] = ScheduleService.remark_view(r, on_date=d)
+        return [by_date[d] for d in sorted(by_date)]
+
+    @staticmethod
+    def _holiday_dates(r: DateRemark, start: date, end: date) -> set:
+        """The dates `r` makes a holiday within [start, end]."""
+        if not r.is_holiday or r.is_suppressed:
+            return set()
+        if not r.is_recurring:
+            return {r.date} if start <= r.date <= end else set()
+        out = set()
+        for year in range(start.year, end.year + 1):
+            try:
+                d = r.date.replace(year=year)
+            except ValueError:  # 29 February
+                continue
+            if start <= d <= end and d >= r.date:
+                out.add(d)
+        return out
+
+    @staticmethod
+    def _generation_dates(r: DateRemark) -> set:
+        """Where automatic holiday-off applies: a one-off holiday on its own
+        date; a recurring one on its occurrences over the next year (from
+        today, never before the date it was first stored)."""
+        if not r.is_holiday or r.is_suppressed:
+            return set()
+        if not r.is_recurring:
+            return {r.date}
+        today = date.today()
+        return ScheduleService._holiday_dates(r, max(today, r.date), today + timedelta(days=365))
+
+    @staticmethod
+    def _event_dates(r: DateRemark) -> set:
+        """The dates to announce in holiday.changed: the stored date and, for
+        a recurring holiday, its occurrences from last year to next year (the
+        span a payroll or attendance handler could still act on)."""
+        if r.is_recurring:
+            today = date.today()
+            return {r.date} | ScheduleService._holiday_dates(
+                r, today - timedelta(days=400), today + timedelta(days=365)
+            )
+        return {r.date}
+
+    @staticmethod
+    async def _emit_holiday_changed(db, tenant_id, actor, dates) -> None:
+        from app.services import domain_events
+
+        dates = {d for d in dates if d is not None}
+        if dates:
+            await domain_events.emit(
+                "holiday.changed", db=db, tenant_id=tenant_id, actor=actor, dates=dates,
+            )
+
+    @staticmethod
+    async def _auto_holiday_off_enabled(db: AsyncSession, tenant_id: UUID) -> bool:
+        settings = await ScheduleService._load_app_settings(db, tenant_id)
+        return bool(getattr(settings, "auto_create_holiday_off", False))
+
+    @staticmethod
+    async def apply_holiday_off(
+        db: AsyncSession, tenant_id: UUID, remark: DateRemark, dates, actor=None
+    ) -> int:
+        """Generate holiday-off shifts for `remark` on `dates` if the tenant
+        has the setting on. Returns how many were created."""
+        if not dates or not await ScheduleService._auto_holiday_off_enabled(db, tenant_id):
+            return 0
+        created = 0
+        for d in sorted(dates):
+            created += await ScheduleService._generate_holiday_off_shifts(
+                db, tenant_id, d, remark_id=remark.id, actor=actor,
+            )
+        return created
+
+    @staticmethod
     async def create_date_remark(
         db: AsyncSession,
         tenant_id: UUID,
         data: dict,
+        actor: Optional[User] = None,
     ) -> DateRemark:
         """Create a new date remark.
 
         If it is a holiday and the tenant has `auto_create_holiday_off` enabled,
         also generate 'holiday_off' shifts for employees with nothing scheduled
         that day (see `_generate_holiday_off_shifts`).
+
+        A date can hold one remark. If the only row there is the tombstone of a
+        feed holiday someone deleted, the tombstone becomes this remark: the
+        admin is now deliberately putting something on that date.
         """
-        remark = DateRemark(
-            tenant_id=tenant_id,
+        tomb = (await db.execute(
+            select(DateRemark).where(
+                DateRemark.tenant_id == tenant_id,
+                DateRemark.date == data["date"],
+                DateRemark.is_suppressed == True,  # noqa: E712
+            )
+        )).scalar_one_or_none()
+        fields = dict(
             date=data["date"],
             title=data["title"],
             description=data.get("description"),
@@ -1063,17 +1465,28 @@ class ScheduleService:
             is_special=data.get("is_special", False),
             is_recurring=data.get("is_recurring", False),
         )
-        db.add(remark)
+        if tomb is not None:
+            remark = tomb
+            for k, v in fields.items():
+                setattr(remark, k, v)
+            remark.source = "manual"
+            remark.is_suppressed = False
+            remark.is_tentative = False
+            remark.needs_review = False
+            remark.locally_modified = False
+            remark.region = None
+        else:
+            remark = DateRemark(tenant_id=tenant_id, **fields)
+            db.add(remark)
         await db.flush()
 
         if remark.is_holiday:
-            settings = (await db.execute(
-                select(AppSettings).where(AppSettings.tenant_id == tenant_id)
-            )).scalar_one_or_none()
-            if getattr(settings, "auto_create_holiday_off", False):
-                await ScheduleService._generate_holiday_off_shifts(
-                    db, tenant_id, remark.date
-                )
+            await ScheduleService.apply_holiday_off(
+                db, tenant_id, remark, ScheduleService._generation_dates(remark), actor
+            )
+            await ScheduleService._emit_holiday_changed(
+                db, tenant_id, actor, ScheduleService._event_dates(remark)
+            )
 
         await db.refresh(remark)
         return remark
@@ -1083,6 +1496,9 @@ class ScheduleService:
         db: AsyncSession,
         tenant_id: UUID,
         on_date: date,
+        *,
+        remark_id: Optional[int] = None,
+        actor: Optional[User] = None,
     ) -> int:
         """Give employees with an empty calendar on `on_date` a 'holiday_off' shift.
 
@@ -1091,8 +1507,14 @@ class ScheduleService:
         shift, a rest day, or a day already claimed by approved leave. That makes
         it safe to re-run, and undoing it is just deleting the generated rows.
 
+        The shifts are published: they are the consequence of a holiday the
+        company has declared, not a draft plan, and as drafts nobody could see
+        them. They carry `holiday_remark_id` so the holiday can take them back.
+
         Returns the number of shifts created.
         """
+        from datetime import datetime as _dt
+
         employee_rows = (await db.execute(
             select(User.id).where(
                 User.tenant_id == tenant_id,
@@ -1111,11 +1533,14 @@ class ScheduleService:
             )
         )).all()
         busy = {r[0] for r in busy_rows}
+        free = [e for e in employee_ids if e not in busy]
+        if not free:
+            return 0
 
-        created = 0
-        for emp_id in employee_ids:
-            if emp_id in busy:
-                continue
+        keys = [(e, on_date) for e in free]
+        await ScheduleService._before(db, tenant_id, actor, keys)
+        now = _dt.utcnow()
+        for emp_id in free:
             db.add(Shift(
                 tenant_id=tenant_id,
                 employee_id=emp_id,
@@ -1124,11 +1549,44 @@ class ScheduleService:
                 end_time=None,
                 sequence_number=1,
                 status="holiday_off",
+                is_published=True,
+                published_at=now,
+                holiday_remark_id=remark_id,
             ))
-            created += 1
-
         await db.flush()
-        return created
+        await ScheduleService._after(db, tenant_id, actor, keys)
+        return len(free)
+
+    @staticmethod
+    async def remove_generated_holiday_off(
+        db: AsyncSession,
+        tenant_id: UUID,
+        remark_id: int,
+        dates=None,
+        actor: Optional[User] = None,
+    ) -> int:
+        """Delete the holiday-off shifts `remark_id` generated that nobody has
+        touched since (optionally only on `dates`). Returns the count."""
+        stmt = select(Shift).where(
+            Shift.tenant_id == tenant_id,
+            Shift.holiday_remark_id == remark_id,
+            Shift.status == "holiday_off",
+            Shift.leave_application_id.is_(None),
+        )
+        if dates is not None:
+            if not dates:
+                return 0
+            stmt = stmt.where(Shift.date.in_(list(dates)))
+        shifts = list((await db.execute(stmt)).scalars().all())
+        if not shifts:
+            return 0
+        keys = [(s.employee_id, s.date) for s in shifts]
+        await ScheduleService._before(db, tenant_id, actor, keys)
+        for s in shifts:
+            await db.delete(s)
+        await db.flush()
+        await ScheduleService._after(db, tenant_id, actor, keys)
+        return len(shifts)
 
     @staticmethod
     async def update_date_remark(
@@ -1136,20 +1594,78 @@ class ScheduleService:
         tenant_id: UUID,
         remark_id: int,
         data: dict,
+        actor: Optional[User] = None,
     ) -> Optional[DateRemark]:
-        """Update an existing date remark."""
-        stmt = select(DateRemark).where(
-            DateRemark.id == remark_id,
-            DateRemark.tenant_id == tenant_id,
-        )
-        result = await db.execute(stmt)
-        remark = result.scalar_one_or_none()
+        """Update an existing date remark (PATCH: only keys given).
+
+        The description can be cleared with an explicit null (it used to be
+        impossible). Moving, un-marking or deleting a holiday takes back the
+        holiday-off shifts it generated that nobody has edited, and makes new
+        ones for its new dates when the setting is on. Editing a holiday that
+        came from the live feed marks it locally modified, so sync never
+        overwrites the edit.
+
+        Raises ValueError if the new date already has a remark.
+        """
+        remark = (await db.execute(
+            select(DateRemark).where(
+                DateRemark.id == remark_id,
+                DateRemark.tenant_id == tenant_id,
+                DateRemark.is_suppressed == False,  # noqa: E712
+            )
+        )).scalar_one_or_none()
         if not remark:
             return None
+
+        changes = {}
         for key, value in data.items():
-            if value is not None and hasattr(remark, key):
-                setattr(remark, key, value)
+            if key not in {"date", "title", "description", "is_holiday", "is_special", "is_recurring"}:
+                continue
+            if value is None and key != "description":
+                continue
+            if getattr(remark, key) != value:
+                changes[key] = value
+        if not changes:
+            return remark
+
+        if "date" in changes:
+            clash = (await db.execute(
+                select(DateRemark).where(
+                    DateRemark.tenant_id == tenant_id,
+                    DateRemark.date == changes["date"],
+                    DateRemark.id != remark.id,
+                )
+            )).scalar_one_or_none()
+            if clash is not None and not clash.is_suppressed:
+                raise ValueError(
+                    f"{changes['date'].isoformat()} already has a remark "
+                    f"(\"{clash.title}\"). Edit or delete it instead."
+                )
+            if clash is not None:
+                await db.delete(clash)  # a tombstone; the admin chose this date
+                await db.flush()
+
+        old_gen = ScheduleService._generation_dates(remark)
+        old_events = ScheduleService._event_dates(remark) if remark.is_holiday else set()
+
+        for key, value in changes.items():
+            setattr(remark, key, value)
+        if remark.source == "feed":
+            remark.locally_modified = True
+            remark.needs_review = False
         await db.flush()
+
+        new_gen = ScheduleService._generation_dates(remark)
+        if old_gen != new_gen:
+            await ScheduleService.remove_generated_holiday_off(
+                db, tenant_id, remark.id, old_gen - new_gen, actor
+            )
+            await ScheduleService.apply_holiday_off(db, tenant_id, remark, new_gen - old_gen, actor)
+
+        if changes.keys() & {"date", "is_holiday", "is_special", "is_recurring"}:
+            new_events = ScheduleService._event_dates(remark) if remark.is_holiday else set()
+            await ScheduleService._emit_holiday_changed(db, tenant_id, actor, old_events | new_events)
+
         await db.refresh(remark)
         return remark
 
@@ -1158,18 +1674,31 @@ class ScheduleService:
         db: AsyncSession,
         tenant_id: UUID,
         remark_id: int,
+        actor: Optional[User] = None,
     ) -> bool:
-        """Delete a date remark."""
-        stmt = select(DateRemark).where(
-            DateRemark.id == remark_id,
-            DateRemark.tenant_id == tenant_id,
-        )
-        result = await db.execute(stmt)
-        remark = result.scalar_one_or_none()
+        """Delete a date remark, and the untouched holiday-off shifts it made.
+
+        A holiday that came from the live feed is kept as a tombstone instead
+        (not a holiday, not shown anywhere) so the next sync does not add it
+        straight back."""
+        remark = (await db.execute(
+            select(DateRemark).where(
+                DateRemark.id == remark_id,
+                DateRemark.tenant_id == tenant_id,
+                DateRemark.is_suppressed == False,  # noqa: E712
+            )
+        )).scalar_one_or_none()
         if not remark:
             return False
-        await db.delete(remark)
+        events = ScheduleService._event_dates(remark) if remark.is_holiday else set()
+        await ScheduleService.remove_generated_holiday_off(db, tenant_id, remark.id, None, actor)
+        if remark.source == "feed":
+            remark.is_suppressed = True
+            remark.is_holiday = False
+        else:
+            await db.delete(remark)
         await db.flush()
+        await ScheduleService._emit_holiday_changed(db, tenant_id, actor, events)
         return True
 
     @staticmethod
@@ -1177,20 +1706,37 @@ class ScheduleService:
         db: AsyncSession,
         tenant_id: UUID,
         year: Optional[int] = None,
-    ) -> List[DateRemark]:
-        """Get all holidays for a tenant, optionally filtered by year."""
+    ) -> List[dict]:
+        """Holidays for a tenant. For a year, every holiday falling in it,
+        recurring ones included on that year's date (they used to be listed
+        only in the year they were stored); without one, every holiday row."""
+        if year:
+            from app.services.holiday_calendar import holidays_between
+
+            found = await holidays_between(db, tenant_id, date(year, 1, 1), date(year, 12, 31))
+            if not found:
+                return []
+            rows = {
+                r.id: r for r in (await db.execute(
+                    select(DateRemark).where(
+                        DateRemark.id.in_({h.remark_id for h in found.values()})
+                    )
+                )).scalars().all()
+            }
+            return [
+                ScheduleService.remark_view(rows[h.remark_id], on_date=d)
+                for d, h in sorted(found.items()) if h.remark_id in rows
+            ]
         stmt = (
             select(DateRemark)
             .where(
                 DateRemark.tenant_id == tenant_id,
-                DateRemark.is_holiday == True,
+                DateRemark.is_holiday == True,  # noqa: E712
+                DateRemark.is_suppressed == False,  # noqa: E712
             )
+            .order_by(DateRemark.date)
         )
-        if year:
-            stmt = stmt.where(extract('year', DateRemark.date) == year)
-        stmt = stmt.order_by(DateRemark.date)
-        result = await db.execute(stmt)
-        return list(result.scalars().all())
+        return [ScheduleService.remark_view(r) for r in (await db.execute(stmt)).scalars().all()]
 
     # ── Schedule Templates ──────────────────────────────────────────────
 
@@ -1239,20 +1785,30 @@ class ScheduleService:
         employee_ids: List[int],
         start_date: date,
         created_by: Optional[int] = None,
+        *,
+        end_date: Optional[date] = None,
+        force: bool = False,
+        skipped: Optional[list] = None,
+        actor: Optional[User] = None,
     ) -> List[Shift]:
         """
         Apply a schedule template to a list of employees starting from a
         given date.  The template_data is expected to be a list of day
-        entries (index 0 = day 0, etc.), each containing shift details.
+        entries (index 0 = day 0, etc.), each containing shift details. With
+        `end_date` the pattern repeats back-to-back until that date.
+
+        Days that conflict (approved leave, or a guardrail unless `force`) and
+        days that already have a shift are skipped rather than written, and
+        appended to `skipped` when given -- the same rule a bulk create
+        follows. It used to write straight over approved leave and stack a
+        second shift onto days that had one.
         """
         stmt = select(ScheduleTemplate).where(
             ScheduleTemplate.id == template_id,
             ScheduleTemplate.tenant_id == tenant_id,
-            ScheduleTemplate.is_active == True,
+            ScheduleTemplate.is_active == True,  # noqa: E712
         )
-        result = await db.execute(stmt)
-        template = result.scalar_one_or_none()
-
+        template = (await db.execute(stmt)).scalar_one_or_none()
         if not template:
             return []
 
@@ -1263,66 +1819,78 @@ class ScheduleService:
         #   {"status": "rest_day"},
         #   ...
         # ]
-        if not isinstance(template_data, list):
+        if not isinstance(template_data, list) or not template_data:
             return []
 
+        span = len(template_data)
+        last = end_date if end_date and end_date >= start_date else start_date + timedelta(days=span - 1)
         category_map = await ScheduleService._get_category_map(db, tenant_id)
-        created_shifts: List[Shift] = []
+        settings = await ScheduleService._load_app_settings(db, tenant_id)
 
+        plan: List[tuple] = []  # (employee_id, date, entry, start, end, status)
         for employee_id in employee_ids:
-            for day_index, day_entry in enumerate(template_data):
-                if not day_entry:
-                    continue
+            placements = []
+            d = start_date
+            while d <= last:
+                entry = template_data[(d - start_date).days % span]
+                if entry:
+                    status = entry.get("status") or "scheduled"
+                    is_work = category_map.get(status, "leave") == "work"
+                    # template_data is JSON, so times arrive as "HH:MM" strings.
+                    st = ScheduleService._as_time(entry.get("start_time")) if is_work else None
+                    et = ScheduleService._as_time(entry.get("end_time")) if is_work else None
+                    placements.append((d, entry, st, et, status))
+                d += timedelta(days=1)
 
-                shift_date = start_date + timedelta(days=day_index)
-                status = day_entry.get("status", "scheduled")
-
-                # template_data is JSON, so times arrive as "HH:MM" strings —
-                # coerce to time objects (the Time column rejects raw strings).
-                from datetime import time as _time
-
-                def _coerce(v):
-                    if v is None or isinstance(v, _time):
-                        return v
-                    try:
-                        return _time.fromisoformat(str(v))
-                    except ValueError:
-                        return None
-
-                start_time = _coerce(day_entry.get("start_time"))
-                end_time = _coerce(day_entry.get("end_time"))
-
-                # Clear times for non-"work" category statuses
-                if category_map.get(status, "leave") != "work":
-                    start_time = None
-                    end_time = None
-
-                seq = await ScheduleService._next_sequence_number(
-                    db, tenant_id, employee_id, shift_date
+            existing = await ScheduleService._existing_shift_dates(
+                db, tenant_id, employee_id, [p[0] for p in placements]
+            )
+            conflicts = await ScheduleService.validate_placements(
+                db, tenant_id,
+                [{"employee_id": employee_id, "date": p[0], "status": p[4],
+                  "start_time": p[2], "end_time": p[3]} for p in placements if p[0] not in existing],
+                force=force, category_map=category_map, settings=settings,
+            )
+            blocked = {c["date"] for c in conflicts}
+            if skipped is not None:
+                skipped.extend(conflicts)
+                skipped.extend(
+                    {"employee_id": employee_id, "date": d.isoformat(), "type": "existing_shift",
+                     "forceable": False, "message": f"A shift already exists on {d.isoformat()}."}
+                    for d in sorted(existing)
                 )
+            plan.extend(
+                (employee_id,) + p for p in placements
+                if p[0] not in existing and p[0].isoformat() not in blocked
+            )
 
-                shift = Shift(
-                    tenant_id=tenant_id,
-                    employee_id=employee_id,
-                    date=shift_date,
-                    start_time=start_time,
-                    end_time=end_time,
-                    sequence_number=seq,
-                    status=status,
-                    work_arrangement=day_entry.get("work_arrangement"),
-                    role_name=day_entry.get("role_name"),
-                    color=day_entry.get("color"),
-                    notes=day_entry.get("notes"),
-                    remarks=day_entry.get("remarks"),
-                    created_by=created_by,
-                )
-                db.add(shift)
-                created_shifts.append(shift)
+        keys = [(e, d) for e, d, *_ in plan]
+        await ScheduleService._before(db, tenant_id, actor, keys)
+        created_shifts: List[Shift] = []
+        for employee_id, shift_date, entry, st, et, status in plan:
+            shift = Shift(
+                tenant_id=tenant_id,
+                employee_id=employee_id,
+                date=shift_date,
+                start_time=st,
+                end_time=et,
+                sequence_number=1,
+                status=status,
+                work_arrangement=entry.get("work_arrangement"),
+                role_name=entry.get("role_name"),
+                color=entry.get("color"),
+                notes=entry.get("notes"),
+                remarks=entry.get("remarks"),
+                work_site_id=entry.get("work_site_id"),
+                created_by=created_by,
+            )
+            db.add(shift)
+            created_shifts.append(shift)
 
         await db.flush()
         for shift in created_shifts:
             await db.refresh(shift)
-
+        await ScheduleService._after(db, tenant_id, actor, keys)
         return created_shifts
 
     # ── Leave → Schedule Overlay ───────────────────────────────────────
@@ -1336,6 +1904,8 @@ class ScheduleService:
         leave_type: str,
         start_date: date,
         end_date: date,
+        *,
+        actor: Optional[User] = None,
     ) -> List[date]:
         """
         When a leave is approved, overlay leave status onto existing shifts
@@ -1351,7 +1921,21 @@ class ScheduleService:
         Overlapping approved leaves: a shift already stamped with a *different*
         leave_application_id is left untouched so the first-approved leave keeps
         the day; the caller can detect this via the returned conflict list.
+
+        Every overlaid day is published: it is the consequence of an approved
+        decision, and as a draft the employee could not see their own leave.
+        The previous publish state is kept in original_is_published for revert.
         """
+        from datetime import datetime as _dt
+
+        keys = []
+        d = start_date
+        while d <= end_date:
+            keys.append((employee_id, d))
+            d += timedelta(days=1)
+        await ScheduleService._before(db, tenant_id, actor, keys)
+
+        now = _dt.utcnow()
         conflicts: List[date] = []
         current = start_date
         while current <= end_date:
@@ -1383,10 +1967,14 @@ class ScheduleService:
                         shift.original_status = shift.status
                         shift.original_start_time = shift.start_time
                         shift.original_end_time = shift.end_time
+                        shift.original_is_published = bool(shift.is_published)
                     shift.status = leave_type
                     shift.start_time = None
                     shift.end_time = None
                     shift.leave_application_id = leave_application_id
+                    if not shift.is_published:
+                        shift.is_published = True
+                        shift.published_at = now
             else:
                 # Create a new shift record with the leave status
                 seq = await ScheduleService._next_sequence_number(
@@ -1401,12 +1989,15 @@ class ScheduleService:
                     sequence_number=seq,
                     status=leave_type,
                     leave_application_id=leave_application_id,
+                    is_published=True,
+                    published_at=now,
                 )
                 db.add(new_shift)
 
             current += timedelta(days=1)
 
         await db.flush()
+        await ScheduleService._after(db, tenant_id, actor, keys)
         return conflicts
 
     @staticmethod
@@ -1414,6 +2005,8 @@ class ScheduleService:
         db: AsyncSession,
         tenant_id: UUID,
         leave_application_id: int,
+        *,
+        actor: Optional[User] = None,
     ) -> Dict[str, int]:
         """Undo `overlay_leave_on_shifts` for one leave application.
 
@@ -1427,6 +2020,11 @@ class ScheduleService:
           snapshot (`original_status IS NULL`) and are deleted — "restoring" them
           would invent a working shift that never existed.
 
+        Then, on the days freed, any OTHER leave of the same employee that is
+        still approved is re-applied. When two approved leaves overlapped, the
+        first-approved one held the shared days; reverting it used to leave
+        those days as plain work although the second leave still stands.
+
         Leave balances need no adjustment: `LeaveService` derives used/pending
         days by summing applications by status, so moving the application out of
         "approved" releases the days by itself.
@@ -1437,6 +2035,11 @@ class ScheduleService:
         )
         result = await db.execute(stmt)
         shifts = list(result.scalars().all())
+        if not shifts:
+            return {"restored": 0, "deleted": 0, "reapplied": 0}
+
+        keys = [(s.employee_id, s.date) for s in shifts]
+        await ScheduleService._before(db, tenant_id, actor, keys)
 
         restored = 0
         deleted = 0
@@ -1445,9 +2048,15 @@ class ScheduleService:
                 shift.status = shift.original_status
                 shift.start_time = shift.original_start_time
                 shift.end_time = shift.original_end_time
+                if shift.original_is_published is not None:
+                    shift.is_published = shift.original_is_published
+                    if not shift.is_published:
+                        shift.published_at = None
+                        shift.published_by = None
                 shift.original_status = None
                 shift.original_start_time = None
                 shift.original_end_time = None
+                shift.original_is_published = None
                 shift.leave_application_id = None
                 restored += 1
             else:
@@ -1455,7 +2064,36 @@ class ScheduleService:
                 deleted += 1
 
         await db.flush()
-        return {"restored": restored, "deleted": deleted}
+        await ScheduleService._after(db, tenant_id, actor, keys)
+
+        # Re-apply other approved leave on the freed days.
+        reapplied = 0
+        by_emp: Dict[int, set] = defaultdict(set)
+        for emp_id, d in keys:
+            by_emp[emp_id].add(d)
+        for emp_id, days in by_emp.items():
+            lo, hi = min(days), max(days)
+            others = (await db.execute(
+                select(LeaveApplication).where(
+                    LeaveApplication.tenant_id == tenant_id,
+                    LeaveApplication.employee_id == emp_id,
+                    LeaveApplication.status == "approved",
+                    LeaveApplication.id != leave_application_id,
+                    LeaveApplication.start_date <= hi,
+                    LeaveApplication.end_date >= lo,
+                ).order_by(LeaveApplication.reviewed_at, LeaveApplication.id)
+            )).scalars().all()
+            for other in others:
+                s = max(other.start_date, lo)
+                e = min(other.end_date, hi)
+                if s > e:
+                    continue
+                await ScheduleService.overlay_leave_on_shifts(
+                    db, tenant_id, emp_id, other.id, other.leave_type, s, e, actor=actor,
+                )
+                reapplied += 1
+
+        return {"restored": restored, "deleted": deleted, "reapplied": reapplied}
 
     # ── CSV Export ──────────────────────────────────────────────────────
 
@@ -1465,10 +2103,11 @@ class ScheduleService:
         tenant_id: UUID,
         start_date: date,
         end_date: date,
+        employee_ids: Optional[List[int]] = None,
     ) -> str:
         """
-        Export all shifts for a tenant in a date range as a CSV string.
-        Columns: Employee, Date, Start Time, End Time, Status,
+        Export the shifts of `employee_ids` (None = everyone) in a date range
+        as a CSV string. Columns: Employee, Date, Start Time, End Time, Status,
         Work Arrangement, Notes.
         """
         stmt = (
@@ -1480,6 +2119,8 @@ class ScheduleService:
             )
             .order_by(Shift.date, Shift.employee_id, Shift.sequence_number)
         )
+        if employee_ids is not None:
+            stmt = stmt.where(Shift.employee_id.in_(employee_ids or [-1]))
         result = await db.execute(stmt)
         shifts = result.scalars().all()
 
@@ -1530,29 +2171,64 @@ class ScheduleService:
         tenant_id: UUID,
         start_date: date,
         end_date: date,
-        employee_ids: Optional[List[int]] = None,
-    ) -> int:
-        """Delete all shifts in a date range, optionally filtered by employee IDs.
-        Returns count of deleted shifts."""
-        conditions = [
+        employee_ids: Optional[List[int]],
+        *,
+        include_leave: bool = False,
+        dry_run: bool = False,
+        actor: Optional[User] = None,
+    ) -> dict:
+        """Delete the listed employees' shifts in a date range.
+
+        `employee_ids` is the exact set to clear: an empty list clears nothing,
+        and None (every employee) is only reachable from code that has already
+        decided the caller manages everyone. Shifts that belong to an approved
+        leave are kept unless `include_leave`, because deleting one undoes a
+        leave decision that still stands. With `dry_run` nothing is deleted and
+        the counts describe what would be.
+
+        Returns {deleted_count, leave_kept_count, employee_count,
+        published_removed: {employee_id: [dates]}} -- the last so the caller
+        can tell employees about shifts they could already see.
+        """
+        empty = {
+            "deleted_count": 0, "leave_kept_count": 0, "employee_count": 0,
+            "dry_run": dry_run, "published_removed": {},
+        }
+        if employee_ids is not None and not employee_ids:
+            return empty
+
+        stmt = select(Shift).where(
             Shift.tenant_id == tenant_id,
             Shift.date >= start_date,
             Shift.date <= end_date,
-        ]
-        if employee_ids:
-            conditions.append(Shift.employee_id.in_(employee_ids))
+        )
+        if employee_ids is not None:
+            stmt = stmt.where(Shift.employee_id.in_(employee_ids))
+        rows = list((await db.execute(stmt)).scalars().all())
 
-        # Count first
-        count_stmt = select(func.count(Shift.id)).where(*conditions)
-        count_result = await db.execute(count_stmt)
-        total = count_result.scalar() or 0
+        doomed = [s for s in rows if include_leave or s.leave_application_id is None]
+        kept = len(rows) - len(doomed)
+        published_removed: Dict[int, list] = defaultdict(list)
+        for s in doomed:
+            if s.is_published:
+                published_removed[s.employee_id].append(s.date)
+        result = {
+            "deleted_count": len(doomed),
+            "leave_kept_count": kept,
+            "employee_count": len({s.employee_id for s in doomed}),
+            "dry_run": dry_run,
+            "published_removed": dict(published_removed),
+        }
+        if dry_run or not doomed:
+            return result
 
-        if total > 0:
-            del_stmt = delete(Shift).where(*conditions)
-            await db.execute(del_stmt)
-            await db.flush()
-
-        return total
+        keys = [(s.employee_id, s.date) for s in doomed]
+        await ScheduleService._before(db, tenant_id, actor, keys)
+        for s in doomed:
+            await db.delete(s)
+        await db.flush()
+        await ScheduleService._after(db, tenant_id, actor, keys)
+        return result
 
     # ── Schedule Snapshots ─────────────────────────────────────────────
 
@@ -1566,9 +2242,10 @@ class ScheduleService:
         end_date: date,
         range_type: str,
         created_by: Optional[int] = None,
+        employee_ids: Optional[List[int]] = None,
     ) -> ScheduleSnapshot:
-        """Capture all shifts in a date range as a reusable snapshot."""
-        # Load all shifts in the range
+        """Capture the listed employees' shifts in a date range as a reusable
+        snapshot (None = every employee, [] = nobody)."""
         shift_stmt = (
             select(Shift)
             .where(
@@ -1578,6 +2255,10 @@ class ScheduleService:
             )
             .order_by(Shift.employee_id, Shift.date, Shift.sequence_number)
         )
+        if employee_ids is not None:
+            shift_stmt = shift_stmt.where(Shift.employee_id.in_(employee_ids or [-1]))
+        # Approved-leave days are that person's leave, not a pattern to repeat.
+        shift_stmt = shift_stmt.where(Shift.leave_application_id.is_(None))
         result = await db.execute(shift_stmt)
         shifts = result.scalars().all()
 
@@ -1612,6 +2293,7 @@ class ScheduleService:
                     "color": s.color,
                     "notes": s.notes,
                     "remarks": s.remarks,
+                    "work_site_id": s.work_site_id,
                 })
             snapshot_employees.append({
                 "employee_id": emp_id,
@@ -1657,10 +2339,20 @@ class ScheduleService:
     def _snapshot_span_days(snapshot: "ScheduleSnapshot") -> int:
         """Length of the captured window in days (the stride between repeats).
 
-        A 7-day (week) snapshot strides every 7 days so copies are back-to-back;
-        a 30/31-day month snapshot strides by its own length. Always >= 1."""
+        A 7-day (week) snapshot strides every 7 days so copies are back-to-back.
+        A month snapshot does not use this for repeats (see _snapshot_targets);
+        it is still reported as the captured length. Always >= 1."""
         span = (snapshot.source_end_date - snapshot.source_start_date).days + 1
         return max(span, 1)
+
+    @staticmethod
+    def _add_months(d: date, months: int) -> date:
+        """Same day-of-month `months` later, clamped to the month's last day."""
+        import calendar
+
+        y, m = divmod(d.month - 1 + months, 12)
+        year, month = d.year + y, m + 1
+        return date(year, month, min(d.day, calendar.monthrange(year, month)[1]))
 
     @staticmethod
     def _snapshot_targets(
@@ -1676,18 +2368,29 @@ class ScheduleService:
         {index, start_date, end_date} describing each repeated copy, and targets
         is the flat list of (employee_id, shift_date, shift_entry). When
         repeat_until is None or before target_start_date, exactly one occurrence
-        is produced (single apply — back-compat)."""
+        is produced (single apply — back-compat).
+
+        A MONTH snapshot repeats by calendar month: each copy starts on the same
+        day of the next month, and days the shorter month does not have are
+        dropped. It used to stride by the captured length, so a 31-day January
+        repeated as Feb 1, Mar 4, Apr 4... drifting further every month."""
         data = snapshot.snapshot_data
         if not isinstance(data, list):
             return [], []
 
+        monthly = snapshot.range_type == "month"
         stride = ScheduleService._snapshot_span_days(snapshot)
+
+        def occ_start(k: int) -> date:
+            if monthly:
+                return ScheduleService._add_months(target_start_date, k)
+            return target_start_date + timedelta(days=k * stride)
 
         occ_starts: List[date] = [target_start_date]
         if repeat_until and repeat_until >= target_start_date:
             k = 1
             while True:
-                start = target_start_date + timedelta(days=k * stride)
+                start = occ_start(k)
                 if start > repeat_until:
                     break
                 occ_starts.append(start)
@@ -1695,21 +2398,19 @@ class ScheduleService:
 
         occurrences: List[dict] = []
         targets: list = []
-        for idx, occ_start in enumerate(occ_starts):
-            occurrences.append({
-                "index": idx,
-                "start_date": occ_start,
-                "end_date": occ_start + timedelta(days=stride - 1),
-            })
+        for idx, start in enumerate(occ_starts):
+            end = occ_start(idx + 1) - timedelta(days=1) if monthly else start + timedelta(days=stride - 1)
+            occurrences.append({"index": idx, "start_date": start, "end_date": end})
             for emp_entry in data:
                 emp_id = emp_entry.get("employee_id")
                 if not emp_id:
                     continue
-                if employee_ids and emp_id not in employee_ids:
+                if employee_ids is not None and emp_id not in employee_ids:
                     continue
                 for shift_entry in emp_entry.get("shifts", []):
-                    day_offset = shift_entry.get("day_offset", 0)
-                    shift_date = occ_start + timedelta(days=day_offset)
+                    shift_date = start + timedelta(days=shift_entry.get("day_offset", 0))
+                    if shift_date > end:
+                        continue  # e.g. the 31st copied into a 30-day month
                     targets.append((emp_id, shift_date, shift_entry))
         return occurrences, targets
 
@@ -1756,7 +2457,8 @@ class ScheduleService:
         Conflicts split into:
           - blocking: approved-leave overlaps — always skipped, never overwritable.
           - resolvable: an existing shift on the date, or a tenant guardrail breach
-            (consecutive-days / rest-days) — the user chooses skip vs overwrite.
+            (consecutive-days / rest-days / hours) — the user chooses skip vs
+            overwrite.
         """
         snapshot = await ScheduleService._load_snapshot(db, tenant_id, snapshot_id)
         if not snapshot:
@@ -1765,84 +2467,13 @@ class ScheduleService:
         occurrences, targets = ScheduleService._snapshot_targets(
             snapshot, target_start_date, repeat_until, employee_ids
         )
-
-        by_emp_status: Dict[int, list] = defaultdict(list)
-        by_emp_dates: Dict[int, List[date]] = defaultdict(list)
-        for emp_id, shift_date, entry in targets:
-            by_emp_status[emp_id].append((shift_date, entry.get("status", "scheduled")))
-            by_emp_dates[emp_id].append(shift_date)
-
-        emp_ids = list(by_emp_status.keys())
-        names: Dict[int, str] = {}
-        if emp_ids:
-            rows = await db.execute(
-                select(User.id, User.first_name, User.last_name).where(User.id.in_(emp_ids))
-            )
-            for uid, fn, ln in rows.all():
-                names[uid] = f"{fn} {ln}"
-
-        blocking: List[dict] = []
-        resolvable: List[dict] = []
-        for emp_id in emp_ids:
-            existing = await ScheduleService._existing_shift_dates(
-                db, tenant_id, emp_id, by_emp_dates[emp_id]
-            )
-            # Batch the guardrail/leave check: one call per (employee, status) with
-            # ALL that employee's dates for the status, instead of one call per
-            # date. check_scheduling_conflicts accepts a target-date list, so this
-            # turns O(shifts) round-trips into O(employees) — the difference
-            # between a ~7s and a sub-second preview for a full-team repeat.
-            dates_by_status: Dict[str, List[date]] = defaultdict(list)
-            for shift_date, status in by_emp_status[emp_id]:
-                dates_by_status[status].append(shift_date)
-
-            leave_dates: set = set()
-            for status, dts in dates_by_status.items():
-                conflicts = await ScheduleService.check_scheduling_conflicts(
-                    db, tenant_id, emp_id, dts, status, force=False
-                )
-                for c in conflicts:
-                    row = {
-                        "employee_id": emp_id,
-                        "employee_name": names.get(emp_id, str(emp_id)),
-                        "date": c["date"],
-                        "type": c["type"],
-                        "forceable": c["forceable"],
-                        "message": c["message"],
-                        "has_existing_shift": c["date"] in {d.isoformat() for d in existing},
-                    }
-                    if c["type"] == "approved_leave":
-                        leave_dates.add(c["date"])
-                        blocking.append(row)
-                    else:
-                        resolvable.append(row)
-
-            # Existing-shift clashes on dates not already blocked by leave.
-            for shift_date in by_emp_dates[emp_id]:
-                if shift_date in existing and shift_date.isoformat() not in leave_dates:
-                    resolvable.append({
-                        "employee_id": emp_id,
-                        "employee_name": names.get(emp_id, str(emp_id)),
-                        "date": shift_date.isoformat(),
-                        "type": "existing_shift",
-                        "forceable": True,
-                        "message": f"A shift already exists on {shift_date.isoformat()}.",
-                        "has_existing_shift": True,
-                    })
-
-        blocking_keys = {(c["employee_id"], c["date"]) for c in blocking}
-        create_count = sum(
-            1 for emp_id, d, _ in targets
-            if (emp_id, d.isoformat()) not in blocking_keys
-        )
-        return {
+        report = await ScheduleService._preview_targets(db, tenant_id, targets)
+        report.update({
             "occurrences": occurrences,
             "stride_days": ScheduleService._snapshot_span_days(snapshot),
             "total_shifts": len(targets),
-            "create_count": create_count,
-            "blocking_conflicts": blocking,
-            "resolvable_conflicts": resolvable,
-        }
+        })
+        return report
 
     @staticmethod
     async def apply_snapshot(
@@ -1855,9 +2486,11 @@ class ScheduleService:
         *,
         repeat_until: Optional[date] = None,
         on_conflict: str = "skip",
+        actor: Optional[User] = None,
     ) -> dict:
         """Apply a snapshot to one target date, optionally repeating it forward
-        (contiguously) until ``repeat_until``.
+        (contiguously, or by calendar month for a month snapshot) until
+        ``repeat_until``.
 
         Conflict handling per ``on_conflict``:
           - Approved-leave dates are ALWAYS skipped (never scheduled over).
@@ -1865,93 +2498,19 @@ class ScheduleService:
           - 'overwrite': existing shifts on those dates are deleted and replaced;
             forceable guardrail breaches are forced through.
 
-        Returns ``{created, skipped, overwritten}``."""
+        Returns ``{created, skipped, overwritten, published_removed}``."""
         snapshot = await ScheduleService._load_snapshot(db, tenant_id, snapshot_id)
         if not snapshot:
-            return {"created": 0, "skipped": [], "overwritten": 0}
+            return {"created": 0, "skipped": [], "overwritten": 0, "published_removed": {}}
 
-        occurrences, targets = ScheduleService._snapshot_targets(
+        _, targets = ScheduleService._snapshot_targets(
             snapshot, target_start_date, repeat_until, employee_ids
         )
-        category_map = await ScheduleService._get_category_map(db, tenant_id)
-
-        from datetime import time as _time
-        created = 0
-        overwritten = 0
-        skipped: List[dict] = []
-        force = on_conflict == "overwrite"
-
-        for emp_id, shift_date, shift_entry in targets:
-            status = shift_entry.get("status", "scheduled")
-
-            # 1. Leave/guardrail evaluation (force only when overwriting).
-            conflicts = await ScheduleService.check_scheduling_conflicts(
-                db, tenant_id, emp_id, [shift_date], status, force=force
-            )
-            if conflicts:
-                # Remaining conflicts are non-forceable (approved leave) or a
-                # guardrail we chose not to force (skip mode) — skip this date.
-                skipped.append({
-                    "employee_id": emp_id,
-                    "date": shift_date.isoformat(),
-                    "reason": conflicts[0]["type"],
-                    "message": conflicts[0]["message"],
-                })
-                continue
-
-            # 2. Existing shift(s) on the date.
-            existing = (await db.execute(
-                select(Shift).where(
-                    Shift.tenant_id == tenant_id,
-                    Shift.employee_id == emp_id,
-                    Shift.date == shift_date,
-                )
-            )).scalars().all()
-            if existing:
-                if not force:
-                    skipped.append({
-                        "employee_id": emp_id,
-                        "date": shift_date.isoformat(),
-                        "reason": "existing_shift",
-                        "message": f"A shift already exists on {shift_date.isoformat()}.",
-                    })
-                    continue
-                for old in existing:
-                    await db.delete(old)
-                await db.flush()
-                overwritten += 1
-
-            # 3. Create the shift.
-            start_time_str = shift_entry.get("start_time")
-            end_time_str = shift_entry.get("end_time")
-            start_time = _time.fromisoformat(start_time_str) if start_time_str else None
-            end_time = _time.fromisoformat(end_time_str) if end_time_str else None
-            if category_map.get(status, "leave") != "work":
-                start_time = None
-                end_time = None
-
-            seq = await ScheduleService._next_sequence_number(
-                db, tenant_id, emp_id, shift_date,
-            )
-            db.add(Shift(
-                tenant_id=tenant_id,
-                employee_id=emp_id,
-                date=shift_date,
-                start_time=start_time,
-                end_time=end_time,
-                sequence_number=seq,
-                status=status,
-                work_arrangement=shift_entry.get("work_arrangement"),
-                role_name=shift_entry.get("role_name"),
-                color=shift_entry.get("color"),
-                notes=shift_entry.get("notes"),
-                remarks=shift_entry.get("remarks"),
-                created_by=created_by,
-            ))
-            await db.flush()
-            created += 1
-
-        return {"created": created, "skipped": skipped, "overwritten": overwritten}
+        # Same path as copy-week, so both honour leave and guardrails alike.
+        return await ScheduleService._apply_targets(
+            db, tenant_id, targets, on_conflict=on_conflict,
+            created_by=created_by, actor=actor,
+        )
 
     @staticmethod
     async def delete_snapshot(
@@ -1985,7 +2544,8 @@ class ScheduleService:
         """Read the live shifts in [source_start, source_end] and project them to
         a target window starting at target_start (same day-offset). Returns
         (occurrences, targets) with the same shape as _snapshot_targets so the
-        preview/apply logic is identical."""
+        preview/apply logic is identical. Approved-leave days are not copied:
+        they are that person's leave, not next week's plan."""
         stride = (source_end - source_start).days + 1
         stride = max(stride, 1)
 
@@ -1993,9 +2553,10 @@ class ScheduleService:
             Shift.tenant_id == tenant_id,
             Shift.date >= source_start,
             Shift.date <= source_end,
+            Shift.leave_application_id.is_(None),
         )
-        if employee_ids:
-            stmt = stmt.where(Shift.employee_id.in_(employee_ids))
+        if employee_ids is not None:
+            stmt = stmt.where(Shift.employee_id.in_(employee_ids or [-1]))
         stmt = stmt.order_by(Shift.employee_id, Shift.date, Shift.sequence_number)
         shifts = (await db.execute(stmt)).scalars().all()
 
@@ -2012,6 +2573,7 @@ class ScheduleService:
                 "color": s.color,
                 "notes": s.notes,
                 "remarks": s.remarks,
+                "work_site_id": s.work_site_id,
             }
             targets.append((s.employee_id, shift_date, entry))
 
@@ -2056,80 +2618,116 @@ class ScheduleService:
         created_by: Optional[int] = None,
         *,
         on_conflict: str = "skip",
+        actor: Optional[User] = None,
     ) -> dict:
         """Copy the shifts in [source_start, source_end] to a window starting at
         target_start. Approved-leave dates are always skipped; existing shifts /
         guardrail breaches are skipped or overwritten per on_conflict. Returns
-        {created, overwritten, skipped}."""
+        {created, overwritten, skipped, published_removed}."""
         _, targets = await ScheduleService._week_copy_targets(
             db, tenant_id, source_start, source_end, target_start, employee_ids
         )
         return await ScheduleService._apply_targets(
-            db, tenant_id, targets, on_conflict=on_conflict, created_by=created_by
+            db, tenant_id, targets, on_conflict=on_conflict,
+            created_by=created_by, actor=actor,
         )
 
-    # ── Shared target preview/apply (used by copy-week; mirrors snapshot) ──
+    # ── Shared target preview/apply (snapshots and copy-week) ────────────
+
+    @staticmethod
+    def _target_placement(emp_id: int, shift_date: date, entry: dict, category_map) -> dict:
+        status = entry.get("status") or "scheduled"
+        is_work = category_map.get(status, "leave") == "work"
+        return {
+            "employee_id": emp_id,
+            "date": shift_date,
+            "status": status,
+            "start_time": ScheduleService._as_time(entry.get("start_time")) if is_work else None,
+            "end_time": ScheduleService._as_time(entry.get("end_time")) if is_work else None,
+        }
+
+    @staticmethod
+    async def _existing_by_date(db, tenant_id, emp_id, dates) -> Dict[date, list]:
+        if not dates:
+            return {}
+        rows = (await db.execute(
+            select(Shift).where(
+                Shift.tenant_id == tenant_id,
+                Shift.employee_id == emp_id,
+                Shift.date.in_(list(dates)),
+            )
+        )).scalars().all()
+        out: Dict[date, list] = defaultdict(list)
+        for r in rows:
+            out[r.date].append(r)
+        return out
+
     @staticmethod
     async def _preview_targets(
         db: AsyncSession, tenant_id: UUID, targets: list
     ) -> dict:
         """Split a target list into blocking (approved leave) vs resolvable
         (existing shift / guardrail) conflicts, plus a create_count. No writes."""
-        by_emp_status: Dict[int, list] = defaultdict(list)
-        by_emp_dates: Dict[int, List[date]] = defaultdict(list)
+        category_map = await ScheduleService._get_category_map(db, tenant_id)
+        settings = await ScheduleService._load_app_settings(db, tenant_id)
+        by_emp: Dict[int, list] = defaultdict(list)
         for emp_id, shift_date, entry in targets:
-            by_emp_status[emp_id].append((shift_date, entry.get("status", "scheduled")))
-            by_emp_dates[emp_id].append(shift_date)
+            by_emp[emp_id].append((shift_date, entry))
 
-        emp_ids = list(by_emp_status.keys())
         names: Dict[int, str] = {}
-        if emp_ids:
+        if by_emp:
             rows = await db.execute(
-                select(User.id, User.first_name, User.last_name).where(User.id.in_(emp_ids))
+                select(User.id, User.first_name, User.last_name).where(User.id.in_(list(by_emp)))
             )
             for uid, fn, ln in rows.all():
                 names[uid] = f"{fn} {ln}"
 
         blocking: List[dict] = []
         resolvable: List[dict] = []
-        for emp_id in emp_ids:
-            existing = await ScheduleService._existing_shift_dates(
-                db, tenant_id, emp_id, by_emp_dates[emp_id]
+        for emp_id, items in by_emp.items():
+            existing = await ScheduleService._existing_by_date(
+                db, tenant_id, emp_id, {d for d, _ in items}
             )
-            dates_by_status: Dict[str, List[date]] = defaultdict(list)
-            for shift_date, status in by_emp_status[emp_id]:
-                dates_by_status[status].append(shift_date)
-
+            leave_locked = {d for d, rows in existing.items() if any(r.leave_application_id for r in rows)}
+            conflicts = await ScheduleService.validate_placements(
+                db, tenant_id,
+                [ScheduleService._target_placement(emp_id, d, e, category_map) for d, e in items],
+                category_map=category_map, settings=settings,
+            )
+            for d in sorted(leave_locked):
+                conflicts.append({
+                    "employee_id": emp_id, "date": d.isoformat(), "type": "approved_leave",
+                    "forceable": False,
+                    "message": f"Employee is on approved leave on {d.isoformat()}.",
+                })
             leave_dates: set = set()
-            for status, dts in dates_by_status.items():
-                conflicts = await ScheduleService.check_scheduling_conflicts(
-                    db, tenant_id, emp_id, dts, status, force=False
-                )
-                for c in conflicts:
-                    row = {
-                        "employee_id": emp_id,
-                        "employee_name": names.get(emp_id, str(emp_id)),
-                        "date": c["date"],
-                        "type": c["type"],
-                        "forceable": c["forceable"],
-                        "message": c["message"],
-                        "has_existing_shift": c["date"] in {d.isoformat() for d in existing},
-                    }
-                    if c["type"] == "approved_leave":
-                        leave_dates.add(c["date"])
-                        blocking.append(row)
-                    else:
-                        resolvable.append(row)
+            for c in conflicts:
+                row = {
+                    "employee_id": emp_id,
+                    "employee_name": names.get(emp_id, str(emp_id)),
+                    "date": c["date"],
+                    "type": c["type"],
+                    "forceable": c["forceable"],
+                    "message": c["message"],
+                    "has_existing_shift": date.fromisoformat(c["date"]) in existing,
+                }
+                if c["type"] == "approved_leave":
+                    if c["date"] in leave_dates:
+                        continue
+                    leave_dates.add(c["date"])
+                    blocking.append(row)
+                else:
+                    resolvable.append(row)
 
-            for shift_date in by_emp_dates[emp_id]:
-                if shift_date in existing and shift_date.isoformat() not in leave_dates:
+            for d in sorted(existing):
+                if d.isoformat() not in leave_dates:
                     resolvable.append({
                         "employee_id": emp_id,
                         "employee_name": names.get(emp_id, str(emp_id)),
-                        "date": shift_date.isoformat(),
+                        "date": d.isoformat(),
                         "type": "existing_shift",
                         "forceable": True,
-                        "message": f"A shift already exists on {shift_date.isoformat()}.",
+                        "message": f"A shift already exists on {d.isoformat()}.",
                         "has_existing_shift": True,
                     })
 
@@ -2152,83 +2750,111 @@ class ScheduleService:
         *,
         on_conflict: str = "skip",
         created_by: Optional[int] = None,
+        actor: Optional[User] = None,
     ) -> dict:
         """Create shifts for a target list. Approved-leave always skipped;
-        existing/guardrail skipped or overwritten per on_conflict."""
-        from datetime import time as _time
+        existing/guardrail skipped or overwritten per on_conflict. A shift
+        that belongs to an approved leave is never overwritten, whatever the
+        copied status: overwriting it with a rest day used to delete the leave
+        day while the leave itself stayed approved.
 
+        Validation is per employee over all their targets at once, so a run
+        of copied days is judged as the schedule it will become."""
         category_map = await ScheduleService._get_category_map(db, tenant_id)
-        created = 0
-        overwritten = 0
-        skipped: List[dict] = []
+        settings = await ScheduleService._load_app_settings(db, tenant_id)
         force = on_conflict == "overwrite"
+        skipped: List[dict] = []
+        published_removed: Dict[int, list] = defaultdict(list)
 
-        for emp_id, shift_date, shift_entry in targets:
-            status = shift_entry.get("status", "scheduled")
+        by_emp: Dict[int, list] = defaultdict(list)
+        for emp_id, shift_date, entry in targets:
+            by_emp[emp_id].append((shift_date, entry))
 
-            conflicts = await ScheduleService.check_scheduling_conflicts(
-                db, tenant_id, emp_id, [shift_date], status, force=force
+        plan: List[tuple] = []      # (emp_id, date, entry, placement)
+        doomed: List[Shift] = []    # existing shifts being overwritten
+        overwritten_dates: set = set()
+
+        def skip(emp_id, d, reason, message):
+            skipped.append({
+                "employee_id": emp_id, "date": d.isoformat() if isinstance(d, date) else d,
+                "reason": reason, "message": message,
+            })
+
+        for emp_id, items in by_emp.items():
+            existing = await ScheduleService._existing_by_date(
+                db, tenant_id, emp_id, {d for d, _ in items}
             )
-            if conflicts:
-                skipped.append({
-                    "employee_id": emp_id,
-                    "date": shift_date.isoformat(),
-                    "reason": conflicts[0]["type"],
-                    "message": conflicts[0]["message"],
-                })
-                continue
-
-            existing = (await db.execute(
-                select(Shift).where(
-                    Shift.tenant_id == tenant_id,
-                    Shift.employee_id == emp_id,
-                    Shift.date == shift_date,
-                )
-            )).scalars().all()
-            if existing:
-                if not force:
-                    skipped.append({
-                        "employee_id": emp_id,
-                        "date": shift_date.isoformat(),
-                        "reason": "existing_shift",
-                        "message": f"A shift already exists on {shift_date.isoformat()}.",
-                    })
+            candidates = []
+            for d, entry in items:
+                rows = existing.get(d, [])
+                if any(r.leave_application_id is not None for r in rows):
+                    skip(emp_id, d, "approved_leave", f"Employee is on approved leave on {d.isoformat()}.")
                     continue
-                for old in existing:
-                    await db.delete(old)
-                await db.flush()
-                overwritten += 1
+                if rows and not force:
+                    skip(emp_id, d, "existing_shift", f"A shift already exists on {d.isoformat()}.")
+                    continue
+                candidates.append((d, entry))
 
-            start_time_str = shift_entry.get("start_time")
-            end_time_str = shift_entry.get("end_time")
-            start_time = _time.fromisoformat(start_time_str) if start_time_str else None
-            end_time = _time.fromisoformat(end_time_str) if end_time_str else None
-            if category_map.get(status, "leave") != "work":
-                start_time = None
-                end_time = None
-
-            seq = await ScheduleService._next_sequence_number(
-                db, tenant_id, emp_id, shift_date,
+            replace_ids = {r.id for d, _ in candidates for r in existing.get(d, [])}
+            conflicts = await ScheduleService.validate_placements(
+                db, tenant_id,
+                [ScheduleService._target_placement(emp_id, d, e, category_map) for d, e in candidates],
+                force=force, ignore_shift_ids=replace_ids,
+                category_map=category_map, settings=settings,
             )
+            blocked: Dict[str, dict] = {}
+            for c in conflicts:
+                blocked.setdefault(c["date"], c)
+            for d, entry in candidates:
+                c = blocked.get(d.isoformat())
+                if c:
+                    skip(emp_id, d, c["type"], c["message"])
+                    continue
+                plan.append((emp_id, d, entry))
+                for r in existing.get(d, []):
+                    if r not in doomed:
+                        doomed.append(r)
+                        overwritten_dates.add((emp_id, d))
+                        if r.is_published:
+                            published_removed[emp_id].append(d)
+
+        keys = [(e, d) for e, d, _ in plan]
+        await ScheduleService._before(db, tenant_id, actor, keys)
+        for r in doomed:
+            await db.delete(r)
+        if doomed:
+            await db.flush()
+
+        seq_next: Dict[tuple, int] = {}
+        for emp_id, shift_date, entry in plan:
+            p = ScheduleService._target_placement(emp_id, shift_date, entry, category_map)
+            k = (emp_id, shift_date)
+            if k not in seq_next:
+                seq_next[k] = await ScheduleService._next_sequence_number(db, tenant_id, emp_id, shift_date)
             db.add(Shift(
                 tenant_id=tenant_id,
                 employee_id=emp_id,
                 date=shift_date,
-                start_time=start_time,
-                end_time=end_time,
-                sequence_number=seq,
-                status=status,
-                work_arrangement=shift_entry.get("work_arrangement"),
-                role_name=shift_entry.get("role_name"),
-                color=shift_entry.get("color"),
-                notes=shift_entry.get("notes"),
-                remarks=shift_entry.get("remarks"),
+                start_time=p["start_time"],
+                end_time=p["end_time"],
+                sequence_number=seq_next[k],
+                status=p["status"],
+                work_arrangement=entry.get("work_arrangement"),
+                role_name=entry.get("role_name"),
+                color=entry.get("color"),
+                notes=entry.get("notes"),
+                remarks=entry.get("remarks"),
+                work_site_id=entry.get("work_site_id"),
                 created_by=created_by,
             ))
-            await db.flush()
-            created += 1
+            seq_next[k] += 1
+        await db.flush()
+        await ScheduleService._after(db, tenant_id, actor, keys)
 
-        return {"created": created, "skipped": skipped, "overwritten": overwritten}
+        return {
+            "created": len(plan), "skipped": skipped, "overwritten": len(overwritten_dates),
+            "published_removed": {e: sorted(set(ds)) for e, ds in published_removed.items()},
+        }
 
     # ── Guardrail lint (read-only) ───────────────────────────────────────
     @staticmethod
@@ -2264,33 +2890,38 @@ class ScheduleService:
         # employee. is_special is carried through because the two kinds pay at
         # different multipliers (see AppSettings.holiday_worked_multiplier vs
         # special_holiday_worked_multiplier), so the message names which it is.
-        holiday_rows = (await db.execute(
-            select(DateRemark.date, DateRemark.title, DateRemark.is_special).where(
-                DateRemark.tenant_id == tenant_id,
-                DateRemark.is_holiday == True,  # noqa: E712
-                DateRemark.date >= start_date,
-                DateRemark.date <= end_date,
-            )
-        )).all()
-        holidays = {d: (title, is_special) for d, title, is_special in holiday_rows}
+        # Recurring holidays count (they used to be missed here).
+        from app.services.holiday_calendar import holidays_between
+
+        holidays = {
+            d: (h.title, h.is_special)
+            for d, h in (await holidays_between(db, tenant_id, start_date, end_date)).items()
+        }
 
         # Pad the window so runs that straddle the range edges are counted.
         window_start = start_date - timedelta(days=7)
         window_end = end_date + timedelta(days=7)
 
-        stmt = select(Shift.employee_id, Shift.date, Shift.status).where(
+        if employee_ids is not None and not employee_ids:
+            return []
+        stmt = select(
+            Shift.id, Shift.employee_id, Shift.date, Shift.status, Shift.start_time, Shift.end_time,
+        ).where(
             Shift.tenant_id == tenant_id,
             Shift.date >= window_start,
             Shift.date <= window_end,
         )
-        if employee_ids:
+        if employee_ids is not None:
             stmt = stmt.where(Shift.employee_id.in_(employee_ids))
         rows = (await db.execute(stmt)).all()
 
         work_days_by_emp: Dict[int, set] = defaultdict(set)
-        for emp_id, d, status in rows:
-            if category_map.get(status, "leave") == "work":
-                work_days_by_emp[emp_id].add(d)
+        in_range_by_emp: Dict[int, list] = defaultdict(list)
+        for r in rows:
+            if category_map.get(r.status, "leave") == "work":
+                work_days_by_emp[r.employee_id].add(r.date)
+                if start_date <= r.date <= end_date:
+                    in_range_by_emp[r.employee_id].append(r)
 
         violations: List[dict] = []
         for emp_id, work_days in work_days_by_emp.items():
@@ -2353,6 +2984,27 @@ class ScheduleService:
                         ),
                     })
 
+            # The hour rules, from the same validator the write paths use:
+            # the range's own shifts are replayed as placements over the rest.
+            if any(getattr(settings, k, 0) for k in (
+                "max_work_hours_per_day", "max_work_hours_per_week",
+                "min_rest_hours_between_shifts", "check_overlapping_shifts",
+            )):
+                mine = in_range_by_emp.get(emp_id, [])
+                hour_flags = await ScheduleService.validate_placements(
+                    db, tenant_id,
+                    [{"employee_id": emp_id, "date": r.date, "status": r.status,
+                      "start_time": r.start_time, "end_time": r.end_time} for r in mine],
+                    ignore_shift_ids={r.id for r in mine},
+                    category_map=category_map, settings=settings,
+                )
+                for c in hour_flags:
+                    if c["type"] in _HOUR_RULE_TYPES:
+                        violations.append({
+                            "employee_id": emp_id, "date": c["date"],
+                            "type": c["type"], "message": c["message"],
+                        })
+
         return violations
 
     # ── Draft / publish ──────────────────────────────────────────────────
@@ -2364,32 +3016,44 @@ class ScheduleService:
         end_date: date,
         employee_ids: Optional[List[int]],
         published_by: Optional[int] = None,
+        *,
+        dry_run: bool = False,
+        actor: Optional[User] = None,
     ) -> dict:
         """Publish (release) the DRAFT shifts in [start_date, end_date] for the
         given employees. Returns {published_count, employee_ids} where the id
         list is the DISTINCT employees who had something published (for
-        notifications)."""
+        notifications). An empty `employee_ids` publishes nothing; None means
+        every employee and is for callers that already checked scope."""
         from datetime import datetime as _dt
 
+        if employee_ids is not None and not employee_ids:
+            return {"published_count": 0, "employee_ids": []}
         stmt = select(Shift).where(
             Shift.tenant_id == tenant_id,
             Shift.date >= start_date,
             Shift.date <= end_date,
             Shift.is_published == False,  # noqa: E712
         )
-        if employee_ids:
+        if employee_ids is not None:
             stmt = stmt.where(Shift.employee_id.in_(employee_ids))
         shifts = (await db.execute(stmt)).scalars().all()
 
+        affected = sorted({s.employee_id for s in shifts})
+        if dry_run:
+            return {"published_count": len(shifts), "employee_ids": affected}
+        # Publishing changes what counts as the real schedule (drafts are not
+        # clocked against or paid), so it is a shift write like any other.
+        keys = [(s.employee_id, s.date) for s in shifts]
+        await ScheduleService._before(db, tenant_id, actor, keys)
         now = _dt.utcnow()
-        affected: set = set()
         for s in shifts:
             s.is_published = True
             s.published_at = now
             s.published_by = published_by
-            affected.add(s.employee_id)
         await db.flush()
-        return {"published_count": len(shifts), "employee_ids": sorted(affected)}
+        await ScheduleService._after(db, tenant_id, actor, keys)
+        return {"published_count": len(shifts), "employee_ids": affected}
 
     @staticmethod
     async def unpublish_range(
@@ -2398,21 +3062,37 @@ class ScheduleService:
         start_date: date,
         end_date: date,
         employee_ids: Optional[List[int]],
+        *,
+        dry_run: bool = False,
+        actor: Optional[User] = None,
     ) -> dict:
         """Return published shifts in the range to DRAFT (hidden from employees)
-        so they can be reworked. Returns {unpublished_count}."""
+        so they can be reworked. Returns {unpublished_count, employee_ids}.
+
+        Shifts that belong to an approved leave stay published: they are the
+        consequence of a decision already made and announced, not part of the
+        plan being reworked."""
+        if employee_ids is not None and not employee_ids:
+            return {"unpublished_count": 0, "employee_ids": []}
         stmt = select(Shift).where(
             Shift.tenant_id == tenant_id,
             Shift.date >= start_date,
             Shift.date <= end_date,
             Shift.is_published == True,  # noqa: E712
+            Shift.leave_application_id.is_(None),
         )
-        if employee_ids:
+        if employee_ids is not None:
             stmt = stmt.where(Shift.employee_id.in_(employee_ids))
         shifts = (await db.execute(stmt)).scalars().all()
+        affected = sorted({s.employee_id for s in shifts})
+        if dry_run:
+            return {"unpublished_count": len(shifts), "employee_ids": affected}
+        keys = [(s.employee_id, s.date) for s in shifts]
+        await ScheduleService._before(db, tenant_id, actor, keys)
         for s in shifts:
             s.is_published = False
             s.published_at = None
             s.published_by = None
         await db.flush()
-        return {"unpublished_count": len(shifts)}
+        await ScheduleService._after(db, tenant_id, actor, keys)
+        return {"unpublished_count": len(shifts), "employee_ids": affected}

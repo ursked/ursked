@@ -42,6 +42,11 @@ class ScheduleChangeService:
             if not target_result.scalar_one_or_none():
                 raise ValueError("Target employee not found")
 
+        await ScheduleChangeService.validate_request(
+            db, tenant_id, requester_id, request_type, req_date, end_date,
+            target_employee_id, requested_start_time, requested_end_time, requested_status,
+        )
+
         # Snapshot requester's current shift for the date
         requester_shift = await db.execute(
             select(Shift).where(
@@ -139,6 +144,86 @@ class ScheduleChangeService:
         return request
 
     @staticmethod
+    async def _leave_category_codes(db: AsyncSession, tenant_id: UUID) -> set:
+        from app.services.schedule_service import ScheduleService
+
+        cats = await ScheduleService._get_category_map(db, tenant_id)
+        return {code for code, cat in cats.items() if cat == "leave"}
+
+    @staticmethod
+    def _dates(req_date: date, end_date: Optional[date]) -> List[date]:
+        out = [req_date]
+        if end_date and end_date > req_date:
+            d = req_date + timedelta(days=1)
+            while d <= end_date:
+                out.append(d)
+                d += timedelta(days=1)
+        return out
+
+    @staticmethod
+    async def _shifts_on(db, tenant_id, employee_id, d) -> List[Shift]:
+        return list((await db.execute(
+            select(Shift).where(
+                Shift.tenant_id == tenant_id,
+                Shift.employee_id == employee_id,
+                Shift.date == d,
+            ).order_by(Shift.sequence_number)
+        )).scalars().all())
+
+    @staticmethod
+    async def validate_request(
+        db: AsyncSession,
+        tenant_id: UUID,
+        requester_id: int,
+        request_type: str,
+        req_date: date,
+        end_date: Optional[date],
+        target_employee_id: Optional[int],
+        requested_start_time=None,
+        requested_end_time=None,
+        requested_status: Optional[str] = None,
+    ) -> None:
+        """Refuse, with a sentence the employee can act on, a request that
+        could never be carried out as asked. Raises ValueError.
+
+        Leave is not something a schedule change can grant or take away: it
+        has its own request, balance and approver. So a change may not set a
+        leave status, and neither a change nor a swap may touch a day that is
+        already approved leave (approving one used to rewrite the leave day
+        and leave the application standing)."""
+        dates = ScheduleChangeService._dates(req_date, end_date)
+        if request_type == "change":
+            if requested_status and requested_status in await ScheduleChangeService._leave_category_codes(db, tenant_id):
+                raise ValueError(
+                    "Leave can't be requested as a schedule change. File a leave "
+                    "request instead, so it is counted against your balance and "
+                    "goes to the right approver."
+                )
+            wants_something = requested_status or (requested_start_time and requested_end_time)
+            for d in dates:
+                shifts = await ScheduleChangeService._shifts_on(db, tenant_id, requester_id, d)
+                if any(s.leave_application_id for s in shifts):
+                    raise ValueError(
+                        f"{d.isoformat()} is an approved leave day. Change your leave "
+                        "request instead of the schedule."
+                    )
+                if not shifts and not wants_something:
+                    raise ValueError(
+                        f"You have no shift on {d.isoformat()}. Say which shift you "
+                        "want there (start and end time, or a status)."
+                    )
+        elif request_type == "swap" and target_employee_id:
+            for d in dates:
+                for emp in (requester_id, target_employee_id):
+                    shifts = await ScheduleChangeService._shifts_on(db, tenant_id, emp, d)
+                    if any(s.leave_application_id for s in shifts):
+                        who = "You are" if emp == requester_id else "Your colleague is"
+                        raise ValueError(
+                            f"{who} on approved leave on {d.isoformat()}, so that day "
+                            "can't be swapped."
+                        )
+
+    @staticmethod
     async def process_step_decision(
         db: AsyncSession,
         request: ScheduleChangeRequest,
@@ -146,13 +231,20 @@ class ScheduleChangeService:
         action: str,
         notes: Optional[str],
         reviewer_id: int,
+        *,
+        force: bool = False,
+        actor=None,
     ) -> str:
-        """Process an approval/rejection for a step. Returns the new request status."""
-        step.status = "approved" if action == "approve" else "rejected"
-        step.decided_at = datetime.utcnow()
-        step.notes = notes
+        """Process an approval/rejection for a step. Returns the new request status.
 
+        The final approval applies the change through ScheduleService's
+        validator and write path (leave, guardrails, hour rules, domain
+        events). A conflict raises ScheduleConflictError and nothing is
+        saved; ValueError when the change cannot be applied as asked."""
         if action == "reject":
+            step.status = "rejected"
+            step.decided_at = datetime.utcnow()
+            step.notes = notes
             request.status = "rejected"
             request.reviewed_by = reviewer_id
             request.reviewed_at = datetime.utcnow()
@@ -170,12 +262,20 @@ class ScheduleChangeService:
         )
         pending_count = pending_result.scalar() or 0
 
+        # The change is applied (or refused) before anything about the step is
+        # recorded, so a refusal leaves the request exactly as it was and the
+        # approver can retry, e.g. with force.
+        if pending_count == 0:
+            await ScheduleChangeService._execute_change(db, request, force=force, actor=actor)
+        step.status = "approved"
+        step.decided_at = datetime.utcnow()
+        step.notes = notes
+
         if pending_count == 0:
             request.status = "approved"
             request.reviewed_by = reviewer_id
             request.reviewed_at = datetime.utcnow()
             request.reviewer_notes = notes
-            await ScheduleChangeService._execute_change(db, request)
             await db.flush()
             return "approved"
 
@@ -183,26 +283,20 @@ class ScheduleChangeService:
         return "pending"
 
     @staticmethod
-    async def _execute_change(db: AsyncSession, request: ScheduleChangeRequest):
+    async def _execute_change(db: AsyncSession, request: ScheduleChangeRequest, *, force=False, actor=None):
         """Execute the approved swap or change by modifying shifts."""
-        dates = [request.date]
-        if request.end_date and request.end_date > request.date:
-            current = request.date
-            while current <= request.end_date:
-                if current != request.date:
-                    dates.append(current)
-                current += timedelta(days=1)
-
+        dates = ScheduleChangeService._dates(request.date, request.end_date)
         if request.request_type == "swap" and request.target_employee_id:
             await ScheduleChangeService._execute_swap(
                 db, request.tenant_id, request.requester_id,
-                request.target_employee_id, dates,
+                request.target_employee_id, dates, force=force, actor=actor,
             )
         elif request.request_type == "change":
             await ScheduleChangeService._execute_schedule_change(
                 db, request.tenant_id, request.requester_id, dates,
                 request.requested_start_time, request.requested_end_time,
                 request.requested_status, request.requested_work_arrangement,
+                force=force, actor=actor,
             )
 
     @staticmethod
@@ -210,39 +304,63 @@ class ScheduleChangeService:
         db: AsyncSession, tenant_id: UUID,
         requester_id: int, target_id: int,
         dates: List[date],
+        *,
+        force: bool = False,
+        actor=None,
     ):
-        """Swap shifts between two employees for the given dates."""
-        for d in dates:
-            req_shifts = await db.execute(
-                select(Shift).where(
-                    Shift.tenant_id == tenant_id,
-                    Shift.employee_id == requester_id,
-                    Shift.date == d,
-                ).order_by(Shift.sequence_number)
-            )
-            tgt_shifts = await db.execute(
-                select(Shift).where(
-                    Shift.tenant_id == tenant_id,
-                    Shift.employee_id == target_id,
-                    Shift.date == d,
-                ).order_by(Shift.sequence_number)
-            )
-            req_list = list(req_shifts.scalars().all())
-            tgt_list = list(tgt_shifts.scalars().all())
+        """Swap two employees' days: each takes the other's shifts (every
+        segment, not just the first), rows and all, so publish state, work site
+        and notes travel with the shift. Refused if either side holds approved
+        leave (the leave belongs to the person, not the day), and validated
+        against both people's schedules as they will be."""
+        from app.services.schedule_service import ScheduleConflictError, ScheduleService
 
-            # Swap properties between corresponding shifts
-            max_len = max(len(req_list), len(tgt_list))
-            for i in range(max_len):
-                if i < len(req_list) and i < len(tgt_list):
-                    # Swap all schedule properties
-                    r, t = req_list[i], tgt_list[i]
-                    (r.start_time, t.start_time) = (t.start_time, r.start_time)
-                    (r.end_time, t.end_time) = (t.end_time, r.end_time)
-                    (r.status, t.status) = (t.status, r.status)
-                    (r.work_arrangement, t.work_arrangement) = (t.work_arrangement, r.work_arrangement)
-                    (r.color, t.color) = (t.color, r.color)
-                    (r.notes, t.notes) = (t.notes, r.notes)
-                    (r.role_name, t.role_name) = (t.role_name, r.role_name)
+        plan = []
+        placements = []
+        ignore = set()
+        for d in dates:
+            req = await ScheduleChangeService._shifts_on(db, tenant_id, requester_id, d)
+            tgt = await ScheduleChangeService._shifts_on(db, tenant_id, target_id, d)
+            if any(s.leave_application_id for s in req + tgt):
+                raise ValueError(
+                    f"{d.isoformat()} is now an approved leave day for one of the two "
+                    "employees, so it can't be swapped. Reject this request."
+                )
+            plan.append((d, req, tgt))
+            ignore.update(s.id for s in req + tgt)
+            placements += [
+                {"employee_id": target_id, "date": d, "status": s.status,
+                 "start_time": s.start_time, "end_time": s.end_time} for s in req
+            ] + [
+                {"employee_id": requester_id, "date": d, "status": s.status,
+                 "start_time": s.start_time, "end_time": s.end_time} for s in tgt
+            ]
+        conflicts = await ScheduleService.validate_placements(
+            db, tenant_id, placements, force=force, ignore_shift_ids=ignore,
+        )
+        if conflicts:
+            raise ScheduleConflictError(conflicts)
+
+        keys = [(e, d) for d in dates for e in (requester_id, target_id)]
+        await ScheduleService._before(db, tenant_id, actor, keys)
+        for d, req, tgt in plan:
+            # Two steps so the (employee, date, sequence) unique key never
+            # collides mid-swap: park the requester's rows on high sequence
+            # numbers under the target, then renumber.
+            for i, s in enumerate(req):
+                s.employee_id = target_id
+                s.sequence_number = 1000 + i
+                s.holiday_remark_id = None
+            await db.flush()
+            for i, s in enumerate(tgt):
+                s.employee_id = requester_id
+                s.sequence_number = i + 1
+                s.holiday_remark_id = None
+            await db.flush()
+            for i, s in enumerate(req):
+                s.sequence_number = i + 1
+            await db.flush()
+        await ScheduleService._after(db, tenant_id, actor, keys)
 
     @staticmethod
     async def _execute_schedule_change(
@@ -251,27 +369,88 @@ class ScheduleChangeService:
         new_start_time=None, new_end_time=None,
         new_status: Optional[str] = None,
         new_work_arrangement: Optional[str] = None,
+        *,
+        force: bool = False,
+        actor=None,
     ):
-        """Update employee's shifts with new values for the given dates."""
-        for d in dates:
-            result = await db.execute(
-                select(Shift).where(
-                    Shift.tenant_id == tenant_id,
-                    Shift.employee_id == requester_id,
-                    Shift.date == d,
-                ).order_by(Shift.sequence_number)
-            )
-            shifts = list(result.scalars().all())
+        """Apply a change to the employee's shifts on each date. A date with no
+        shift gets one built from the request (it used to be marked approved
+        while nothing happened); a request that does not say enough to build
+        one is refused with ValueError."""
+        from app.services.schedule_service import ScheduleConflictError, ScheduleService
 
-            for shift in shifts:
-                if new_start_time is not None:
-                    shift.start_time = new_start_time
-                if new_end_time is not None:
-                    shift.end_time = new_end_time
-                if new_status is not None:
-                    shift.status = new_status
-                if new_work_arrangement is not None:
-                    shift.work_arrangement = new_work_arrangement
+        category_map = await ScheduleService._get_category_map(db, tenant_id)
+        if new_status and category_map.get(new_status) == "leave":
+            raise ValueError(
+                "Leave can't be granted through a schedule change. Reject this "
+                "request and ask for a leave request instead."
+            )
+
+        plan = []  # (date, existing shifts or None, placement)
+        placements = []
+        ignore = set()
+        for d in dates:
+            shifts = await ScheduleChangeService._shifts_on(db, tenant_id, requester_id, d)
+            if any(s.leave_application_id for s in shifts):
+                raise ValueError(
+                    f"{d.isoformat()} is now an approved leave day, so the schedule "
+                    "can't be changed there. Reject this request."
+                )
+            if not shifts:
+                status = new_status or "scheduled"
+                is_work = category_map.get(status, "leave") == "work"
+                if is_work and not (new_start_time and new_end_time):
+                    raise ValueError(
+                        f"There is no shift on {d.isoformat()} and the request does not "
+                        "give a start and end time to create one. Reject it and ask for "
+                        "the times."
+                    )
+                p = {"employee_id": requester_id, "date": d, "status": status,
+                     "start_time": new_start_time if is_work else None,
+                     "end_time": new_end_time if is_work else None}
+                plan.append((d, None, p))
+                placements.append(p)
+                continue
+            for s in shifts:
+                status = new_status or s.status
+                is_work = category_map.get(status, "leave") == "work"
+                p = {"employee_id": requester_id, "date": d, "status": status,
+                     "start_time": (new_start_time or s.start_time) if is_work else None,
+                     "end_time": (new_end_time or s.end_time) if is_work else None}
+                plan.append((d, s, p))
+                placements.append(p)
+                ignore.add(s.id)
+
+        conflicts = await ScheduleService.validate_placements(
+            db, tenant_id, placements, force=force, ignore_shift_ids=ignore,
+            category_map=category_map,
+        )
+        if conflicts:
+            raise ScheduleConflictError(conflicts)
+
+        keys = [(requester_id, d) for d in dates]
+        await ScheduleService._before(db, tenant_id, actor, keys)
+        now = datetime.utcnow()
+        for d, shift, p in plan:
+            if shift is None:
+                # Approved by the chain, so it is published straight away: the
+                # employee asked for it and should see it.
+                db.add(Shift(
+                    tenant_id=tenant_id, employee_id=requester_id, date=d,
+                    start_time=p["start_time"], end_time=p["end_time"],
+                    sequence_number=1, status=p["status"],
+                    work_arrangement=new_work_arrangement,
+                    is_published=True, published_at=now,
+                ))
+                continue
+            shift.status = p["status"]
+            shift.start_time = p["start_time"]
+            shift.end_time = p["end_time"]
+            if new_work_arrangement is not None:
+                shift.work_arrangement = new_work_arrangement
+            shift.holiday_remark_id = None
+        await db.flush()
+        await ScheduleService._after(db, tenant_id, actor, keys)
 
     @staticmethod
     async def get_pending_for_approver(

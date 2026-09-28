@@ -246,11 +246,13 @@ export default function ShiftCell({
               statusMaps={statusMaps}
               onClick={onShiftClick}
               onCopy={onCopyShift}
-              draggable={!!onMoveShift}
+              // An approved-leave day belongs to the leave request: dragging it
+              // used to carry the leave onto another employee or date.
+              draggable={!!onMoveShift && !shift.leave_application_id}
               onDragStart={handleDragStart}
             />
             {/* Swap / Change actions for own shifts */}
-            {isOwnShift && onSwapRequest && onChangeRequest && (
+            {isOwnShift && onSwapRequest && onChangeRequest && !shift.leave_application_id && (
               <div className="absolute inset-x-0 bottom-0 translate-y-full z-10 hidden group-hover/cell:flex group-focus-within/cell:flex gap-0.5 justify-center pt-0.5">
                 <button
                   type="button"

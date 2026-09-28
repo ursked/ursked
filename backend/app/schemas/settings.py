@@ -1,7 +1,7 @@
 from datetime import time
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 # ── App Settings ─────────────────────────────────────────────────────
@@ -47,6 +47,19 @@ class AppSettingsResponse(BaseModel):
     timeclock_location_grace_minutes: int = 60
     timeclock_default_radius_m: int = 200
     custom_settings: Optional[Dict] = None
+    # ── Area E (employees): company wording for Personnel #; null = default.
+    employee_number_label: Optional[str] = None
+
+    # ── Area L: leave day counting and approval reminders
+    work_week_days: List[int] = [0, 1, 2, 3, 4]
+    leave_reminder_after_days: int = 2
+    leave_escalate_after_days: int = 5
+
+    # ── Area S: working-hour rules. 0 / false = off.
+    max_work_hours_per_day: float = 0
+    max_work_hours_per_week: float = 0
+    min_rest_hours_between_shifts: float = 0
+    check_overlapping_shifts: bool = False
 
 
 class AppSettingsUpdate(BaseModel):
@@ -92,6 +105,27 @@ class AppSettingsUpdate(BaseModel):
     timeclock_location_grace_minutes: Optional[int] = Field(None, ge=0, le=1440)
     timeclock_default_radius_m: Optional[int] = Field(None, ge=10, le=100000)
     custom_settings: Optional[Dict] = None
+    # ── Area L: leave day counting and approval reminders
+    # 0 = Monday ... 6 = Sunday. An empty week would make every unrostered day
+    # free, so at least one day is required.
+    work_week_days: Optional[List[int]] = Field(None, min_length=1, max_length=7)
+    leave_reminder_after_days: Optional[int] = Field(None, ge=1, le=60)
+    leave_escalate_after_days: Optional[int] = Field(None, ge=0, le=90)
+
+    @field_validator("work_week_days")
+    @classmethod
+    def _valid_work_week(cls, v: Optional[List[int]]) -> Optional[List[int]]:
+        if v is None:
+            return v
+        if any(d < 0 or d > 6 for d in v):
+            raise ValueError("Working days must be numbers from 0 (Monday) to 6 (Sunday).")
+        return sorted(set(v))
+
+    # ── Area S: working-hour rules. 0 turns a limit off.
+    max_work_hours_per_day: Optional[float] = Field(None, ge=0, le=24)
+    max_work_hours_per_week: Optional[float] = Field(None, ge=0, le=168)
+    min_rest_hours_between_shifts: Optional[float] = Field(None, ge=0, le=48)
+    check_overlapping_shifts: Optional[bool] = None
 
 
 # ── Shift Status Types ───────────────────────────────────────────────

@@ -12,8 +12,10 @@ interface CopyWeekModalProps {
   /** The currently-viewed range = the SOURCE window. */
   sourceStart: string;
   sourceEnd: string;
-  /** Optional: narrow the copy to these employees (e.g. dept filter). */
-  employeeIds?: number[];
+  /** The employees whose week is copied: the rows shown that the viewer
+   *  manages. Always sent, so an empty filter result copies nothing rather
+   *  than (as it used to) everybody. */
+  employeeIds: number[];
 }
 
 /** Duplicate the currently-viewed week (source range) into the NEXT contiguous
@@ -33,7 +35,7 @@ export default function CopyWeekModal({
   const body = {
     source_start_date: sourceStart,
     source_end_date: sourceEnd,
-    ...(employeeIds && employeeIds.length ? { employee_ids: employeeIds } : {}),
+    employee_ids: employeeIds,
   };
 
   const previewMut = useMutation({

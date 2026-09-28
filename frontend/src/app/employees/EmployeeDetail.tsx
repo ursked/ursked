@@ -4,7 +4,8 @@ import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { User, EmployeeTypeConfig, ScheduleFormatConfig } from '@/types';
-import { getPrimaryRole, getRoleNames } from '@/lib/roles';
+import { getPrimaryRole } from '@/lib/roles';
+import { useEmployeeFieldConfig, formatCustomValue, DEFAULT_EMPLOYEE_NUMBER_LABEL } from './customFields';
 
 interface EmployeeDetailProps {
   employee: User;
@@ -34,6 +35,12 @@ export default function EmployeeDetail({ employee, onClose, onEdit, canEdit }: E
     queryKey: ['schedule-formats'],
     queryFn: () => api.getScheduleFormats(),
   });
+
+  const { data: fieldConfig } = useEmployeeFieldConfig();
+  const numberLabel = fieldConfig?.employee_number_label || DEFAULT_EMPLOYEE_NUMBER_LABEL;
+  // Only definitions the viewer may see arrive here, and only values they may
+  // see arrive on the record; a field with no value shows "Not set".
+  const customDefs = fieldConfig?.fields ?? [];
 
   const getEmployeeTypeLabel = (code: string) => employeeTypes?.find((t) => t.code === code)?.name ?? code.replace(/_/g, ' ');
   const getScheduleFormatLabel = (code: string) => scheduleFormats?.find((f) => f.code === code)?.name ?? code.replace(/_/g, ' ');
@@ -72,7 +79,7 @@ export default function EmployeeDetail({ employee, onClose, onEdit, canEdit }: E
                 </div>
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900">
-                    {employee.first_name} {employee.last_name}
+                    {[employee.first_name, employee.middle_name, employee.last_name].filter(Boolean).join(' ')}
                   </h3>
                   <p className="text-sm text-gray-500">{employee.email}</p>
                   <div className="flex items-center gap-2 mt-1">
@@ -84,8 +91,13 @@ export default function EmployeeDetail({ employee, onClose, onEdit, canEdit }: E
                         ? 'bg-green-50 text-green-700'
                         : 'bg-red-50 text-red-700'
                     }`}>
-                      {employee.is_active ? 'Active' : 'Inactive'}
+                      {employee.is_active ? 'Active' : employee.separation_type === 'resigned' ? 'Resigned' : employee.separation_type === 'terminated' ? 'Terminated' : 'Inactive'}
                     </span>
+                    {employee.invite_pending && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-800">
+                        {employee.invite_expired ? 'Invite expired' : 'Invite pending'}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -115,6 +127,7 @@ export default function EmployeeDetail({ employee, onClose, onEdit, canEdit }: E
                 <h4 className="text-sm font-semibold text-gray-900 mb-3">Personal Information</h4>
                 <div className="grid grid-cols-2 gap-4">
                   <InfoRow label="First Name" value={employee.first_name} />
+                  <InfoRow label="Middle Name" value={employee.middle_name} />
                   <InfoRow label="Last Name" value={employee.last_name} />
                   <InfoRow label="Email" value={employee.email} />
                   <InfoRow label="Contact Number" value={employee.contact_number} />
@@ -126,13 +139,14 @@ export default function EmployeeDetail({ employee, onClose, onEdit, canEdit }: E
               <div>
                 <h4 className="text-sm font-semibold text-gray-900 mb-3">Employment Information</h4>
                 <div className="grid grid-cols-2 gap-4">
-                  <InfoRow label="Personnel Number" value={employee.personnel_number} />
+                  <InfoRow label={numberLabel} value={employee.personnel_number} />
                   <InfoRow label="Typecode" value={employee.typecode} />
                   <InfoRow label="ID Number" value={employee.id_number} />
                   <InfoRow label="Hiring Date" value={employee.hiring_date} />
                   <InfoRow label="Job Title" value={employee.job_title} />
                   <InfoRow label="Rank" value={employee.rank} />
-                  <InfoRow label="Div / Department" value={employee.div_department} />
+                  <InfoRow label="Organization Unit" value={employee.org_node_name} />
+                  <InfoRow label="Line Manager" value={employee.reports_to_name} />
                   <InfoRow
                     label="Employee Type"
                     value={employee.employee_type ? getEmployeeTypeLabel(employee.employee_type) : null}
@@ -143,6 +157,29 @@ export default function EmployeeDetail({ employee, onClose, onEdit, canEdit }: E
                   />
                 </div>
               </div>
+
+              {/* Company-defined fields */}
+              {customDefs.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-900 mb-3">Additional Information</h4>
+                  <div className="grid grid-cols-2 gap-4">
+                    {customDefs.map((d) => (
+                      <InfoRow key={d.key} label={d.label} value={formatCustomValue(d, employee.custom_fields?.[d.key])} />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Separation */}
+              {!employee.is_active && (employee.separation_date || employee.separation_reason) && (
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-900 mb-3">Separation</h4>
+                  <div className="grid grid-cols-2 gap-4">
+                    <InfoRow label="Date" value={employee.separation_date} />
+                    {employee.separation_reason && <InfoRow label="Reason" value={employee.separation_reason} />}
+                  </div>
+                </div>
+              )}
 
               {/* Timestamps */}
               <div>

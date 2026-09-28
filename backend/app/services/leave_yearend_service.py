@@ -99,6 +99,11 @@ class LeaveYearEndService:
             ))
         return out
 
+    @staticmethod
+    def _tenant_start_year(tenant) -> Optional[int]:
+        created = getattr(tenant, "created_at", None)
+        return created.year if created is not None else None
+
     # ── Public entry point ────────────────────────────────────────────
 
     @staticmethod
@@ -116,7 +121,13 @@ class LeaveYearEndService:
             # Carry-over + cash conversion: once, on/after Jan 1, for the year
             # that just closed (today.year - 1).
             closing_year = today.year - 1
-            claim = await job_service.claim(CARRY_OVER, str(closing_year), tenant.id)
+            # Never close a year before the company started using the app. On
+            # the live install the job ran for 2025 on first boot in 2026 and
+            # carried over a full year of credits nobody had been tracking.
+            started = LeaveYearEndService._tenant_start_year(tenant)
+            claim = None
+            if started is None or closing_year >= started:
+                claim = await job_service.claim(CARRY_OVER, str(closing_year), tenant.id)
             if claim is not None:
                 try:
                     meta = await LeaveYearEndService._run_carry_over(
@@ -158,6 +169,10 @@ class LeaveYearEndService:
             policy_cache: dict[Optional[str], Optional[LeavePolicy]] = {}
 
             for emp in employees:
+                # Someone hired after the closing year has nothing to carry.
+                hired = getattr(emp, "hiring_date", None)
+                if hired is not None and hired.year > closing_year:
+                    continue
                 etype = emp.employee_type
                 if etype not in policy_cache:
                     policy_cache[etype] = await LeaveService.get_policy_for_employee(
@@ -167,7 +182,8 @@ class LeaveYearEndService:
                 if not policy:
                     continue
 
-                # Closing-year balances (accrual as of Dec 31).
+                # Closing-year balances (accrual as of Dec 31, prorated from
+                # the hire date in the hire year by compute_balances).
                 balance_set = await LeaveService.compute_balances(
                     db, tenant_id, emp, year=closing_year, as_of=as_of_closing
                 )
@@ -175,7 +191,11 @@ class LeaveYearEndService:
 
                 for ent in ents:
                     item = balance_set.for_type(ent.leave_type or "shared_pool")
-                    remaining = item.available_days if item else 0.0
+                    # Only approved leave has been used. A request still
+                    # pending at year end has not consumed anything, and
+                    # subtracting it (as available_days does) forfeited days
+                    # the employee may never take.
+                    remaining = (item.total_days - item.used_days) if item else 0.0
                     if remaining <= 0:
                         continue
 
