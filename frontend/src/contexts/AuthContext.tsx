@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { User, LoginCredentials } from '@/types';
 import { api } from '@/lib/api';
 import { clearApiCache } from '@/components/PWARegistrar';
+import { isPublicPath } from '@/lib/publicRoutes';
 
 interface AuthContextType {
   user: User | null;
@@ -54,16 +55,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // When a refresh attempt fails the session is unrecoverable; drop local state
   // and send the user to the login screen rather than leaving a broken shell.
-  // Exception: on public pages (landing, login, signup, activate) a 401 is the
-  // NORMAL state for a logged-out visitor — the initial /auth/me probe 401s —
-  // so we must not bounce them off the public marketing/auth pages.
+  // Exception: on public pages (landing, login, password reset, activate) a 401
+  // is the NORMAL state for a logged-out visitor — the initial /auth/me probe
+  // 401s — so we must not bounce them off those pages.
   useEffect(() => {
-    const PUBLIC_PREFIXES = ['/auth/login', '/auth/signup', '/auth/activate'];
     api.setSessionExpiredHandler(() => {
       setUser(null);
-      const path = window.location.pathname;
-      const onPublic = path === '/' || PUBLIC_PREFIXES.some((p) => path === p || path.startsWith(`${p}/`));
-      if (!onPublic) {
+      if (!isPublicPath(window.location.pathname)) {
         router.replace('/auth/login');
       }
     });

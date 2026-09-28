@@ -71,6 +71,82 @@ def _assert_may_revoke_roles(actor: User, removed_codes: set[str]) -> None:
         )
 
 
+# Pickers across the app (approver rules, org members, visibility grants,
+# attendance) used `GET /users?per_page=100`, which the backend caps at 100, so
+# a company with 101 employees silently could not pick the 101st. This is a
+# search-as-you-type lookup instead: minimal fields, no page cap on the result
+# set because the caller narrows it by typing.
+_LOOKUP_PERMISSIONS = (
+    ("employees", "view"),
+    ("organization", "edit"),
+    ("schedules", "edit"),
+    ("leave", "edit"),
+    ("settings", "edit"),
+)
+
+
+@router.get("/lookup")
+async def lookup_users(
+    q: Optional[str] = Query(None, max_length=100),
+    limit: int = Query(50, ge=1, le=200),
+    include_inactive: bool = False,
+    ids: Optional[str] = Query(None, description="Comma-separated ids to resolve"),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from sqlalchemy import func, or_
+
+    from app.services.permission_service import PermissionService
+
+    if not current_user.has_role("tenant_admin"):
+        role_ids = [ur.role_id for ur in current_user.user_roles]
+        allowed = False
+        for module, action in _LOOKUP_PERMISSIONS:
+            if await PermissionService.check_permission(
+                db, current_user.tenant_id, role_ids, module, action
+            ):
+                allowed = True
+                break
+        if not allowed:
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    stmt = select(User).where(User.tenant_id == current_user.tenant_id)
+    if not include_inactive:
+        stmt = stmt.where(User.is_active == True)  # noqa: E712
+    if ids:
+        try:
+            wanted = [int(x) for x in ids.split(",") if x.strip()]
+        except ValueError:
+            raise HTTPException(status_code=422, detail="ids must be integers")
+        stmt = stmt.where(User.id.in_(wanted[:500]))
+    elif q and q.strip():
+        like = f"%{q.strip().lower()}%"
+        stmt = stmt.where(
+            or_(
+                func.lower(User.first_name).like(like),
+                func.lower(User.last_name).like(like),
+                func.lower(User.first_name + " " + User.last_name).like(like),
+                func.lower(User.email).like(like),
+                func.lower(User.username).like(like),
+                func.lower(func.coalesce(User.personnel_number, "")).like(like),
+            )
+        )
+    stmt = stmt.order_by(User.last_name, User.first_name).limit(limit)
+    users = (await db.execute(stmt)).scalars().all()
+    return [
+        {
+            "id": u.id,
+            "name": f"{u.first_name} {u.last_name}".strip(),
+            "email": u.email,
+            "username": u.username,
+            "personnel_number": u.personnel_number,
+            "org_node_id": u.org_node_id,
+            "is_active": u.is_active,
+        }
+        for u in users
+    ]
+
+
 @router.get("", response_model=UserListResponse)
 async def list_users(
     page: int = Query(1, ge=1),

@@ -16,6 +16,17 @@ export interface UserRoleAssignment {
   assigned_at?: string;
 }
 
+// Minimal employee record returned by GET /users/lookup, for pickers.
+export interface UserLookup {
+  id: number;
+  name: string;
+  email: string;
+  username: string;
+  personnel_number: string | null;
+  org_node_id: number | null;
+  is_active: boolean;
+}
+
 export interface User {
   id: number;
   tenant_id: string;

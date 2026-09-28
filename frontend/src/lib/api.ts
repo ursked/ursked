@@ -2,6 +2,7 @@ import {
   LoginCredentials,
   LoginResponse,
   User,
+  UserLookup,
   TenantRegistration,
   TenantRegistrationResponse,
   SlugCheckResponse,
@@ -388,6 +389,18 @@ class ApiClient {
   }
 
   // Users
+  // Search-as-you-type employee lookup for pickers. Unlike getUsers it is not
+  // capped at 100 rows per company, because the caller narrows it by typing.
+  async lookupUsers(params: { q?: string; ids?: number[]; limit?: number; includeInactive?: boolean } = {}): Promise<UserLookup[]> {
+    const qs = new URLSearchParams();
+    if (params.q) qs.set('q', params.q);
+    if (params.ids && params.ids.length) qs.set('ids', params.ids.join(','));
+    if (params.limit) qs.set('limit', String(params.limit));
+    if (params.includeInactive) qs.set('include_inactive', 'true');
+    const query = qs.toString();
+    return this.get(`/api/v1/users/lookup${query ? '?' + query : ''}`) as Promise<UserLookup[]>;
+  }
+
   async getUsers(params?: Record<string, string>): Promise<PaginatedResponse<User>> {
     const query = params ? '?' + new URLSearchParams(params).toString() : '';
     return this.get(`/api/v1/users${query}`) as Promise<PaginatedResponse<User>>;

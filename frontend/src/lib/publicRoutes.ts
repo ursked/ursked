@@ -1,0 +1,19 @@
+// Pages reachable without a session. The server-side guard (proxy.ts) and the
+// client-side session-expiry handler (AuthContext) both read this list. They
+// used to keep separate copies and both left out the password-reset pages, so
+// a locked-out user who opened the reset link in their email was sent to the
+// login screen and could never set a new password.
+export const PUBLIC_PATHS = [
+  '/',
+  '/auth/login',
+  '/auth/signup',
+  '/auth/activate',
+  '/auth/forgot-password',
+  '/auth/reset-password',
+];
+
+export function isPublicPath(pathname: string): boolean {
+  return PUBLIC_PATHS.some(
+    (p) => pathname === p || (p !== '/' && pathname.startsWith(`${p}/`)),
+  );
+}

@@ -18,7 +18,79 @@ VALID_MODULES = [
     "reports",
 ]
 
+# ── What each module controls ────────────────────────────────────────
+#
+# The Permissions screen is enforced by the API. Until 2026-09 it was only
+# checked on attendance, policy rules, work sites and data export, while every
+# other endpoint used a hard-coded role list, so an admin could untick a box and
+# nothing changed. This is the contract every router follows:
+#
+#   Self-service is NEVER gated by the matrix. Your own profile, schedule, leave,
+#   punches, attendance and payslips are always yours to see; the matrix governs
+#   acting on OTHER people and on company configuration.
+#
+#   Scope is separate from permission. A permission says WHAT a role may do; the
+#   scope (access_scope.managed_employee_ids) says to WHOM. Roles in
+#   FULL_SCOPE_ROLES act on everyone; any other role acts only on the employees
+#   in the org units they head or deputise, and their descendants.
+#
+#   employees     view   list and read other employees' records
+#                 create add, invite and import employees
+#                 edit   edit other employees' profiles and roles
+#                 delete separate (resign/terminate) and reinstate
+#   organization  view   the Organization page and unit member lists
+#                 create create org levels and units
+#                 edit   rename/move units, set heads, deputies, members,
+#                        visibility grants
+#                 delete delete units and levels
+#   schedules     view   other people's drafts, attendance, overtime and
+#                        tardiness; actuals on the grid
+#                 create create shifts (single, bulk, copy, templates)
+#                 edit   edit/move shifts, publish, snapshots, review change
+#                        requests, record attendance
+#                 delete delete and clear shifts
+#                 Holidays are company-wide, so creating, editing or deleting
+#                 one needs the matching schedules action AND full scope
+#                 (FULL_SCOPE_ROLES["schedules"]); a team manager cannot change
+#                 everyone's holiday pay.
+#   leave         view   other employees' leave requests and balances
+#                 create file leave on someone else's behalf
+#                 edit   leave policies, types, approver rules; override or
+#                        reassign a stuck approval
+#                 delete delete policies, types and approver rules
+#                 Approving a request is governed by the approver chain, not
+#                 the matrix: the resolved approver may always act on their step.
+#   finances      view   payroll periods, compensation, deductions (salary
+#                        figures additionally require salary-access enrollment)
+#                 create create periods and compensation items
+#                 edit   compute payroll, edit items, deduction types
+#                 delete void and delete
+#                 Approve/finalize stays tenant_admin only: the person who
+#                 computes a payroll should not also be the one who locks it.
+#   settings      view   read company settings, policies, work sites
+#                 edit   change them (create/delete for the list-type ones)
+#   reports       view   analytics dashboards
+#                 create run, preview and download ad-hoc reports
+#                 edit   save and edit reports and scheduled exports
+#                 delete delete saved reports and schedules
+
+# Roles that act on every employee without an org-chart scope, per module.
+FULL_SCOPE_ROLES = {
+    "employees": {"tenant_admin", "hr", "finance"},
+    "organization": {"tenant_admin", "hr"},
+    "schedules": {"tenant_admin", "hr", "schedule_editor"},
+    "leave": {"tenant_admin", "hr"},
+    "finances": {"tenant_admin", "finance"},
+    "settings": {"tenant_admin", "hr", "finance"},
+    "reports": {"tenant_admin", "hr", "finance"},
+}
+
 # Default permission matrix: role_code -> {module: (can_view, can_create, can_edit, can_delete, extra)}
+#
+# These reproduce what each role could actually do before the matrix was
+# enforced, so enforcing it changes nothing until an admin edits a box. Where
+# the old hard-coded behaviour was itself a defect (e.g. any reviewer approving
+# any request), the fix lives in the router, not in these defaults.
 DEFAULT_PERMISSIONS = {
     "tenant_admin": {
         "employees": (True, True, True, True, {"view_salary": True}),
@@ -32,8 +104,8 @@ DEFAULT_PERMISSIONS = {
     "hr": {
         "employees": (True, True, True, False, {"view_salary": True}),
         "organization": (True, True, True, False, {}),
-        "schedules": (True, False, False, False, {}),
-        "leave": (True, True, True, False, {}),
+        "schedules": (True, True, True, True, {}),
+        "leave": (True, True, True, True, {}),
         "finances": (True, False, False, False, {}),
         "settings": (True, False, False, False, {}),
         "reports": (True, True, True, False, {}),
@@ -50,7 +122,7 @@ DEFAULT_PERMISSIONS = {
     "manager": {
         "employees": (True, False, False, False, {}),
         "organization": (True, False, False, False, {}),
-        "schedules": (True, False, False, False, {}),
+        "schedules": (True, True, True, True, {}),
         "leave": (True, False, False, False, {}),
         "finances": (False, False, False, False, {}),
         "settings": (False, False, False, False, {}),
@@ -59,7 +131,7 @@ DEFAULT_PERMISSIONS = {
     "schedule_editor": {
         "employees": (True, False, False, False, {}),
         "organization": (False, False, False, False, {}),
-        "schedules": (True, True, True, False, {}),
+        "schedules": (True, True, True, True, {}),
         "leave": (True, False, False, False, {}),
         "finances": (False, False, False, False, {}),
         "settings": (False, False, False, False, {}),
@@ -69,10 +141,10 @@ DEFAULT_PERMISSIONS = {
         "employees": (True, False, False, False, {}),
         "organization": (False, False, False, False, {}),
         "schedules": (True, False, False, False, {}),
-        "leave": (True, False, True, False, {}),
+        "leave": (True, False, False, False, {}),
         "finances": (False, False, False, False, {}),
         "settings": (False, False, False, False, {}),
-        "reports": (True, False, False, False, {}),
+        "reports": (False, False, False, False, {}),
     },
     "employee": {
         "employees": (False, False, False, False, {}),
