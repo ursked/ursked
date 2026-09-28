@@ -1,4 +1,4 @@
-from datetime import datetime, date, timedelta
+from datetime import date, timedelta
 from typing import List, Optional
 from uuid import UUID
 
@@ -11,6 +11,7 @@ from app.models.schedule import ScheduleChangeApprovalStep, ScheduleChangeReques
 from app.models.user import User
 from app.services.leave_approval_service import LeaveApprovalService
 from app.services.leave_service import LeaveService
+from app.utils.timeutil import utcnow
 
 
 class ScheduleChangeService:
@@ -243,11 +244,11 @@ class ScheduleChangeService:
         saved; ValueError when the change cannot be applied as asked."""
         if action == "reject":
             step.status = "rejected"
-            step.decided_at = datetime.utcnow()
+            step.decided_at = utcnow()
             step.notes = notes
             request.status = "rejected"
             request.reviewed_by = reviewer_id
-            request.reviewed_at = datetime.utcnow()
+            request.reviewed_at = utcnow()
             request.reviewer_notes = notes
             await db.flush()
             return "rejected"
@@ -268,13 +269,13 @@ class ScheduleChangeService:
         if pending_count == 0:
             await ScheduleChangeService._execute_change(db, request, force=force, actor=actor)
         step.status = "approved"
-        step.decided_at = datetime.utcnow()
+        step.decided_at = utcnow()
         step.notes = notes
 
         if pending_count == 0:
             request.status = "approved"
             request.reviewed_by = reviewer_id
-            request.reviewed_at = datetime.utcnow()
+            request.reviewed_at = utcnow()
             request.reviewer_notes = notes
             await db.flush()
             return "approved"
@@ -430,7 +431,7 @@ class ScheduleChangeService:
 
         keys = [(requester_id, d) for d in dates]
         await ScheduleService._before(db, tenant_id, actor, keys)
-        now = datetime.utcnow()
+        now = utcnow()
         for d, shift, p in plan:
             if shift is None:
                 # Approved by the chain, so it is published straight away: the

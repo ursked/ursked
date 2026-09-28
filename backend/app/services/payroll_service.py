@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from typing import Dict, Iterable, List, Optional, Tuple
 from uuid import UUID
 
@@ -32,6 +32,7 @@ from app.services.payroll_compute import (
     span,
     validate_brackets,
 )
+from app.utils.timeutil import company_today, utcnow
 
 # A period in one of these states has been signed off: its shifts, attendance
 # and overtime are what was paid (or is about to be), so nothing may change
@@ -206,7 +207,7 @@ class PayrollService:
     async def get_employee_current_salary(
         db: AsyncSession, tenant_id: UUID, employee_id: int, as_of: Optional[date] = None
     ) -> Optional[EmployeeSalary]:
-        ref_date = as_of or date.today()
+        ref_date = as_of or await company_today(db, tenant_id)
         stmt = (
             select(EmployeeSalary)
             .where(
@@ -243,7 +244,7 @@ class PayrollService:
 
         Drives the central Employee Salaries table so an admin can see who has a
         grade assigned and who doesn't, and assign/raise from one place."""
-        ref_date = as_of or date.today()
+        ref_date = as_of or await company_today(db, tenant_id)
         users = (await db.execute(
             select(User).where(User.tenant_id == tenant_id, User.is_active == True)  # noqa: E712
             .order_by(User.first_name, User.last_name)
@@ -1046,7 +1047,7 @@ class PayrollService:
         outcome = await PayrollService._run_compute(db, tenant_id, period)
         period.status = "computed"
         period.compute_progress = PayrollService._outcome_progress(outcome)
-        period.computed_at = datetime.utcnow()
+        period.computed_at = utcnow()
         period.computed_by = computed_by
         await db.commit()
         await db.refresh(period)
@@ -1090,7 +1091,7 @@ class PayrollService:
                 )
                 period.status = "computed"
                 period.compute_progress = PayrollService._outcome_progress(outcome)
-                period.computed_at = datetime.utcnow()
+                period.computed_at = utcnow()
                 period.computed_by = computed_by
                 await db.commit()
             except Exception as exc:  # noqa: BLE001
@@ -1115,7 +1116,7 @@ class PayrollService:
         if period.status != "computed":
             raise ValueError(f"Cannot approve payroll in '{period.status}' status")
         period.status = "approved"
-        period.approved_at = datetime.utcnow()
+        period.approved_at = utcnow()
         period.approved_by = approved_by
         await db.commit()
         await db.refresh(period)
@@ -1131,7 +1132,7 @@ class PayrollService:
         if period.status != "approved":
             raise ValueError(f"Cannot finalize payroll in '{period.status}' status")
 
-        now = datetime.utcnow()
+        now = utcnow()
         # Mark what each item paid, so none of it can be paid again or
         # silently changed. The item's breakdown records exactly which
         # compensation lines and overtime logs were included.

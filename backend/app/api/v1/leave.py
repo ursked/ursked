@@ -9,7 +9,7 @@ employees in the units they head or deputise. Self-service (your own requests,
 balance and approval chain) is never gated.
 """
 
-from datetime import date, datetime
+from datetime import date
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -99,6 +99,7 @@ from app.services.leave_service import LeaveService
 from app.services.schedule_service import ScheduleService
 from app.services.settings_service import SettingsService
 from app.services.user_service import UserService
+from app.utils.timeutil import utcnow
 
 router = APIRouter(prefix="/leave", tags=["Leave"])
 
@@ -1663,10 +1664,10 @@ async def self_approve_leave_application(
         )
 
     step.status = STEP_APPROVED
-    step.decided_at = datetime.utcnow()
+    step.decided_at = utcnow()
     step.notes = f"Self-approved (no other approver exists): {data.reason}"
     app.reviewed_by = current_user.id
-    app.reviewed_at = datetime.utcnow()
+    app.reviewed_at = utcnow()
     app.reviewer_notes = step.notes
     await record_event(db, app, "self_approve", actor_id=current_user.id, step=step, reason=data.reason)
     await set_status(db, app, "approved", actor=current_user)
@@ -1716,11 +1717,11 @@ async def override_leave_application(
     note = f"{'Approved' if data.action == 'approve' else 'Rejected'} by {me} (override): {data.reason}"
     if step is not None:
         step.status = STEP_APPROVED if data.action == "approve" else STEP_REJECTED
-        step.decided_at = datetime.utcnow()
+        step.decided_at = utcnow()
         step.notes = note
     LeaveApprovalService.skip_open_steps(app, note=f"Not needed: {note}")
     app.reviewed_by = current_user.id
-    app.reviewed_at = datetime.utcnow()
+    app.reviewed_at = utcnow()
     app.reviewer_notes = note
     await record_event(
         db, app, f"override_{data.action}", actor_id=current_user.id, step=step,
@@ -1936,10 +1937,10 @@ async def revoke_leave_application(
         # marks the last step, as it stands in for the final say.
         target = my_step or sorted(app.approval_steps or [], key=lambda s: s.step_order)[-1]
         target.status = STEP_REJECTED
-        target.decided_at = datetime.utcnow()
+        target.decided_at = utcnow()
         target.notes = f"Rejected after approval by {me}: {data.notes}"
         app.reviewed_by = current_user.id
-        app.reviewed_at = datetime.utcnow()
+        app.reviewed_at = utcnow()
         new_status = "rejected"
 
     if as_override:

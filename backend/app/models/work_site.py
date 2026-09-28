@@ -6,7 +6,6 @@ rostered on site, so the expectation is derived from the shift's work_arrangemen
 rather than applied globally.
 """
 
-from datetime import datetime
 
 from sqlalchemy import (
     Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
@@ -14,6 +13,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import UUID
 
 from app.database import Base
+from app.utils.timeutil import utcnow
 
 
 class WorkSite(Base):
@@ -48,8 +48,8 @@ class WorkSite(Base):
     )
     is_active = Column(Boolean, nullable=False, default=True)
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
 
 class WorkArrangementRule(Base):
@@ -82,5 +82,5 @@ class WorkArrangementRule(Base):
     geofence_mode = Column(String(20), nullable=False, default="any_location")
     is_active = Column(Boolean, nullable=False, default=True)
     sort_order = Column(Integer, nullable=False, default=0)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)

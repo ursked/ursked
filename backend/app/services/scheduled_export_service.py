@@ -332,7 +332,12 @@ class ScheduledExportService:
             output_columns = _suffix_currency(
                 output_columns, config.data_source, currency_code, config.column_aliases or {}
             )
-        rfrom, rto = resolve_date_window(spec.get("date_preset"), spec.get("date_from"), spec.get("date_to"))
+        from app.utils.timeutil import company_today
+
+        rfrom, rto = resolve_date_window(
+            spec.get("date_preset"), spec.get("date_from"), spec.get("date_to"),
+            today=await company_today(db, schedule.tenant_id),
+        )
         payload, mime, ext = DataExportService.serialise(
             rows, output_columns, config.output_format or "csv", sheet_name=config.name,
             layout=config.layout,
@@ -345,6 +350,7 @@ class ScheduledExportService:
             config_name=html.escape(config.name),
             schedule_type=schedule.schedule_type,
             row_count=total,
+            file_format=ext,
         )
         # The template builds the subject from the escaped name; a subject is
         # plain text, so rebuild it from the real one.
@@ -504,12 +510,6 @@ class ScheduledExportService:
                 await db.rollback()
                 counts["failed"] += 1
         return counts
-
-    @staticmethod
-    async def check_and_run_due(db: AsyncSession) -> None:
-        """The scheduler loop's original entry point; kept until the
-        single-leader scheduler calls run_due directly."""
-        await ScheduledExportService.run_due(db)
 
     @staticmethod
     async def _record_run(

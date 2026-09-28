@@ -31,6 +31,7 @@ from app.schemas.analytics import (
 from app.services.access_scope import managed_employee_ids
 from app.services.analytics_service import AnalyticsService
 from app.services.permission_service import PermissionService
+from app.utils.timeutil import company_today
 
 
 def _no_store(response: Response) -> None:
@@ -74,7 +75,7 @@ async def get_overtime_trends(
 ):
     """Monthly overtime trends grouped by overtime category."""
     if year is None:
-        year = date.today().year
+        year = (await company_today(db, current_user.tenant_id)).year
     return await AnalyticsService.get_overtime_monthly_trends(
         db, current_user.tenant_id, year,
         status_filter=status or None,
@@ -95,7 +96,7 @@ async def get_overtime_paid_vs_unpaid(
 ):
     """Monthly paid vs unpaid overtime breakdown."""
     if year is None:
-        year = date.today().year
+        year = (await company_today(db, current_user.tenant_id)).year
     return await AnalyticsService.get_overtime_paid_vs_unpaid(
         db, current_user.tenant_id, year,
         status_filter=status or None,
@@ -116,7 +117,7 @@ async def get_leave_trends(
 ):
     """Monthly leave trends grouped by leave type."""
     if year is None:
-        year = date.today().year
+        year = (await company_today(db, current_user.tenant_id)).year
     return await AnalyticsService.get_leave_monthly_trends(
         db, current_user.tenant_id, year,
         status_filter=status or None,
@@ -136,7 +137,7 @@ async def get_attendance_summary(
 ):
     """Monthly attendance metrics summary."""
     if year is None:
-        year = date.today().year
+        year = (await company_today(db, current_user.tenant_id)).year
     return await AnalyticsService.get_attendance_summary(
         db, current_user.tenant_id, year,
         start_date=start_date,

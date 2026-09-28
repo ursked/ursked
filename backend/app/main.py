@@ -44,32 +44,6 @@ else:
 logger = logging.getLogger(__name__)
 
 
-async def _scheduler_loop():
-    """Background loop that runs every 60 seconds: due scheduled exports plus
-    the JobRun-ledgered daily/yearly jobs (leave carry-over, expiry, cash
-    conversion). Each job is idempotent, so running the loop on every process
-    is safe."""
-    from app.services.job_service import JobService
-    from app.services.scheduled_export_service import ScheduledExportService
-
-    while True:
-        await asyncio.sleep(60)
-        try:
-            async with AsyncSessionLocal() as db:
-                await ScheduledExportService.check_and_run_due(db)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.exception("Scheduled export check failed")
-
-        try:
-            await JobService.run_due_jobs()
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.exception("Scheduled jobs check failed")
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info(
@@ -85,8 +59,8 @@ async def lifespan(app: FastAPI):
         async with AsyncSessionLocal() as db:
             await bootstrap_smtp_from_env(db)
             # Warn loudly, once, if email cannot be sent. Self-hosters routinely
-            # start with no SMTP; without this the failure is invisible (sends are
-            # best-effort and drop silently), so invited users never get their
+            # start with no SMTP; without this the failure is easy to miss (each
+            # send is only logged as "skipped"), so invited users never get their
             # activation link and password resets go nowhere. Uses the same config
             # source the send path checks, so the warning can't disagree with it.
             if await EmailService._get_smtp_config(db) is None:
@@ -99,7 +73,11 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.exception("SMTP env bootstrap failed")
 
-    task = asyncio.create_task(_scheduler_loop())
+    # Every worker runs the loop; only the one holding the scheduler's
+    # advisory lock runs jobs (see app/services/scheduler.py).
+    from app.services.scheduler import scheduler_loop
+
+    task = asyncio.create_task(scheduler_loop())
     yield
     task.cancel()
     try:

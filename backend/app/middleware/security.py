@@ -144,6 +144,13 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
                 "default-src 'none'; frame-ancestors 'none'; base-uri 'none'"
             )
 
+        # API responses carry one signed-in person's data (team schedules,
+        # payslips, approvals). Without an explicit directive a browser or an
+        # intermediary may keep a copy and hand it to the next person on a
+        # shared device. An endpoint that sets its own Cache-Control wins.
+        if request.url.path.startswith("/api/") and "cache-control" not in response.headers:
+            response.headers["Cache-Control"] = "no-store"
+
         if settings.COOKIE_SECURE:
             response.headers["Strict-Transport-Security"] = (
                 "max-age=31536000; includeSubDomains"

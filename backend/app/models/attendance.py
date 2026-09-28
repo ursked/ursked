@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date
 
 from sqlalchemy import (
     Boolean, Column, Date, DateTime, Float, ForeignKey, Index, Integer, String, Text, Time, UniqueConstraint
@@ -7,6 +7,7 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
 
 from app.database import Base
+from app.utils.timeutil import utcnow
 
 
 class AttendanceRecord(Base):
@@ -50,8 +51,8 @@ class AttendanceRecord(Base):
     excused_by_leave_id = Column(
         Integer, ForeignKey("leave_applications.id", ondelete="SET NULL"), nullable=True
     )
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     tenant = relationship("Tenant", backref="attendance_records")
     employee = relationship("User", foreign_keys=[employee_id])
@@ -96,8 +97,8 @@ class OvertimeLog(Base):
     )
     paid_at = Column(DateTime(timezone=True), nullable=True)
     notes = Column(Text, nullable=True)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     tenant = relationship("Tenant", backref="overtime_logs")
     employee = relationship("User", foreign_keys=[employee_id])
@@ -121,8 +122,8 @@ class TardinessRecord(Base):
     policy_rule_id = Column(Integer, ForeignKey("policy_rules.id", ondelete="SET NULL"), nullable=True)
     recorded_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     notes = Column(Text, nullable=True)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     tenant = relationship("Tenant", backref="tardiness_records")
     employee = relationship("User", foreign_keys=[employee_id])
@@ -155,7 +156,7 @@ class LeaveCreditAdjustment(Base):
     source_type = Column(String(30), nullable=True)  # overtime_log, tardiness_record, job_run
     notes = Column(Text, nullable=True)
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
 
     tenant = relationship("Tenant", backref="leave_credit_adjustments")
     employee = relationship("User", foreign_keys=[employee_id])
@@ -265,8 +266,8 @@ class TimePunch(Base):
     user_agent = Column(String(255), nullable=True)
     notes = Column(Text, nullable=True)
     recorded_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     tenant = relationship("Tenant", backref="time_punches")
     employee = relationship("User", foreign_keys=[employee_id])

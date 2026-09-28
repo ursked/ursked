@@ -1,4 +1,3 @@
-from datetime import datetime
 from typing import List
 
 from sqlalchemy import (
@@ -9,6 +8,7 @@ from sqlalchemy.orm import relationship
 
 from app.database import Base
 from app.services.crypto import EncryptedString
+from app.utils.timeutil import utcnow
 
 
 class User(Base):
@@ -55,8 +55,8 @@ class User(Base):
     # rejected. Bumped on password change, role change and deactivation.
     # Stored on the row (not Redis) so revocation survives a cache outage.
     tokens_valid_from = Column(DateTime(timezone=True), nullable=True)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     tenant = relationship("Tenant", back_populates="users")
     section = relationship("Section", back_populates="users")
@@ -116,8 +116,8 @@ class UserTwoFactor(Base):
     totp_verified = Column(Boolean, default=False)
     backup_codes = Column(JSON, nullable=True)
     grace_period_ends_at = Column(DateTime(timezone=True), nullable=True)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     user = relationship("User", back_populates="two_factor")
 
@@ -134,7 +134,7 @@ class TrustedDevice(Base):
     user_agent = Column(Text, nullable=True)
     expires_at = Column(DateTime(timezone=True), nullable=False)
     last_used_at = Column(DateTime(timezone=True), nullable=True)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
 
     user = relationship("User", back_populates="trusted_devices")
 
@@ -157,7 +157,7 @@ class UserSession(Base):
     jti = Column(String(64), nullable=False, unique=True, index=True)
     ip_address = Column(String(50), nullable=True)
     user_agent = Column(Text, nullable=True)
-    login_at = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
+    login_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
     last_activity_at = Column(DateTime(timezone=True), nullable=True)
     expires_at = Column(DateTime(timezone=True), nullable=False)
     revoked_at = Column(DateTime(timezone=True), nullable=True)
@@ -178,7 +178,7 @@ class UserInviteToken(Base):
     expires_at = Column(DateTime(timezone=True), nullable=False)
     used_at = Column(DateTime(timezone=True), nullable=True)
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
 
     user = relationship("User", foreign_keys=[user_id], backref="invite_tokens")
 
@@ -193,6 +193,6 @@ class PasswordResetToken(Base):
     token_hash = Column(String(64), nullable=False, unique=True, index=True)
     expires_at = Column(DateTime(timezone=True), nullable=False)
     used_at = Column(DateTime(timezone=True), nullable=True)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
 
     user = relationship("User", foreign_keys=[user_id])

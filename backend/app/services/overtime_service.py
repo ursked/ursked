@@ -4,7 +4,6 @@ Overtime Service
 Manages overtime logs: listing, approving, rejecting, and converting to leave credits.
 """
 
-from datetime import datetime
 from typing import List, Optional, Tuple
 from uuid import UUID
 
@@ -13,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.attendance import OvertimeLog, LeaveCreditAdjustment
 from app.models.leave import LeaveType, OvertimeCategory
+from app.utils.timeutil import utcnow
 
 
 class OvertimeService:
@@ -70,7 +70,7 @@ class OvertimeService:
 
         log.status = "approved"
         log.approved_by = approved_by
-        log.approved_at = datetime.utcnow()
+        log.approved_at = utcnow()
         if notes:
             log.notes = notes
 
@@ -91,7 +91,7 @@ class OvertimeService:
 
         log.status = "rejected"
         log.approved_by = approved_by
-        log.approved_at = datetime.utcnow()
+        log.approved_at = utcnow()
         if notes:
             log.notes = notes
 

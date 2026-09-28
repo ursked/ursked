@@ -1,5 +1,3 @@
-from datetime import datetime
-
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
@@ -15,6 +13,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
 from app.database import Base
+from app.utils.timeutil import utcnow
 
 
 class OrgLevel(Base):
@@ -35,9 +34,9 @@ class OrgLevel(Base):
     )
     level_number = Column(Integer, nullable=False)
     name = Column(String(100), nullable=False)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
     updated_at = Column(
-        DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )
 
     tenant = relationship("Tenant", back_populates="org_levels")
@@ -84,9 +83,9 @@ class OrgNode(Base):
     # ancestor that sets one, ultimately the tenant-wide default. One of:
     # own_node | own_and_children | own_and_parent | all.
     schedule_visibility = Column(String(20), nullable=True)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
     updated_at = Column(
-        DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )
 
     tenant = relationship("Tenant", back_populates="org_nodes")
@@ -142,7 +141,7 @@ class NodeScheduleVisibility(Base):
         index=True,
     )
     include_descendants = Column(Boolean, default=True, nullable=False)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
     created_by = Column(
         Integer,
         ForeignKey("users.id", ondelete="SET NULL"),

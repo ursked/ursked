@@ -16,7 +16,6 @@ import logging
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Optional
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,6 +28,7 @@ from app.models.settings import AppSettings
 from app.models.tenant import Tenant
 from app.models.user import User
 from app.services.leave_service import LeaveService
+from app.utils.timeutil import local_today
 
 logger = logging.getLogger(__name__)
 
@@ -66,15 +66,7 @@ class LeaveYearEndService:
 
     @staticmethod
     def _tenant_today(tz_name: Optional[str], now: Optional[datetime] = None) -> date:
-        now = now or datetime.utcnow().replace(tzinfo=ZoneInfo("UTC"))
-        if now.tzinfo is None:
-            now = now.replace(tzinfo=ZoneInfo("UTC"))
-        if tz_name:
-            try:
-                return now.astimezone(ZoneInfo(tz_name)).date()
-            except (ZoneInfoNotFoundError, ValueError):
-                pass
-        return now.astimezone(ZoneInfo("UTC")).date()
+        return local_today(tz_name, now)
 
     @staticmethod
     def _entitlements_for(policy: LeavePolicy) -> list[_Entitlement]:

@@ -193,29 +193,39 @@ of two ways to set their credentials:
    to set their own password. This only works if email is configured — see below.
 
 > **Heads-up:** invites, password resets, and security alerts all go out by
-> email. **If you have not configured SMTP, those emails are silently dropped** —
-> an invited user will never get their activation link. If email isn't set up
-> yet, use option 1 above. On startup the backend logs a clear warning when SMTP
-> is unconfigured (`docker compose logs backend`).
+> email. **If you have not configured SMTP, those emails are not sent** — an
+> invited user will never get their activation link. Each one is recorded as
+> *skipped* in the email log under **Settings → Email**, and on startup the
+> backend logs a clear warning (`docker compose logs backend`). If email isn't
+> set up yet, use option 1 above.
 
 ### Configuring email (SMTP)
 
-Either set the `SMTP_*` variables in `.env` before first boot (they seed the mail
-config once), **or** configure it in-app afterwards as the admin under
-**Settings → Email**, which takes precedence. Use *Send test email* there to
-confirm it works before relying on invites.
+Either set the `SMTP_*` variables in `.env` (they fill in the mail settings
+while those are empty, and keep them in step with `.env` until someone edits
+them in the app), **or** configure it in-app as the admin under
+**Settings → Email**. Once changed in the app, the app's settings win and a
+restart never overwrites them. Use *Send test email* there to confirm it works
+before relying on invites.
+
+Emails are queued with the change they announce and sent by a background job
+within a minute; a mail server that is briefly unreachable is retried for about
+six hours. **Settings → Background jobs** shows anything still queued or that
+failed, with a *Retry now* button.
 
 ### Notifications
 
 ursked has two notification channels:
 
 - **In-app** — schedule changes, leave decisions, and other events appear in the
-  notification bell inside the app. This works with no configuration and is
-  always on (controlled by **Settings → Notifications** in the admin panel).
+  notification bell inside the app. This works with no configuration. The
+  switches for leave and schedule notifications are under **Settings → General**
+  (*Leave Days and Approvals* and *Notifications and Defaults*).
 - **Email** — invitations, password resets, account-lockout alerts, and leave
   decision confirmations are sent by email. **These require a working SMTP
-  configuration** (see above). Without it, email notifications are silently
-  dropped — no error is shown, and the recipient simply never receives them.
+  configuration** (see above). Without it, email notifications are not sent;
+  the recipient never receives them, and the email log records each one as
+  *skipped*.
 
 There is no push notification (browser push, mobile) in the Community Edition.
 If you rely on email for any workflow, verify SMTP is configured and working
@@ -351,9 +361,33 @@ docker compose down               # stop (data is kept in named volumes)
 
 ## Backups
 
-Your data lives in the `postgres_data` Docker volume. Back it up with a standard
-`pg_dump` (run these from the directory holding your `.env`, so `$POSTGRES_USER`
-and `$POSTGRES_DB` are set):
+Your data lives in the `postgres_data` Docker volume. There are three ways to
+take a copy of it; use at least one.
+
+**From the app.** As the administrator, **Settings → Data & backups → Download
+a backup** streams a full SQL dump of the database to your browser.
+
+**Nightly, automatically (recommended).** The stack includes an optional
+`backup` service, off by default. Turn it on by adding this line to `.env` and
+running `docker compose up -d`:
+
+```bash
+COMPOSE_PROFILES=backup
+```
+
+Every day at `BACKUP_AT` (UTC, default `02:30`) it writes a compressed
+`pg_dump` file (`ursked-YYYYMMDD-HHMMSS.dump`) into the `backups` volume and
+deletes all but the newest `BACKUP_KEEP` (default 14). Check it with
+`docker compose logs backup`. A backup kept only on the same disk does not
+survive that disk, so copy them somewhere else regularly:
+
+```bash
+docker compose exec backup ls -l /backups                   # list them
+docker compose cp backup:/backups/ursked-20260929-023000.dump .   # copy one out
+```
+
+**By hand.** Run a standard `pg_dump` (from the directory holding your `.env`,
+so `$POSTGRES_USER` and `$POSTGRES_DB` are set):
 
 ```bash
 # Back up to a timestamped file
@@ -380,6 +414,19 @@ docker volume rm ursked_postgres_data   # wipe DB only (name may be prefixed by 
 docker compose up -d                    # migrations recreate the schema
 docker compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" < backup.sql
 ```
+
+A nightly `.dump` file from the `backup` service is restored with
+`pg_restore` instead of `psql`. It replaces what is in the database, so stop
+the app first:
+
+```bash
+docker compose stop backend frontend
+docker compose run --rm --entrypoint "" backup \
+  sh -c 'pg_restore --clean --if-exists --no-owner -d "$PGDATABASE" /backups/ursked-20260929-023000.dump'
+docker compose start backend frontend
+```
+
+(`docker compose run` works whether or not the backup profile is enabled.)
 
 ## Troubleshooting
 

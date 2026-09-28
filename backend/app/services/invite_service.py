@@ -6,7 +6,7 @@ Handles invite token generation, validation, and user account activation.
 
 import hashlib
 import secrets
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Optional, Tuple
 from uuid import UUID
 
@@ -17,6 +17,7 @@ from sqlalchemy.orm import selectinload
 from app.middleware.auth import get_password_hash
 from app.models.role import UserRole
 from app.models.user import User, UserInviteToken
+from app.utils.timeutil import utcnow
 
 INVITE_TOKEN_EXPIRY_DAYS = 7
 
@@ -45,7 +46,7 @@ class InviteService:
         the token's hash is stored; the raw token is returned once so the caller
         can build the activation URL, and lives nowhere else."""
         raw_token = secrets.token_urlsafe(48)
-        expires_at = datetime.utcnow() + timedelta(days=INVITE_TOKEN_EXPIRY_DAYS)
+        expires_at = utcnow() + timedelta(days=INVITE_TOKEN_EXPIRY_DAYS)
 
         invite = UserInviteToken(
             user_id=user_id,
@@ -67,7 +68,7 @@ class InviteService:
         stmt = select(UserInviteToken).where(
             UserInviteToken.token_hash == _hash_token(token),
             UserInviteToken.used_at.is_(None),
-            UserInviteToken.expires_at > datetime.utcnow(),
+            UserInviteToken.expires_at > utcnow(),
         )
         result = await db.execute(stmt)
         return result.scalar_one_or_none()
@@ -105,7 +106,7 @@ class InviteService:
             if clash is None:
                 user.email = lowered
 
-        invite.used_at = datetime.utcnow()
+        invite.used_at = utcnow()
 
         await db.flush()
         await db.refresh(user)
@@ -126,7 +127,7 @@ class InviteService:
         )
         result = await db.execute(stmt)
         for old_token in result.scalars().all():
-            old_token.used_at = datetime.utcnow()
+            old_token.used_at = utcnow()
 
         await db.flush()
         return await InviteService.create_invite_token(db, user_id, tenant_id, created_by)

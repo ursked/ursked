@@ -1,9 +1,8 @@
-from datetime import datetime
-
 from sqlalchemy import BigInteger, Boolean, Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 from app.database import Base
+from app.utils.timeutil import utcnow
 
 
 class SiteSettings(Base):
@@ -31,6 +30,11 @@ class SiteSettings(Base):
     smtp_from_email = Column(String(255), nullable=True)
     smtp_from_name = Column(String(200), nullable=True)
     smtp_admin_notification_email = Column(String(255), nullable=True)
+    # sha256 of the SMTP settings as the SMTP_* env bootstrap last wrote them.
+    # While the stored settings still hash to this, nobody has edited them in
+    # the app and the environment may update them; otherwise the app's values
+    # win (services/smtp_bootstrap.py). Migration 065.
+    smtp_env_fingerprint = Column(String(64), nullable=True)
     # Database backup
     db_backup_enabled = Column(Boolean, nullable=False, default=False)
     db_backup_frequency = Column(String(50), nullable=False, default="daily")
@@ -46,8 +50,8 @@ class SiteSettings(Base):
     notify_on_backup_failure = Column(Boolean, nullable=False, default=True)
     notification_email = Column(String(255), nullable=True)
     # Timestamps
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
 
 class AuditLog(Base):
@@ -63,4 +67,4 @@ class AuditLog(Base):
     details = Column(JSONB, nullable=True)
     ip_address = Column(String(50), nullable=True)
     user_agent = Column(Text, nullable=True)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, index=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, index=True)

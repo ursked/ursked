@@ -159,7 +159,7 @@ class EmailLogEntry(BaseModel):
 
 @router.get("/email-logs", response_model=List[EmailLogEntry])
 async def list_email_logs(
-    status: Optional[str] = Query(None, pattern="^(pending|sent|failed)$"),
+    status: Optional[str] = Query(None, pattern="^(pending|sent|failed|skipped)$"),
     limit: int = Query(100, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(["tenant_admin"])),

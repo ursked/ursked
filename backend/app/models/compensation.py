@@ -1,5 +1,3 @@
-from datetime import datetime
-
 from sqlalchemy import (
     Boolean,
     Column,
@@ -16,6 +14,7 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
 
 from app.database import Base
+from app.utils.timeutil import utcnow
 
 
 class PayoutSchedule(Base):
@@ -46,8 +45,8 @@ class PayoutSchedule(Base):
     # that lands on a weekend/holiday.
     payout_day_adjust = Column(String(20), nullable=False, default="none")
     is_active = Column(Boolean, nullable=False, default=True)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     tenant = relationship("Tenant", backref="payout_schedules")
 
@@ -89,8 +88,8 @@ class CompensationItem(Base):
     # Set when swept into a finalized payroll run.
     payroll_item_id = Column(Integer, ForeignKey("payroll_items.id", ondelete="SET NULL"), nullable=True)
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     tenant = relationship("Tenant", backref="compensation_items")
     employee = relationship("User", foreign_keys=[employee_id])

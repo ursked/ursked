@@ -10,6 +10,7 @@ from app.middleware.auth import get_password_hash
 from app.models.role import Role, UserRole
 from app.models.user import User
 from app.services.role_service import RoleService
+from app.utils.timeutil import as_utc, utcnow
 
 # Columns an employee-edit payload may set. Anything else in the dict is a
 # programming error, not a user choice, so it is ignored here and rejected by
@@ -471,10 +472,8 @@ class UserService:
             )
             .group_by(UserInviteToken.user_id)
         )
-        now = datetime.utcnow()
+        now = utcnow()
         out = {}
         for uid, expires in rows.all():
-            if expires is not None and expires.tzinfo is not None:
-                expires = expires.replace(tzinfo=None)
-            out[uid] = bool(expires is not None and expires < now)
+            out[uid] = bool(expires is not None and as_utc(expires) < now)
         return out

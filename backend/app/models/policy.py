@@ -1,10 +1,9 @@
-from datetime import datetime
-
 from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
 
 from app.database import Base
+from app.utils.timeutil import utcnow
 
 
 class PolicyRule(Base):
@@ -36,8 +35,8 @@ class PolicyRule(Base):
     effective_from = Column(Date, nullable=True)
     effective_until = Column(Date, nullable=True)
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     tenant = relationship("Tenant", backref="policy_rules")
     creator = relationship("User", foreign_keys=[created_by])

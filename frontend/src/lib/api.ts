@@ -6,11 +6,7 @@ import {
   TenantRegistration,
   TenantRegistrationResponse,
   SlugCheckResponse,
-  Tenant,
-  TenantStats,
   PaginatedResponse,
-  DashboardMetrics,
-  Department,
   AppSettings,
   SmtpSettings,
   SmtpSettingsUpdate,
@@ -105,6 +101,9 @@ import type { ReportTemplate, ScheduledExportRun } from '@/types';
 
 // Area F: payroll, finance, attendance, time clock.
 import type { ConversionLeaveType, DeductionBracket, SuggestedDeduction } from '@/types';
+
+// Area A: setup checklist, background jobs, retention report.
+import type { BackgroundJobsView, RetentionReport, SetupStatus } from '@/types';
 
 const CSRF_COOKIE = 'csrf_token';
 const CSRF_HEADER = 'X-CSRF-Token';
@@ -386,26 +385,6 @@ class ApiClient {
 
   async checkSlug(slug: string): Promise<SlugCheckResponse> {
     return this.get(`/api/v1/tenants/check-slug/${slug}`) as Promise<SlugCheckResponse>;
-  }
-
-  async getSetupStatus(): Promise<{ steps: Array<{ key: string; label: string; done: boolean; count: number; link: string }>; completed: number; total: number }> {
-    return this.get('/api/v1/tenants/setup-status') as Promise<{ steps: Array<{ key: string; label: string; done: boolean; count: number; link: string }>; completed: number; total: number }>;
-  }
-
-  async getCurrentTenant(): Promise<Tenant> {
-    return this.get('/api/v1/tenants/current') as Promise<Tenant>;
-  }
-
-  async updateTenant(data: unknown): Promise<Tenant> {
-    return this.patch('/api/v1/tenants/current', data) as Promise<Tenant>;
-  }
-
-  async updateTenantBranding(data: unknown): Promise<Tenant> {
-    return this.patch('/api/v1/tenants/current/branding', data) as Promise<Tenant>;
-  }
-
-  async getTenantStats(): Promise<TenantStats> {
-    return this.get('/api/v1/tenants/current/stats') as Promise<TenantStats>;
   }
 
   // Users
@@ -1006,31 +985,6 @@ class ApiClient {
     return this.del(`/api/v1/organizations/nodes/${nodeId}/secondary-members`, { user_ids: userIds }) as Promise<{ removed: number }>;
   }
 
-  // Organizations (legacy)
-  async getDepartments(params?: Record<string, string>): Promise<PaginatedResponse<Department>> {
-    const query = params ? '?' + new URLSearchParams(params).toString() : '';
-    return this.get(`/api/v1/organizations/departments${query}`) as Promise<PaginatedResponse<Department>>;
-  }
-
-  async createDepartment(data: unknown) {
-    return this.post('/api/v1/organizations/departments', data);
-  }
-
-  async getDivisions(params?: Record<string, string>) {
-    const query = params ? '?' + new URLSearchParams(params).toString() : '';
-    return this.get(`/api/v1/organizations/divisions${query}`);
-  }
-
-  async getSections(params?: Record<string, string>) {
-    const query = params ? '?' + new URLSearchParams(params).toString() : '';
-    return this.get(`/api/v1/organizations/sections${query}`);
-  }
-
-  async getUnits(params?: Record<string, string>) {
-    const query = params ? '?' + new URLSearchParams(params).toString() : '';
-    return this.get(`/api/v1/organizations/units${query}`);
-  }
-
   // Org Hierarchy
   async getOrgLevels(): Promise<{ levels: OrgLevel[] }> {
     return this.get('/api/v1/organizations/levels') as Promise<{ levels: OrgLevel[] }>;
@@ -1110,10 +1064,6 @@ class ApiClient {
   }
 
   // Analytics
-  async getDashboardMetrics(): Promise<DashboardMetrics> {
-    return this.get('/api/v1/analytics/dashboard') as Promise<DashboardMetrics>;
-  }
-
   async getOvertimeTrends(params: { year: number; status?: string; start_date?: string; end_date?: string }): Promise<OvertimeTrendsResponse> {
     const query = new URLSearchParams({ year: String(params.year) });
     if (params.status) query.set('status', params.status);
@@ -1796,6 +1746,40 @@ class ApiClient {
 
   async getConversionLeaveTypes(): Promise<ConversionLeaveType[]> {
     return this.get('/api/v1/attendance/overtime/conversion-leave-types') as Promise<ConversionLeaveType[]>;
+  }
+
+  // ── Area A: setup checklist, background jobs, data and backups ──────
+  async getSetupStatus(): Promise<SetupStatus> {
+    return this.get('/api/v1/settings/setup-status') as Promise<SetupStatus>;
+  }
+
+  async getBackgroundJobs(): Promise<BackgroundJobsView> {
+    return this.get('/api/v1/settings/background-jobs') as Promise<BackgroundJobsView>;
+  }
+
+  async retryOutboxEmail(id: number): Promise<{ id: number; status: string }> {
+    return this.post(`/api/v1/settings/background-jobs/outbox/${id}/retry`, {}) as Promise<{ id: number; status: string }>;
+  }
+
+  async getRetentionReport(): Promise<RetentionReport> {
+    return this.get('/api/v1/settings/retention-report') as Promise<RetentionReport>;
+  }
+
+  // Fetched rather than navigated to, so a refusal (a backup already running)
+  // or a dump that fails part-way is reported as an error instead of a page of
+  // JSON or a silently truncated file. The dump is held in memory until saved,
+  // which suits a Community-sized database; the nightly server-side backup
+  // (README "Backups") has no such limit.
+  async downloadBackup(): Promise<{ blob: Blob; filename: string }> {
+    await this.getCurrentUser(); // refreshes an expired session first
+    const response = await fetch(`${this.baseUrl}/api/v1/backup/download`, {
+      credentials: 'include',
+      headers: this.getHeaders('GET'),
+    });
+    if (!response.ok) await this.handleResponse(response); // throws a readable ApiError
+    const disposition = response.headers.get('Content-Disposition') ?? '';
+    const match = /filename="?([^";]+)"?/.exec(disposition);
+    return { blob: await response.blob(), filename: match?.[1] ?? 'ursked-backup.sql' };
   }
 }
 

@@ -84,7 +84,8 @@ services:
       ALLOW_INSECURE_TRANSPORT: "${ALLOW_INSECURE_TRANSPORT:-false}"
       EXPOSE_API_DOCS: "${EXPOSE_API_DOCS:-false}"
       # Optional SMTP bootstrap (self-host email). If SMTP_HOST is set, seeds the
-      # mail config on first boot; admins can also manage it under Settings -> Email.
+      # mail config while it is empty (or still exactly what these values set);
+      # once an admin changes it under Settings -> Email, the app's values win.
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USERNAME: ${SMTP_USERNAME:-}
@@ -100,6 +101,9 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       ADMIN_FIRST_NAME: ${ADMIN_FIRST_NAME:-Admin}
       ADMIN_LAST_NAME: ${ADMIN_LAST_NAME:-}
+      # Container clock only; keep it UTC. The organization's timezone is set
+      # in the app (Settings -> General), and timestamps are stored as UTC
+      # regardless of this value.
       TZ: ${TZ:-UTC}
     # The image ENTRYPOINT runs the alembic migrations; this command then seeds
     # the single tenant + admin (idempotent) before starting the API server.
@@ -145,6 +149,53 @@ services:
     security_opt:
       - no-new-privileges:true
     mem_limit: 512m
+    logging: *default_logging
+
+  # Optional nightly database backup. OFF unless the "backup" profile is
+  # enabled (COMPOSE_PROFILES=backup in .env, or `docker compose --profile
+  # backup up -d`); see README "Backups". Once a day at BACKUP_AT (UTC) it
+  # writes a pg_dump custom-format file into the `backups` volume and keeps the
+  # newest BACKUP_KEEP of them. It only reads the database.
+  backup:
+    image: postgres:15.10-alpine
+    profiles: ["backup"]
+    restart: unless-stopped
+    environment:
+      PGHOST: db
+      PGUSER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      PGDATABASE: ${POSTGRES_DB:-ursked}
+      BACKUP_AT: ${BACKUP_AT:-02:30}
+      BACKUP_KEEP: ${BACKUP_KEEP:-14}
+    volumes:
+      - backups:/backups
+    entrypoint: ["/bin/sh", "-c"]
+    # $$ is a literal $ for the shell (compose interpolates single $).
+    command:
+      - |
+        echo "backup: nightly pg_dump of $$PGDATABASE at $$BACKUP_AT UTC, keeping the newest $$BACKUP_KEEP"
+        last=""
+        while true; do
+          today=$$(date -u +%F)
+          if [ "$$(date -u +%H:%M)" = "$$BACKUP_AT" ] && [ "$$last" != "$$today" ]; then
+            last=$$today
+            f="/backups/ursked-$$(date -u +%Y%m%d-%H%M%S).dump"
+            if pg_dump -Fc -f "$$f.part" && mv "$$f.part" "$$f"; then
+              echo "backup: wrote $$f"
+              ls -1t /backups/ursked-*.dump | tail -n +$$((BACKUP_KEEP + 1)) | xargs -r rm -f --
+            else
+              rm -f "$$f.part"
+              echo "backup: pg_dump FAILED; the previous backups are untouched" >&2
+            fi
+          fi
+          sleep 30
+        done
+    depends_on:
+      db:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
     logging: *default_logging
 
 volumes:

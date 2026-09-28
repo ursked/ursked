@@ -6,7 +6,6 @@ overload Personnel # or keep a spreadsheet. A definition says what the field is
 and who may see or change it; a value is one employee's entry.
 """
 
-from datetime import datetime
 
 from sqlalchemy import (
     Boolean,
@@ -24,6 +23,7 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
 
 from app.database import Base
+from app.utils.timeutil import utcnow
 
 FIELD_TYPES = ("text", "number", "date", "select", "boolean")
 
@@ -64,8 +64,8 @@ class EmployeeFieldDefinition(Base):
     sort_order = Column(Integer, nullable=False, default=0)
     is_archived = Column(Boolean, nullable=False, default=False)
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     values = relationship("EmployeeFieldValue", back_populates="field", cascade="all, delete-orphan")
 
@@ -112,7 +112,7 @@ class EmployeeFieldValue(Base):
     value_norm = Column(String(500), nullable=True)
     is_unique = Column(Boolean, nullable=False, default=False)
     updated_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     field = relationship("EmployeeFieldDefinition", back_populates="values")

@@ -23,6 +23,7 @@ from app.services.data_source_registry import (
     tenant_columns,
 )
 from app.services.formula_engine import FormulaEngine, FormulaError
+from app.utils.timeutil import company_today
 
 
 # Sources whose rows are keyed by a calendar date. Used both to decide the
@@ -292,8 +293,10 @@ class DataExportService:
         options = spec.get("source_options") or {}
 
         # A relative window re-resolves on every run; absolute dates pass through.
+        # "Last 7 days" is the company's last seven days, not the server's.
         date_from, date_to = pipeline.resolve_date_window(
-            spec.get("date_preset"), spec.get("date_from"), spec.get("date_to")
+            spec.get("date_preset"), spec.get("date_from"), spec.get("date_to"),
+            today=await company_today(db, tenant_id),
         )
         common: Dict[str, Any] = {"date_from": date_from, "date_to": date_to, "viewer": viewer}
         if employee_scope is not None:

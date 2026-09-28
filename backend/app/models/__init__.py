@@ -94,3 +94,8 @@ __all__ += ["LeaveApprovalEvent", "LeaveApproverRuleStep"]
 from app.models.schedule import HolidaySource  # noqa: E402
 
 __all__.append("HolidaySource")
+
+# Area A (platform): transactional email outbox (migration 065).
+from app.models.email_outbox import EmailOutbox  # noqa: E402
+
+__all__.append("EmailOutbox")

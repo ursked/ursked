@@ -1,9 +1,8 @@
-from datetime import datetime
-
 from sqlalchemy import Column, DateTime, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 from app.database import Base
+from app.utils.timeutil import utcnow
 
 
 class JobRun(Base):
@@ -27,7 +26,7 @@ class JobRun(Base):
     # Logical run key, e.g. "2026" for a yearly job or "2026-08-11" for daily.
     period_key = Column(String(64), nullable=False)
     status = Column(String(20), nullable=False, default="running")  # running/success/failed
-    started_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    started_at = Column(DateTime(timezone=True), default=utcnow, index=True)
     finished_at = Column(DateTime(timezone=True), nullable=True)
     error = Column(Text, nullable=True)
     meta = Column(JSONB, nullable=True)

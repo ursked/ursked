@@ -1,10 +1,9 @@
-from datetime import datetime
-
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
 
 from app.database import Base
+from app.utils.timeutil import utcnow
 
 
 class RolePermission(Base):
@@ -22,8 +21,8 @@ class RolePermission(Base):
     can_edit = Column(Boolean, default=False, nullable=False)
     can_delete = Column(Boolean, default=False, nullable=False)
     extra_permissions = Column(JSONB, nullable=True, default=dict)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     tenant = relationship("Tenant", backref="role_permissions")
     role = relationship("Role", backref="permissions")

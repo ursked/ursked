@@ -1,12 +1,11 @@
-from typing import List, Optional
+from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, select as sa_select
+from sqlalchemy import func, or_, select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.middleware.auth import get_current_user, require_role
-from app.models.site_settings import AuditLog
 from app.models.user import User
 from app.schemas.settings import (
     AppSettingsResponse,
@@ -138,54 +137,154 @@ async def update_user_preferences(
     return resp
 
 
-# ── Audit Log ────────────────────────────────────────────────────────
+# ── Area A: setup checklist, background jobs, data retention ─────────
+#
+# The tenant audit trail is served by GET /audit/logs (the Audit Log page);
+# the duplicate GET /settings/audit-log that used to live here had no caller.
 
-@router.get("/audit-log")
-async def list_audit_log(
+def _is_enterprise() -> bool:
+    from app.api.v1.smtp_settings import _is_enterprise as check
+
+    return check()
+
+
+def _own_or_system(column, tenant_id):
+    """Rows for this tenant, plus tenant-less system rows on Community (a
+    single-tenant install, where they can only be this company's). On the
+    multi-tenant SaaS those belong to the operator, not to any one tenant."""
+    if _is_enterprise():
+        return column == tenant_id
+    return or_(column == tenant_id, column.is_(None))
+
+
+@router.get("/setup-status")
+async def get_setup_status(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_role(["tenant_admin", "hr"])),
+):
+    """Onboarding checklist for the dashboard: which setup steps are done.
+
+    Same audience as the card (administrators and HR). Exists in both
+    editions; the card used to call an Enterprise-only route and showed an
+    error on every Community dashboard."""
+    from app.services.setup_status_service import SetupStatusService
+
+    steps = await SetupStatusService.get_status(db, current_user.tenant_id)
+    done = sum(1 for step in steps if step["done"])
+    return {"steps": steps, "completed": done, "total": len(steps)}
+
+
+@router.get("/background-jobs")
+async def get_background_jobs(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     _=Depends(require_role(["tenant_admin"])),
-    action: Optional[str] = Query(None, description="Filter by action (e.g. login_success, login_failure)"),
-    page: int = Query(1, ge=1),
-    per_page: int = Query(50, ge=1, le=200),
+    limit: int = Query(100, ge=1, le=500),
 ):
-    """Read-only view of this tenant's own audit trail.
+    """Read-only view of the scheduler: its jobs, recent runs, and the email
+    outbox. Bodies of queued emails are never returned (they can carry
+    activation and reset links)."""
+    from app.models.email_outbox import EmailOutbox
+    from app.models.job_run import JobRun
+    from app.services.email_service import MAX_ATTEMPTS
+    from app.services.job_service import STALE_AFTER
+    from app.services.scheduler import JOBS, TICK_SECONDS
+    from app.utils.timeutil import as_utc
 
-    CE scope: tenant admins query their OWN tenant's audit_logs.
-    EE scope (not built): cross-tenant audit UI in the superadmin console.
-    """
-    base = sa_select(AuditLog).where(
-        AuditLog.tenant_id == current_user.tenant_id,
-    )
-    if action:
-        base = base.where(AuditLog.action == action)
+    def _iso(value):
+        value = as_utc(value)
+        return value.isoformat() if value else None
 
-    total = await db.scalar(sa_select(func.count()).select_from(base.subquery()))
+    tid = current_user.tenant_id
+    runs = (await db.execute(
+        sa_select(JobRun)
+        .where(_own_or_system(JobRun.tenant_id, tid))
+        .order_by(JobRun.started_at.desc(), JobRun.id.desc())
+        .limit(limit)
+    )).scalars().all()
 
-    stmt = (
-        base
-        .order_by(AuditLog.created_at.desc())
-        .offset((page - 1) * per_page)
-        .limit(per_page)
-    )
-    result = await db.execute(stmt)
-    rows = result.scalars().all()
+    outbox_filter = _own_or_system(EmailOutbox.tenant_id, tid)
+    counts = dict((await db.execute(
+        sa_select(EmailOutbox.status, func.count())
+        .where(outbox_filter)
+        .group_by(EmailOutbox.status)
+    )).all())
+    pending = (await db.execute(
+        sa_select(EmailOutbox)
+        .where(outbox_filter, EmailOutbox.status.in_(("queued", "failed", "skipped")))
+        .order_by(EmailOutbox.created_at.desc(), EmailOutbox.id.desc())
+        .limit(limit)
+    )).scalars().all()
 
     return {
-        "items": [
+        "tick_seconds": TICK_SECONDS,
+        "stale_after_minutes": int(STALE_AFTER.total_seconds() // 60),
+        "max_email_attempts": MAX_ATTEMPTS,
+        "jobs": [{"name": j.name, "cadence": j.cadence} for j in JOBS],
+        "runs": [
             {
                 "id": r.id,
-                "user_email": r.user_email,
-                "action": r.action,
-                "resource_type": r.resource_type,
-                "resource_id": r.resource_id,
-                "details": r.details,
-                "ip_address": r.ip_address,
-                "created_at": r.created_at.isoformat() if r.created_at else None,
+                "job_name": r.job_name,
+                "period_key": r.period_key,
+                "status": r.status,
+                "started_at": _iso(r.started_at),
+                "finished_at": _iso(r.finished_at),
+                "error": r.error,
+                "meta": r.meta,
             }
-            for r in rows
+            for r in runs
         ],
-        "total": total,
-        "page": page,
-        "per_page": per_page,
+        "outbox": {
+            "counts": {k: int(counts.get(k, 0)) for k in ("queued", "sent", "failed", "skipped")},
+            "items": [
+                {
+                    "id": o.id,
+                    "to_email": o.to_email,
+                    "subject": o.subject,
+                    "type": o.log_type,
+                    "status": o.status,
+                    "attempts": o.attempts,
+                    "next_attempt_at": _iso(o.next_attempt_at),
+                    "last_error": o.last_error,
+                    "created_at": _iso(o.created_at),
+                }
+                for o in pending
+            ],
+        },
     }
+
+
+@router.post("/background-jobs/outbox/{outbox_id}/retry")
+async def retry_outbox_email(
+    outbox_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_role(["tenant_admin"])),
+):
+    """Queue a failed or skipped email again; it goes out on the next tick."""
+    from app.services.email_service import EmailService
+
+    ok = await EmailService.retry_outbox(
+        db, outbox_id, current_user.tenant_id, include_untenanted=not _is_enterprise()
+    )
+    if not ok:
+        raise HTTPException(
+            status_code=404,
+            detail="That email is not waiting to be retried. It may have been sent already.",
+        )
+    await db.commit()
+    return {"id": outbox_id, "status": "queued"}
+
+
+@router.get("/retention-report")
+async def get_retention_report(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_role(["tenant_admin"])),
+):
+    """Records due for deletion under the data retention setting, by type.
+    Read-only: nothing is ever deleted automatically."""
+    from app.services.housekeeping_service import retention_report
+
+    return await retention_report(db, current_user.tenant_id)

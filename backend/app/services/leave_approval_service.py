@@ -29,7 +29,7 @@ reviewer may approve" path is gone: it let any manager approve any request
 company-wide, and let the only admin approve their own leave unrecorded.
 """
 
-from datetime import date, datetime
+from datetime import date
 from types import SimpleNamespace
 from typing import Iterable, List, Optional
 from uuid import UUID
@@ -50,6 +50,7 @@ from app.models.org_hierarchy import OrgNode
 from app.models.role import LeaveApprovalStep
 from app.models.user import User
 from app.services.leave_service import LeaveService
+from app.utils.timeutil import company_today, utcnow
 
 # Step status vocabulary. "skipped" is a step that will never be decided
 # because the request left "pending" some other way (rejected at an earlier
@@ -182,7 +183,7 @@ class LeaveApprovalService:
         Returns [{"approver_id", "approver_name", "step_order", "source",
         "is_deputy", "node_name"}], never empty.
         """
-        today = on_date or date.today()
+        today = on_date or await company_today(db, tenant_id)
         excluded = {e for e in exclude_ids if e is not None}
         mode = (policy.approval_mode if policy is not None else None) or "auto"
         max_levels = max(1, (policy.required_approval_levels if policy is not None else 1) or 1)
@@ -338,7 +339,7 @@ class LeaveApprovalService:
         db: AsyncSession, tenant_id: UUID, employee_id: int, *, on_date: Optional[date] = None
     ) -> List[dict]:
         """Org-chart heads from the employee's unit upwards."""
-        today = on_date or date.today()
+        today = on_date or await company_today(db, tenant_id)
         org_node_id = (
             await db.execute(
                 select(User.org_node_id).where(User.id == employee_id, User.tenant_id == tenant_id)
@@ -527,7 +528,7 @@ class LeaveApprovalService:
         approval: in hybrid mode the org chart takes over, otherwise the
         fallback does.
         """
-        today = on_date or date.today()
+        today = on_date or await company_today(db, tenant_id)
         found = await LeaveApprovalService.match_rule(db, tenant_id, employee_id)
         if found is None:
             return []
@@ -609,7 +610,7 @@ class LeaveApprovalService:
         """
         tenant_id = assignment.tenant_id
         role = role or assignment.approver_role
-        today = today or date.today()
+        today = today or await company_today(db, tenant_id)
 
         if assignment.org_node_id:
             ref_node_id = assignment.org_node_id
@@ -738,7 +739,7 @@ class LeaveApprovalService:
         for s in application.approval_steps or []:
             if s.status == STEP_PENDING:
                 s.status = STEP_SKIPPED
-                s.decided_at = datetime.utcnow()
+                s.decided_at = utcnow()
                 if note:
                     s.notes = note
 
@@ -758,13 +759,13 @@ class LeaveApprovalService:
         Returns final application status: "pending" | "approved" | "rejected"
         """
         step.status = STEP_APPROVED if action == "approve" else STEP_REJECTED
-        step.decided_at = datetime.utcnow()
+        step.decided_at = utcnow()
         step.notes = notes
 
         if action == "reject":
             LeaveApprovalService.skip_open_steps(application)
             application.reviewed_by = reviewer_id
-            application.reviewed_at = datetime.utcnow()
+            application.reviewed_at = utcnow()
             application.reviewer_notes = notes
             await set_status(db, application, "rejected", actor=actor)
             return "rejected"
@@ -775,7 +776,7 @@ class LeaveApprovalService:
         ]
         if not remaining:
             application.reviewed_by = reviewer_id
-            application.reviewed_at = datetime.utcnow()
+            application.reviewed_at = utcnow()
             application.reviewer_notes = notes
             await set_status(db, application, "approved", actor=actor)
             return "approved"
@@ -965,7 +966,7 @@ class LeaveApprovalService:
         """Leave statistics for this year over the requests `scope_filter`
         selects, which is the same filter as the Team Overview table so the
         table and the numbers above it can never disagree."""
-        year = year or date.today().year
+        year = year or (await company_today(db, tenant_id)).year
         year_start = date(year, 1, 1)
         year_end = date(year, 12, 31)
         base_filter = and_(

@@ -96,6 +96,10 @@ async def download_backup(
             if proc.returncode != 0:
                 stderr = await proc.stderr.read()
                 logger.error("pg_dump failed (exit %d): %s", proc.returncode, stderr.decode()[:500])
+                # Abort the response instead of ending it normally: a dump that
+                # stopped part-way must not arrive as a complete-looking file
+                # someone later tries to restore from.
+                raise RuntimeError("pg_dump failed; the backup is incomplete")
 
     return StreamingResponse(
         generate(),

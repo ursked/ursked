@@ -1,8 +1,7 @@
 import logging
-from datetime import date as date_type, datetime, timedelta, timezone
+from datetime import date as date_type, timedelta
 from typing import Iterable, List, Optional, Set
 from uuid import UUID
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import and_, case, func, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -36,6 +35,7 @@ from app.schemas.analytics import (
     PersonalLeaveRequest,
     PersonalShift,
 )
+from app.utils.timeutil import company_today
 
 logger = logging.getLogger(__name__)
 
@@ -435,7 +435,7 @@ class AnalyticsService:
                 AppSettings.tenant_id == tenant_id
             )
         )).scalar()
-        cutoff = date_type.today() - timedelta(days=days or 0)
+        cutoff = await company_today(db, tenant_id) - timedelta(days=days or 0)
         return or_(
             User.separation_date.is_(None),
             User.separation_date >= cutoff,
@@ -473,14 +473,7 @@ class AnalyticsService:
         The server runs in UTC; in Manila the first eight hours of every day
         would otherwise still count as yesterday on the dashboard.
         """
-        tz_name = (await db.execute(
-            select(AppSettings.timezone).where(AppSettings.tenant_id == tenant_id)
-        )).scalar()
-        try:
-            tz = ZoneInfo(tz_name or "UTC")
-        except (ZoneInfoNotFoundError, ValueError):
-            tz = timezone.utc
-        return datetime.now(timezone.utc).astimezone(tz).date()
+        return await company_today(db, tenant_id)
 
     @staticmethod
     async def _scoped_department_count(

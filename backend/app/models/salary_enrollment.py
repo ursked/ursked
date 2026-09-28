@@ -1,10 +1,9 @@
-from datetime import datetime
-
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
 from app.database import Base
+from app.utils.timeutil import utcnow
 
 
 class SalaryEnrollment(Base):
@@ -24,7 +23,7 @@ class SalaryEnrollment(Base):
     kind = Column(String(20), nullable=False)  # viewer | approver
     status = Column(String(20), nullable=False, default="active")  # active | revoked
     granted_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    granted_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    granted_at = Column(DateTime(timezone=True), default=utcnow)
     revoked_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     revoked_at = Column(DateTime(timezone=True), nullable=True)
 
@@ -48,7 +47,7 @@ class SalaryEnrollmentRequest(Base):
     status = Column(String(20), nullable=False, default="pending")  # pending | approved | declined | cancelled
     reason = Column(Text, nullable=True)
     requested_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    requested_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    requested_at = Column(DateTime(timezone=True), default=utcnow)
     decided_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     decided_at = Column(DateTime(timezone=True), nullable=True)
     decision_note = Column(Text, nullable=True)

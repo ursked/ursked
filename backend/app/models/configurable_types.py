@@ -1,5 +1,3 @@
-from datetime import datetime
-
 from sqlalchemy import (
     Boolean,
     Column,
@@ -15,6 +13,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
 from app.database import Base
+from app.utils.timeutil import utcnow
 
 
 class EmployeeType(Base):
@@ -36,8 +35,8 @@ class EmployeeType(Base):
     is_system = Column(Boolean, default=False, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
     sort_order = Column(Integer, default=0, nullable=False)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     tenant = relationship("Tenant", backref="employee_types")
 
@@ -68,8 +67,8 @@ class ScheduleFormat(Base):
     is_system = Column(Boolean, default=False, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
     sort_order = Column(Integer, default=0, nullable=False)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     tenant = relationship("Tenant", backref="schedule_formats")
 
@@ -94,7 +93,7 @@ class UserOrgNode(Base):
         index=True,
     )
     is_primary = Column(Boolean, default=False, nullable=False)
-    assigned_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    assigned_at = Column(DateTime(timezone=True), default=utcnow)
     assigned_by = Column(
         Integer,
         ForeignKey("users.id", ondelete="SET NULL"),

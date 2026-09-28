@@ -1,11 +1,11 @@
 import uuid
-from datetime import datetime
 
 from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
 
 from app.database import Base
+from app.utils.timeutil import utcnow
 
 
 class Tenant(Base):
@@ -31,8 +31,8 @@ class Tenant(Base):
     settings = Column(JSONB, nullable=True)
     branding = Column(JSONB, nullable=True)
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     users = relationship("User", back_populates="tenant", cascade="all, delete-orphan")
     roles = relationship("Role", back_populates="tenant", cascade="all, delete-orphan")

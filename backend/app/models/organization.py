@@ -1,10 +1,9 @@
-from datetime import datetime
-
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
 from app.database import Base
+from app.utils.timeutil import utcnow
 
 
 class Department(Base):
@@ -16,7 +15,7 @@ class Department(Base):
     code = Column(String(50), nullable=True)
     description = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
 
     tenant = relationship("Tenant", back_populates="departments")
     divisions = relationship("Division", back_populates="department", cascade="all, delete-orphan")
@@ -33,7 +32,7 @@ class Division(Base):
     code = Column(String(50), nullable=True)
     description = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
 
     tenant = relationship("Tenant", back_populates="divisions")
     department = relationship("Department", back_populates="divisions")
@@ -51,7 +50,7 @@ class Section(Base):
     code = Column(String(50), nullable=True)
     description = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
 
     tenant = relationship("Tenant", back_populates="sections")
     division = relationship("Division", back_populates="sections")
@@ -69,7 +68,7 @@ class Unit(Base):
     code = Column(String(50), nullable=True)
     description = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
 
     tenant = relationship("Tenant", back_populates="units")
     section = relationship("Section", back_populates="units")

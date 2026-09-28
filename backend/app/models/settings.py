@@ -1,9 +1,8 @@
-from datetime import datetime
-
 from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Time, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 from app.database import Base
+from app.utils.timeutil import utcnow
 
 
 class TwoFactorSettings(Base):
@@ -20,8 +19,8 @@ class TwoFactorSettings(Base):
     allow_totp = Column(Boolean, default=True)
     allow_sms = Column(Boolean, default=False)
     allow_email = Column(Boolean, default=False)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
 
 class EmailSettings(Base):
@@ -41,8 +40,8 @@ class EmailSettings(Base):
     is_configured = Column(Boolean, default=False)
     last_tested_at = Column(DateTime(timezone=True), nullable=True)
     last_test_result = Column(String(255), nullable=True)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
 
 class AppSettings(Base):
@@ -118,8 +117,8 @@ class AppSettings(Base):
     check_overlapping_shifts = Column(Boolean, nullable=False, default=False, server_default="false")
 
     custom_settings = Column(JSONB, nullable=True)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     # ── Area E (employees): what this company calls Personnel # (e.g. "Badge
     # no."). NULL = the default wording. Set from Employees > Custom fields.
@@ -148,6 +147,14 @@ class AppSettings(Base):
     auto_mark_absent = Column(Boolean, nullable=False, default=True, server_default="true")
     auto_absent_after_minutes = Column(Integer, nullable=False, default=120, server_default="120")
 
+    # ── Area A: housekeeping windows (migration 065) ──
+    # The daily housekeeping job (services/housekeeping_service.py) deletes
+    # these once they are older than the window. Nothing was ever pruned
+    # before. Business records (shifts, leave, payroll) are never deleted.
+    audit_log_retention_days = Column(Integer, nullable=False, default=730, server_default="730")
+    login_history_retention_days = Column(Integer, nullable=False, default=180, server_default="180")
+    read_notification_retention_days = Column(Integer, nullable=False, default=90, server_default="90")
+
 
 class ShiftStatusType(Base):
     __tablename__ = "shift_status_types"
@@ -166,7 +173,7 @@ class ShiftStatusType(Base):
     is_system = Column(Boolean, default=False)
     is_active = Column(Boolean, default=True)
     sort_order = Column(Integer, default=0)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
 
 
 class UserPreferences(Base):
@@ -176,5 +183,5 @@ class UserPreferences(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
     tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
     preferences = Column(JSONB, nullable=False, default=dict)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)

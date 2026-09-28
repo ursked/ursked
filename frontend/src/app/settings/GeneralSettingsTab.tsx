@@ -1,11 +1,12 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import type { AppSettings, ShiftStatusType, ScheduleVisibilityGrant, User, OrgTreeNode, OrgTreeResponse } from '@/types'
 import { useToast } from '@/components/ui/Toast'
 import { CURATED_CURRENCIES, normalizeCurrency, formatMoney } from '@/lib/currency'
+import NumberSetting from './NumberSetting'
 
 const WEEK_START_OPTIONS = [
   { value: 'monday', label: 'Monday' },
@@ -19,62 +20,6 @@ const SCHEDULE_VISIBILITY_OPTIONS = [
   { value: 'own_and_parent', label: 'Own unit + parent unit', description: 'Employees can see their own unit and one level above.' },
   { value: 'all', label: 'Everyone (no restriction)', description: 'All employees can see the full organization schedule.' },
 ]
-
-/**
- * Numeric setting that commits on blur (or Enter) rather than on every keystroke.
- *
- * These fields feed payroll computation, so keystroke-level saving is wrong twice
- * over: typing "1.25" would PATCH the intermediate values 1 and 1.2, and "1." is
- * not a valid number at all. Hold a local draft, clamp to the field's bounds, and
- * only save when the admin has finished typing and the value actually changed.
- */
-function NumberSetting({
-  id, label, help, value, min, max, step = 1, disabled, onCommit,
-}: {
-  id: string
-  label: string
-  help?: string
-  value: number | undefined
-  min: number
-  max: number
-  step?: number
-  disabled?: boolean
-  onCommit: (n: number) => void
-}) {
-  const [draft, setDraft] = useState(String(value ?? ''))
-  useEffect(() => { setDraft(String(value ?? '')) }, [value])
-
-  const commit = () => {
-    const n = Number(draft)
-    if (draft.trim() === '' || Number.isNaN(n)) {
-      setDraft(String(value ?? ''))   // reject junk, restore the saved value
-      return
-    }
-    const clamped = Math.min(max, Math.max(min, n))
-    if (clamped !== n) setDraft(String(clamped))
-    if (clamped !== value) onCommit(clamped)
-  }
-
-  return (
-    <div>
-      <label htmlFor={id} className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
-      <input
-        id={id}
-        type="number"
-        min={min}
-        max={max}
-        step={step}
-        value={draft}
-        disabled={disabled}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
-        className="block w-40 rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-purple-500 focus:ring-purple-500 focus:outline-none disabled:opacity-50"
-      />
-      {help && <p className="mt-1 text-xs text-gray-500">{help}</p>}
-    </div>
-  )
-}
 
 /** Backend sends "HH:MM:SS"; <input type="time"> wants "HH:MM". */
 const toTimeInput = (v?: string | null) => (v ? v.slice(0, 5) : '')
@@ -1245,6 +1190,64 @@ export default function GeneralSettingsTab() {
         </div>
       </div>
 
+      {/* ── Section: Notifications and Defaults (area A) ──────────── */}
+      <div className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-xl">
+        <div className="border-b border-gray-200 px-6 py-4">
+          <h2 className="text-lg font-semibold text-gray-900">Notifications and Defaults</h2>
+          <p className="mt-1 text-sm text-gray-500">
+            Schedule notifications, and the values used when nothing more specific is set up.
+          </p>
+        </div>
+        <div className="px-6 py-6 space-y-6">
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={appSettings ? appSettings.notify_on_schedule_change !== false : true}
+              disabled={updateSettingsMutation.isPending}
+              onChange={(e) => updateSettingsMutation.mutate(
+                { notify_on_schedule_change: e.target.checked },
+                { onSuccess: () => showToast('Notification setting saved', 'success'),
+                  onError: (err: Error) => showToast(err.message, 'error') },
+              )}
+              className="mt-0.5 h-4 w-4 rounded text-purple-600 border-gray-300 focus:ring-purple-500"
+            />
+            <div>
+              <p className="text-sm font-medium text-gray-900">Email employees when their schedule changes</p>
+              <p className="text-xs text-gray-500 mt-0.5">
+                When a schedule is published, or a published shift is changed or removed, the people affected get an email.
+                They are always told in the app, whatever this says.
+              </p>
+            </div>
+          </label>
+          <NumberSetting
+            id="default_leave_days"
+            label="Leave days per year when no leave policy applies"
+            help="Each active leave type gives this many days to anyone not covered by a leave policy. Leave policies set their own amounts."
+            value={appSettings?.default_leave_days}
+            min={0} max={365}
+            disabled={updateSettingsMutation.isPending}
+            onCommit={(n) => updateSettingsMutation.mutate(
+              { default_leave_days: n },
+              { onSuccess: () => showToast('Default leave days saved', 'success'),
+                onError: (err: Error) => showToast(err.message, 'error') },
+            )}
+          />
+          <NumberSetting
+            id="default_shift_duration_hours"
+            label="Length of a working day (hours)"
+            help="Used when an employee's schedule format does not say: to work out daily and hourly pay rates, undertime, and the time clock's expected hours."
+            value={appSettings?.default_shift_duration_hours}
+            min={1} max={24}
+            disabled={updateSettingsMutation.isPending}
+            onCommit={(n) => updateSettingsMutation.mutate(
+              { default_shift_duration_hours: n },
+              { onSuccess: () => showToast('Working day length saved', 'success'),
+                onError: (err: Error) => showToast(err.message, 'error') },
+            )}
+          />
+        </div>
+      </div>
+
       {/* ── Section: Employee Data Retention ─────────────────────── */}
       <div className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-xl">
         <div className="border-b border-gray-200 px-6 py-4">
@@ -1355,7 +1358,7 @@ export default function GeneralSettingsTab() {
                       <li>When an employee is marked as resigned or terminated, their account is deactivated.</li>
                       <li>Their historical data (schedules, attendance, leave records) remains intact for record-keeping.</li>
                       <li>After the analytics exclusion period, they are no longer included in computed analytics and reports.</li>
-                      <li>The retention period flags records as due for deletion. This build does not delete anything automatically — an administrator must remove records deliberately.</li>
+                      <li>The retention period flags records as due for deletion: <span className="font-medium">Settings → Data &amp; backups</span> lists what is due, by type. Nothing is deleted automatically — an administrator must remove records deliberately.</li>
                       <li>Separated employees can be reinstated at any time.</li>
                     </ul>
                   </div>

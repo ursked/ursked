@@ -1,5 +1,3 @@
-from datetime import datetime
-
 from sqlalchemy import (
     Boolean,
     Column,
@@ -16,6 +14,7 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
 
 from app.database import Base
+from app.utils.timeutil import utcnow
 
 
 class SalaryGrade(Base):
@@ -34,8 +33,8 @@ class SalaryGrade(Base):
     hourly_rate = Column(Float, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
     sort_order = Column(Integer, default=0, nullable=False)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     tenant = relationship("Tenant", backref="salary_grades")
 
@@ -53,8 +52,8 @@ class EmployeeSalary(Base):
     effective_date = Column(Date, nullable=False)
     monthly_rate_override = Column(Float, nullable=True)
     notes = Column(Text, nullable=True)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     tenant = relationship("Tenant", backref="employee_salaries")
     employee = relationship("User", foreign_keys=[employee_id], backref="salary_assignments")
@@ -82,8 +81,8 @@ class DeductionType(Base):
     is_system = Column(Boolean, default=False, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
     sort_order = Column(Integer, default=0, nullable=False)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     tenant = relationship("Tenant", backref="deduction_types")
     brackets = relationship(
@@ -114,7 +113,7 @@ class DeductionBracket(Base):
     base_amount = Column(Float, nullable=False, default=0)
     rate = Column(Float, nullable=False, default=0)
     rate_basis = Column(String(10), nullable=False, default="excess")  # excess / full
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
 
     deduction_type = relationship("DeductionType", back_populates="brackets")
 
@@ -147,8 +146,8 @@ class PayrollPeriod(Base):
     finalized_at = Column(DateTime(timezone=True), nullable=True)
     finalized_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     notes = Column(Text, nullable=True)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     tenant = relationship("Tenant", backref="payroll_periods")
     computed_by_user = relationship("User", foreign_keys=[computed_by])
@@ -176,8 +175,8 @@ class PayrollItem(Base):
     net_pay = Column(Float, nullable=False, default=0)
     breakdown = Column(JSONB, nullable=True)
     notes = Column(Text, nullable=True)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     tenant = relationship("Tenant", backref="payroll_items")
     payroll_period = relationship("PayrollPeriod", back_populates="items")

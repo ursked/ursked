@@ -15,7 +15,7 @@ never authorizes a state change.
 """
 import logging
 import secrets
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
@@ -26,6 +26,7 @@ from app.models.salary_enrollment import SalaryEnrollment, SalaryEnrollmentReque
 from app.models.site_settings import SiteSettings
 from app.models.user import User
 from app.services.notification_service import NotificationService
+from app.utils.timeutil import utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -169,7 +170,7 @@ class SalaryEnrollmentService:
             reason=reason,
             requested_by=requested_by,
             token=secrets.token_urlsafe(48),
-            token_expires_at=datetime.utcnow() + timedelta(days=TOKEN_EXPIRY_DAYS),
+            token_expires_at=utcnow() + timedelta(days=TOKEN_EXPIRY_DAYS),
         )
         db.add(req)
         await db.flush()
@@ -207,7 +208,7 @@ class SalaryEnrollmentService:
             raise SalaryEnrollmentError("You cannot approve your own request; another approver must decide.")
 
         req.decided_by = approver_id
-        req.decided_at = datetime.utcnow()
+        req.decided_at = utcnow()
         req.decision_note = note
         req.token = None
         req.token_expires_at = None
@@ -252,14 +253,14 @@ class SalaryEnrollmentService:
         if existing:
             existing.status = "active"
             existing.granted_by = granted_by
-            existing.granted_at = datetime.utcnow()
+            existing.granted_at = utcnow()
             existing.revoked_by = None
             existing.revoked_at = None
             await db.flush()
             return existing
         enr = SalaryEnrollment(
             tenant_id=tenant_id, user_id=user_id, kind=kind,
-            status="active", granted_by=granted_by, granted_at=datetime.utcnow(),
+            status="active", granted_by=granted_by, granted_at=utcnow(),
         )
         db.add(enr)
         await db.flush()
@@ -289,7 +290,7 @@ class SalaryEnrollmentService:
             return False
         enr.status = "revoked"
         enr.revoked_by = actor_id
-        enr.revoked_at = datetime.utcnow()
+        enr.revoked_at = utcnow()
         await db.flush()
         await SalaryEnrollmentService._audit(
             db, tenant_id, actor_id=actor_id, subject_id=user_id,
@@ -329,7 +330,7 @@ class SalaryEnrollmentService:
             select(SalaryEnrollmentRequest).where(
                 SalaryEnrollmentRequest.token == token,
                 SalaryEnrollmentRequest.status == "pending",
-                SalaryEnrollmentRequest.token_expires_at > datetime.utcnow(),
+                SalaryEnrollmentRequest.token_expires_at > utcnow(),
             )
         )).scalar_one_or_none()
         if not req:
@@ -376,7 +377,7 @@ class SalaryEnrollmentService:
                     else:
                         db.add(SalaryEnrollment(
                             tenant_id=tenant_id, user_id=uid, kind=kind,
-                            status="active", granted_by=None, granted_at=datetime.utcnow(),
+                            status="active", granted_by=None, granted_at=utcnow(),
                         ))
         await db.flush()
 

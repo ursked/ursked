@@ -218,6 +218,10 @@ async def login(
                         log_type="account_locked",
                     )
             )
+        # Commit before refusing: the 401 below rolls the request back, which
+        # used to discard the login_failure audit row (the live install had
+        # none at all) and would now also discard the queued lockout alert.
+        await db.commit()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid username or password",

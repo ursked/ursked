@@ -594,10 +594,23 @@ def scheduled_export_email(
     schedule_type: str,
     row_count: int = 0,
     site_name: str = "ursked",
+    file_format: str = "csv",
 ) -> tuple:
-    """Email notification for a scheduled data export with CSV attachment."""
+    """Email notification for a scheduled data export with its file attached.
+
+    `file_format` is the attachment's extension. The body used to say "The CSV
+    file is attached" whatever was attached, including Excel workbooks."""
     freq_label = {"daily": "Daily", "weekly": "Weekly", "monthly": "Monthly"}.get(
         schedule_type, schedule_type.title()
+    )
+    fmt = (file_format or "csv").lower().lstrip(".")
+    format_label = {
+        "csv": "CSV file",
+        "xlsx": "Excel workbook (.xlsx)",
+        "json": "JSON file",
+    }.get(fmt, f"{fmt.upper()} file")
+    opens_with = (
+        " You can open it in any spreadsheet application." if fmt in ("csv", "xlsx") else ""
     )
     content = f"""\
 <h2 style="margin:0 0 16px;color:#111827;font-size:18px;font-weight:700;">Scheduled Export Ready</h2>
@@ -614,7 +627,7 @@ Your <strong>{freq_label}</strong> scheduled export <strong>&ldquo;{config_name}
 </td></tr>
 </table>
 <p style="margin:0;color:#374151;font-size:14px;line-height:1.6;">
-The CSV file is attached to this email. You can open it in any spreadsheet application.
+The {format_label} is attached to this email.{opens_with}
 </p>"""
     subject = f"[{site_name}] Scheduled Export: {config_name}"
     return subject, _base_wrapper(content, site_name)

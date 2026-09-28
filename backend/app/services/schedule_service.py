@@ -16,6 +16,7 @@ from app.models.configurable_types import UserOrgNode
 from app.models.attendance import AttendanceRecord, OvertimeLog
 from app.models.leave import LeaveApplication, LeaveApproverAssignment
 from app.models.user import User
+from app.utils.timeutil import utcnow
 
 
 class ScheduleConflictError(Exception):
@@ -1388,7 +1389,9 @@ class ScheduleService:
             return set()
         if not r.is_recurring:
             return {r.date}
-        today = date.today()
+        # A year-long window: UTC's date is as good as the company's here,
+        # and unlike date.today() it does not follow the container clock.
+        today = utcnow().date()
         return ScheduleService._holiday_dates(r, max(today, r.date), today + timedelta(days=365))
 
     @staticmethod
@@ -1397,7 +1400,7 @@ class ScheduleService:
         a recurring holiday, its occurrences from last year to next year (the
         span a payroll or attendance handler could still act on)."""
         if r.is_recurring:
-            today = date.today()
+            today = utcnow().date()
             return {r.date} | ScheduleService._holiday_dates(
                 r, today - timedelta(days=400), today + timedelta(days=365)
             )
@@ -1539,7 +1542,7 @@ class ScheduleService:
 
         keys = [(e, on_date) for e in free]
         await ScheduleService._before(db, tenant_id, actor, keys)
-        now = _dt.utcnow()
+        now = utcnow()
         for emp_id in free:
             db.add(Shift(
                 tenant_id=tenant_id,
@@ -1935,7 +1938,7 @@ class ScheduleService:
             d += timedelta(days=1)
         await ScheduleService._before(db, tenant_id, actor, keys)
 
-        now = _dt.utcnow()
+        now = utcnow()
         conflicts: List[date] = []
         current = start_date
         while current <= end_date:
@@ -3046,7 +3049,7 @@ class ScheduleService:
         # clocked against or paid), so it is a shift write like any other.
         keys = [(s.employee_id, s.date) for s in shifts]
         await ScheduleService._before(db, tenant_id, actor, keys)
-        now = _dt.utcnow()
+        now = utcnow()
         for s in shifts:
             s.is_published = True
             s.published_at = now

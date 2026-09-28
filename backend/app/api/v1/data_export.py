@@ -41,6 +41,7 @@ from app.services.scheduled_export_service import (
     tenant_timezone,
 )
 from app.services.settings_service import SettingsService
+from app.utils.timeutil import company_today
 
 router = APIRouter(prefix="/data-export", tags=["data-export"])
 
@@ -183,8 +184,10 @@ def spec_from_config(config) -> dict:
     }
 
 
-def _context(spec: Dict[str, Any], report_name: Optional[str]) -> Dict[str, Any]:
-    rfrom, rto = resolve_date_window(spec.get("date_preset"), spec.get("date_from"), spec.get("date_to"))
+def _context(spec: Dict[str, Any], report_name: Optional[str], today) -> Dict[str, Any]:
+    rfrom, rto = resolve_date_window(
+        spec.get("date_preset"), spec.get("date_from"), spec.get("date_to"), today=today
+    )
     return {"report_name": report_name or "", "date_from": rfrom, "date_to": rto}
 
 
@@ -209,7 +212,7 @@ async def preview_data(
         rows, total, output_columns = await _run_for(
             db, current_user, spec, limit=None if per_tab else limit
         )
-        ctx = _context(spec, data.report_name)
+        ctx = _context(spec, data.report_name, await company_today(db, current_user.tenant_id))
         headings = [pipeline.resolve_tokens(h.get("text"), ctx) for h in (layout.get("heading_rows") or [])]
         sheet_names: List[str] = []
         if layout:
@@ -252,7 +255,8 @@ async def export_data(
         fmt = (data.output_format or "csv").lower()
         payload, media_type, ext = DataExportService.serialise(
             rows, output_columns, fmt, sheet_name=data.report_name or data.data_source,
-            layout=spec.get("layout"), context=_context(spec, data.report_name),
+            layout=spec.get("layout"),
+            context=_context(spec, data.report_name, await company_today(db, current_user.tenant_id)),
         )
         filename = f"{data.data_source}_export.{ext}"
         return StreamingResponse(

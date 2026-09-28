@@ -60,6 +60,8 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
 from typing import Any, Callable, Dict, Iterable, List, NamedTuple, Optional, Tuple
 
+from app.utils.timeutil import utcnow
+
 # ── Date windows ─────────────────────────────────────────────────────
 #
 # A saved report that says "last 30 days" has to mean last 30 days *when it
@@ -94,7 +96,8 @@ def resolve_date_window(
     if not preset or preset == "custom":
         return date_from, date_to
 
-    d = today or date.today()
+    # Callers pass the company's day; the fallback is UTC, never the container clock.
+    d = today or utcnow().date()
     iso = lambda x: x.isoformat()  # noqa: E731
 
     if preset == "today":

@@ -1,5 +1,3 @@
-from datetime import datetime
-
 from sqlalchemy import (
     JSON, Boolean, Column, Date, DateTime, ForeignKey, Integer, String, Text, Time, UniqueConstraint
 )
@@ -7,6 +5,7 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
 
 from app.database import Base
+from app.utils.timeutil import utcnow
 
 
 class Shift(Base):
@@ -52,8 +51,8 @@ class Shift(Base):
     # editing or deleting the holiday removes only those.
     holiday_remark_id = Column(Integer, ForeignKey("date_remarks.id", ondelete="SET NULL"), nullable=True)
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     tenant = relationship("Tenant", back_populates="shifts")
     employee = relationship("User", foreign_keys=[employee_id])
@@ -92,7 +91,7 @@ class DateRemark(Base):
     # is_holiday false, so nothing treats it as a holiday) so the next sync
     # does not add it back.
     is_suppressed = Column(Boolean, nullable=False, default=False, server_default="false")
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
 
 
 class HolidaySource(Base):
@@ -121,8 +120,8 @@ class HolidaySource(Base):
     last_counts = Column(JSON, nullable=True)  # {added, changed, removed, needs_review, skipped}
     # Regions seen in the feed at the last fetch: [{code, label, count, samples}].
     discovered_regions = Column(JSON, nullable=True)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
 
 class ScheduleChangeRequest(Base):
@@ -157,8 +156,8 @@ class ScheduleChangeRequest(Base):
     reviewed_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     reviewed_at = Column(DateTime(timezone=True), nullable=True)
     reviewer_notes = Column(Text, nullable=True)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     tenant = relationship("Tenant", back_populates="schedule_change_requests")
     requester = relationship("User", foreign_keys=[requester_id])
@@ -183,7 +182,7 @@ class ScheduleChangeApprovalStep(Base):
     status = Column(String(20), nullable=False, default="pending")
     decided_at = Column(DateTime(timezone=True), nullable=True)
     notes = Column(Text, nullable=True)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
 
     request = relationship("ScheduleChangeRequest", back_populates="approval_steps")
     approver = relationship("User", foreign_keys=[approver_id])
@@ -199,8 +198,8 @@ class ScheduleTemplate(Base):
     template_data = Column(JSONB, nullable=False)
     is_active = Column(Boolean, default=True)
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
 
 class ScheduleSnapshot(Base):
@@ -218,6 +217,6 @@ class ScheduleSnapshot(Base):
     shift_count = Column(Integer, default=0)
     is_active = Column(Boolean, default=True)
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
 
     creator = relationship("User", foreign_keys=[created_by])

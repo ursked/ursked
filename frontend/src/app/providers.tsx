@@ -119,6 +119,15 @@ const queryClient = new QueryClient({
       // Schedule, own leave). The default ('online') paused every query and
       // left an offline screen spinning forever.
       networkMode: 'offlineFirst',
+      // A 4xx is an answer, not a blip: "you need salary access" or "not
+      // found" will not change on a second try. Retrying made every
+      // permission message wait ~7 s behind three doomed attempts. Network
+      // failures and 5xx still retry.
+      retry: (failureCount, error) => {
+        const status = error instanceof ApiError ? error.status : 0;
+        if (status >= 400 && status < 500) return false;
+        return failureCount < 3;
+      },
     },
     mutations: {
       // Always attempt (and so fail visibly) instead of queueing; see onMutate.

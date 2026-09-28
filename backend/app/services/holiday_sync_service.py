@@ -47,6 +47,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.schedule import DateRemark, HolidaySource
+from app.utils.timeutil import company_today
 
 logger = logging.getLogger(__name__)
 
@@ -489,7 +490,7 @@ async def apply_feed(
     dry_run, only report what that would do)."""
     from app.services.schedule_service import ScheduleService
 
-    today = today or date.today()
+    today = today or await company_today(db, tenant_id)
     desired = desired_by_date(holidays, include_regions)
     rows = {
         r.date: r for r in (await db.execute(

@@ -5,6 +5,8 @@ import DashboardLayout from '@/components/layout/DashboardLayout'
 import { useAuth } from '@/contexts/AuthContext'
 import { hasAnyRole } from '@/lib/roles'
 import { api } from '@/lib/api'
+import BackgroundJobsTab from './BackgroundJobsTab'
+import DataBackupsTab from './DataBackupsTab'
 import GeneralSettingsTab from './GeneralSettingsTab'
 import PermissionsTab from './PermissionsTab'
 import SmtpTab from './SmtpTab'
@@ -13,7 +15,8 @@ import SmtpTab from './SmtpTab'
 // Policies — each next to the domain it configures. The tab components still
 // reside in this folder and are imported from those pages.
 // Schedule Visibility is now merged into General > Schedule Settings (with an Advanced toggle).
-type TabKey = 'general' | 'email' | 'permissions'
+type TabKey = 'general' | 'email' | 'permissions' | 'jobs' | 'data'
+const TAB_KEYS: TabKey[] = ['general', 'email', 'permissions', 'jobs', 'data']
 
 export default function SettingsPage() {
   const { user } = useAuth()
@@ -29,10 +32,21 @@ export default function SettingsPage() {
       .catch(() => setShowEmailTab(false))
   }, [])
 
+  // Links such as the setup checklist's "/settings?tab=email" open that tab.
+  // Read once on arrival; deferred so the state change is not synchronous in
+  // the effect body (react-hooks/set-state-in-effect).
+  useEffect(() => {
+    const wanted = new URLSearchParams(window.location.search).get('tab') as TabKey | null
+    if (!wanted || !TAB_KEYS.includes(wanted)) return
+    void Promise.resolve().then(() => setActiveTab(wanted))
+  }, [])
+
   const TABS = [
     { key: 'general', label: 'General' },
     ...(showEmailTab ? [{ key: 'email', label: 'Email' }] : []),
     { key: 'permissions', label: 'Permissions' },
+    { key: 'jobs', label: 'Background jobs' },
+    { key: 'data', label: 'Data & backups' },
   ] as const
 
   const isAdmin = user && hasAnyRole(user, ['tenant_admin'])
@@ -68,7 +82,7 @@ export default function SettingsPage() {
         </div>
 
         <div className="border-b border-gray-200">
-          <nav className="-mb-px flex space-x-8">
+          <nav className="-mb-px flex space-x-8 overflow-x-auto">
             {TABS.map((tab) => (
               <button
                 key={tab.key}
@@ -88,6 +102,8 @@ export default function SettingsPage() {
         {activeTab === 'general' && <GeneralSettingsTab />}
         {activeTab === 'email' && showEmailTab && <SmtpTab />}
         {activeTab === 'permissions' && <PermissionsTab />}
+        {activeTab === 'jobs' && <BackgroundJobsTab />}
+        {activeTab === 'data' && <DataBackupsTab />}
       </div>
     </DashboardLayout>
   )

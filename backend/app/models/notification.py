@@ -1,10 +1,9 @@
-from datetime import datetime
-
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
 from app.database import Base
+from app.utils.timeutil import utcnow
 
 
 class Notification(Base):
@@ -25,6 +24,6 @@ class Notification(Base):
     action_ref_id = Column(Integer, nullable=True)  # e.g. request id
     is_read = Column(Boolean, nullable=False, default=False)
     is_actioned = Column(Boolean, nullable=False, default=False)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, index=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, index=True)
 
     user = relationship("User", foreign_keys=[user_id])

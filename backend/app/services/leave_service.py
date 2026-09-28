@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date
 from typing import Optional
 from uuid import UUID
 
@@ -10,6 +10,7 @@ from sqlalchemy.orm import selectinload
 
 from app.models.attendance import LeaveCreditAdjustment
 from app.models.leave import LeaveApplication, LeavePolicy, LeavePolicyEntitlement, LeaveType
+from app.utils.timeutil import company_today, utcnow
 
 # Fallback leave types used only when a tenant has no leave_types rows at all
 # (mirrors the system types seeded by migration 008).
@@ -124,7 +125,7 @@ class LeaveService:
         of it. Before 2026-09 a December hire received the full year's credits.
         Nothing accrues for a year before the hire year.
         """
-        as_of = as_of or datetime.utcnow().date()
+        as_of = as_of or utcnow().date()
         year = year or as_of.year
         if hire_date is not None and year < hire_date.year:
             return 0.0
@@ -200,7 +201,7 @@ class LeaveService:
         """
         from app.services.leave_days_service import application_days_in_year
 
-        as_of = as_of or datetime.utcnow().date()
+        as_of = as_of or await company_today(db, tenant_id)
         year = year or as_of.year
         year_start = date(year, 1, 1)
         year_end = date(year, 12, 31)

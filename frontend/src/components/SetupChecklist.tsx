@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { Check, ChevronRight, X } from 'lucide-react'
 import { api } from '@/lib/api'
-import type { UserPreferences } from '@/types'
+import type { SetupStatus, UserPreferences } from '@/types'
 import { Card, CardBody, Button } from '@/components/ui'
 
 const DISMISS_KEY = 'setup_checklist_dismissed'
@@ -17,18 +17,20 @@ export default function SetupChecklist() {
     queryFn: () => api.getUserPreferences(),
   })
 
-  const { data: status } = useQuery({
+  const { data: status } = useQuery<SetupStatus>({
     queryKey: ['setup-status'],
+    // /settings/setup-status exists in every edition (the card used to call an
+    // Enterprise-only route and showed an error on Community dashboards).
     queryFn: () => api.getSetupStatus(),
-    // Only admins can call this; a 403 just means "hide the card".
+    // Administrators and HR only; a 403 just means "hide the card".
     retry: false,
   })
 
   const dismiss = useMutation({
-    mutationFn: () =>
-      api.updateUserPreferences({
-        preferences: { ...(prefs?.preferences ?? {}), [DISMISS_KEY]: true },
-      }),
+    // A top-level preference key: the preferences PATCH merges known keys
+    // and silently dropped the old nested {preferences: {...}} shape, so the
+    // card came back on every visit.
+    mutationFn: () => api.updateUserPreferences({ [DISMISS_KEY]: true }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['user-preferences'] }),
   })
 

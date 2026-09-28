@@ -2,6 +2,12 @@
 
 Each step is a cheap COUNT/EXISTS query. Results are cached briefly in-process
 so the dashboard can poll without hammering the DB.
+
+Served by GET /settings/setup-status (both editions). The checklist used to
+call an Enterprise-only route, so every Community dashboard showed an error.
+The email step checks the SMTP configuration mail is actually sent with
+(EmailService._get_smtp_config, the site-wide SMTP row); it used to read the
+unused per-tenant EmailSettings table and so was never ticked.
 """
 import time
 from dataclasses import dataclass
@@ -17,8 +23,8 @@ from app.models.leave import LeavePolicy, LeaveType
 from app.models.org_hierarchy import OrgNode
 from app.models.payroll import DeductionType, SalaryGrade
 from app.models.schedule import DateRemark
-from app.models.settings import EmailSettings
 from app.models.user import User
+from app.utils.timeutil import company_today
 
 _CACHE: dict[UUID, tuple[float, list[dict]]] = {}
 _TTL = 60.0
@@ -48,7 +54,7 @@ class SetupStatusService:
         if cached and (time.monotonic() - cached[0]) < _TTL:
             return cached[1]
 
-        year = date.today().year
+        year = (await company_today(db, tenant_id)).year
         org = await SetupStatusService._count(db, OrgNode, OrgNode.tenant_id == tenant_id)
         emp_types = await SetupStatusService._count(
             db, EmployeeType, EmployeeType.tenant_id == tenant_id
@@ -78,10 +84,9 @@ class SetupStatusService:
         deductions = await SetupStatusService._count(
             db, DeductionType, DeductionType.tenant_id == tenant_id
         )
-        email_cfg = (await db.execute(
-            select(EmailSettings).where(EmailSettings.tenant_id == tenant_id)
-        )).scalar_one_or_none()
-        email_ok = bool(email_cfg and getattr(email_cfg, "is_configured", False))
+        from app.services.email_service import EmailService
+
+        email_ok = await EmailService._get_smtp_config(db) is not None
 
         steps = [
             Step("org_structure", "Build your org structure", org > 0, org, "/organization"),

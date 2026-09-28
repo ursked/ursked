@@ -31,6 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.leave import LeaveApplication, LeavePolicy
 from app.services.leave_service import LeaveService
+from app.utils.timeutil import company_today
 
 MODES = ("block", "warn", "off")
 
@@ -104,7 +105,7 @@ class LeaveRuleService:
         subset (used by the approval-time balance re-check). `day_breakdown`
         (from leave_days_service) lets a request that spans New Year be checked
         against each year's balance separately."""
-        today = today or date.today()
+        today = today or await company_today(db, tenant_id)
         policy = await LeaveService.get_policy_for_employee(
             db, tenant_id, getattr(employee, "employee_type", None)
         )

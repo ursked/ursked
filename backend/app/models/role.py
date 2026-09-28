@@ -1,5 +1,3 @@
-from datetime import datetime
-
 from sqlalchemy import (
     Boolean, Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 )
@@ -7,6 +5,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
 from app.database import Base
+from app.utils.timeutil import utcnow
 
 
 class Role(Base):
@@ -22,7 +21,7 @@ class Role(Base):
     description = Column(Text, nullable=True)
     is_system = Column(Boolean, default=False)
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
 
     tenant = relationship("Tenant", back_populates="roles")
     user_roles = relationship("UserRole", back_populates="role", cascade="all, delete-orphan")
@@ -38,7 +37,7 @@ class UserRole(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     role_id = Column(Integer, ForeignKey("roles.id", ondelete="CASCADE"), nullable=False, index=True)
     title = Column(String(100), nullable=True)
-    assigned_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    assigned_at = Column(DateTime(timezone=True), default=utcnow)
     assigned_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     user = relationship("User", foreign_keys=[user_id], back_populates="user_roles")
@@ -56,7 +55,7 @@ class LeaveApprovalStep(Base):
     status = Column(String(20), nullable=False, default="pending")
     decided_at = Column(DateTime(timezone=True), nullable=True)
     notes = Column(Text, nullable=True)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
 
     leave_application = relationship("LeaveApplication", back_populates="approval_steps")
     approver = relationship("User", foreign_keys=[approver_id])

@@ -12,16 +12,9 @@ class AppSettingsResponse(BaseModel):
     id: int
     timezone: str
     currency_code: str = "PHP"
-    date_format: str
-    time_format: str
     week_starts_on: str
     default_leave_days: int
-    allow_negative_leave: bool
-    require_leave_approval: bool
-    max_consecutive_leave_days: int
     default_shift_duration_hours: int
-    allow_overtime: bool
-    max_overtime_hours_per_week: int
     notify_on_leave_request: bool
     notify_on_leave_approval: bool
     notify_on_schedule_change: bool
@@ -46,7 +39,6 @@ class AppSettingsResponse(BaseModel):
     timeclock_require_location: bool = True
     timeclock_location_grace_minutes: int = 60
     timeclock_default_radius_m: int = 200
-    custom_settings: Optional[Dict] = None
     # ── Area E (employees): company wording for Personnel #; null = default.
     employee_number_label: Optional[str] = None
 
@@ -67,21 +59,39 @@ class AppSettingsResponse(BaseModel):
     auto_mark_absent: bool = True
     auto_absent_after_minutes: int = 120
 
+    # ── Area A: housekeeping windows (days)
+    audit_log_retention_days: int = 730
+    login_history_retention_days: int = 180
+    read_notification_retention_days: int = 90
+
+
+# Area A (W-12): app_settings columns deliberately NOT exposed. Each was
+# accepted and stored by the API while nothing read it, so an admin could set
+# it and see no effect. The DB columns stay (dropping data is not ours to do);
+# the API no longer pretends they do something:
+#   date_format, time_format  - the UI formats dates in the viewer's locale.
+#   allow_negative_leave      - the leave policy's "insufficient balance" rule
+#                               (block / warn / off) decides this per policy.
+#   require_leave_approval    - every request goes through the approval chain;
+#                               the policy's approval mode decides who approves.
+#   max_consecutive_leave_days- per leave type / policy "max consecutive days".
+#   allow_overtime,
+#   max_overtime_hours_per_week - overtime is approved per record and capped by
+#                               Policy Rules; a global switch would contradict them.
+#   holiday_unworked_paid     - payroll pays holiday premiums on worked time only.
+#   custom_settings           - a free-form JSON bag nothing read.
+
 
 class AppSettingsUpdate(BaseModel):
     timezone: Optional[str] = None
     # ISO 4217 uppercase 3-letter code. Curated in the UI with a custom option.
     currency_code: Optional[str] = Field(None, pattern=r"^[A-Z]{3}$")
-    date_format: Optional[str] = None
-    time_format: Optional[str] = None
     week_starts_on: Optional[str] = Field(None, pattern=r"^(monday|sunday|saturday)$")
-    default_leave_days: Optional[int] = None
-    allow_negative_leave: Optional[bool] = None
-    require_leave_approval: Optional[bool] = None
-    max_consecutive_leave_days: Optional[int] = None
-    default_shift_duration_hours: Optional[int] = None
-    allow_overtime: Optional[bool] = None
-    max_overtime_hours_per_week: Optional[int] = None
+    # Credits per leave type for employees no leave policy covers.
+    default_leave_days: Optional[int] = Field(None, ge=0, le=365)
+    # A working day's length where a schedule format does not say (daily and
+    # hourly rates, attendance undertime, the time clock).
+    default_shift_duration_hours: Optional[int] = Field(None, ge=1, le=24)
     notify_on_leave_request: Optional[bool] = None
     notify_on_leave_approval: Optional[bool] = None
     notify_on_schedule_change: Optional[bool] = None
@@ -110,7 +120,6 @@ class AppSettingsUpdate(BaseModel):
     # would let someone attach a location from an entirely different context.
     timeclock_location_grace_minutes: Optional[int] = Field(None, ge=0, le=1440)
     timeclock_default_radius_m: Optional[int] = Field(None, ge=10, le=100000)
-    custom_settings: Optional[Dict] = None
     # ── Area L: leave day counting and approval reminders
     # 0 = Monday ... 6 = Sunday. An empty week would make every unrostered day
     # free, so at least one day is required.
@@ -139,6 +148,11 @@ class AppSettingsUpdate(BaseModel):
     auto_clockout_unscheduled_hours: Optional[float] = Field(None, ge=1, le=24)
     auto_mark_absent: Optional[bool] = None
     auto_absent_after_minutes: Optional[int] = Field(None, ge=15, le=1440)
+
+    # ── Area A: housekeeping windows. Audit entries are kept at least 90 days.
+    audit_log_retention_days: Optional[int] = Field(None, ge=90, le=3650)
+    login_history_retention_days: Optional[int] = Field(None, ge=30, le=3650)
+    read_notification_retention_days: Optional[int] = Field(None, ge=7, le=3650)
 
 
 # ── Shift Status Types ───────────────────────────────────────────────
@@ -197,3 +211,7 @@ class UserPreferencesUpdate(BaseModel):
     sidebar_collapsed: Optional[bool] = None
     # IANA tz name (e.g. "Asia/Manila") or null/"" = same as organization.
     schedule_timezone: Optional[str] = None
+    # Area A: the dashboard's "Finish setting up" card was dismissed. The card
+    # used to send this nested under {"preferences": {...}}, a key this schema
+    # does not have, so the dismissal was dropped and the card came back.
+    setup_checklist_dismissed: Optional[bool] = None

@@ -22,6 +22,7 @@ const STATUS_STYLES: Record<string, string> = {
   sent: 'bg-green-100 text-green-700',
   failed: 'bg-red-100 text-red-700',
   pending: 'bg-yellow-100 text-yellow-700',
+  skipped: 'bg-gray-100 text-gray-600',
 }
 
 export default function SmtpTab() {
@@ -253,6 +254,8 @@ export default function SmtpTab() {
         <h3 className="text-lg font-semibold text-gray-900">Email log</h3>
         <p className="mt-1 text-sm text-gray-500">
           The most recent send attempts. Use this to confirm whether a message actually went out.
+          &ldquo;Skipped&rdquo; means email was not set up when the message was due, so it was not sent.
+          Emails still waiting or being retried are under Background jobs.
         </p>
         <div className="mt-4 overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200 text-sm">

@@ -133,23 +133,6 @@ export interface SlugCheckResponse {
   available: boolean;
 }
 
-export interface TenantStats {
-  total_users: number;
-  active_users: number;
-  total_departments: number;
-  total_shifts_this_month: number;
-  total_leave_pending: number;
-  storage_used_gb: number;
-}
-
-export interface Department {
-  id: number;
-  name: string;
-  code?: string;
-  description?: string;
-  is_active: boolean;
-}
-
 export interface Division {
   id: number;
   name: string;
@@ -269,16 +252,9 @@ export interface AppSettings {
   id: number;
   timezone: string;
   currency_code: string;
-  date_format: string;
-  time_format: string;
   week_starts_on: 'monday' | 'sunday' | 'saturday';
   default_leave_days: number;
-  allow_negative_leave: boolean;
-  require_leave_approval: boolean;
-  max_consecutive_leave_days: number;
   default_shift_duration_hours: number;
-  allow_overtime: boolean;
-  max_overtime_hours_per_week: number;
   notify_on_leave_request: boolean;
   notify_on_leave_approval: boolean;
   notify_on_schedule_change: boolean;
@@ -296,7 +272,6 @@ export interface AppSettings {
   auto_create_holiday_off?: boolean;
   data_retention_days?: number | null;
   analytics_exclusion_days?: number;
-  custom_settings?: Record<string, unknown>;
 }
 
 export interface SmtpSettings {
@@ -328,7 +303,7 @@ export interface EmailLogEntry {
   type: string;
   to_email: string;
   subject: string;
-  status: 'pending' | 'sent' | 'failed';
+  status: 'pending' | 'sent' | 'failed' | 'skipped';
   error_message?: string | null;
   sent_at?: string | null;
   created_at?: string | null;
@@ -352,6 +327,7 @@ export interface UserPreferences {
   preferences: {
     schedule_row_order?: number[];
     schedule_timezone?: string;
+    setup_checklist_dismissed?: boolean;
     [key: string]: unknown;
   };
   org_timezone?: string;
@@ -2288,4 +2264,69 @@ export interface AppSettings {
   auto_clockout_unscheduled_hours?: number;
   auto_mark_absent?: boolean;
   auto_absent_after_minutes?: number;
+}
+
+// ── Area A: setup checklist, background jobs, data retention ─────────
+export interface AppSettings {
+  // Housekeeping windows, in days (the daily cleanup job).
+  audit_log_retention_days?: number;
+  login_history_retention_days?: number;
+  read_notification_retention_days?: number;
+}
+
+export interface SetupStep {
+  key: string;
+  label: string;
+  done: boolean;
+  count: number;
+  link: string;
+}
+
+export interface SetupStatus {
+  steps: SetupStep[];
+  completed: number;
+  total: number;
+}
+
+export interface JobRunRow {
+  id: number;
+  job_name: string;
+  period_key: string;
+  status: 'running' | 'success' | 'failed';
+  started_at: string | null;
+  finished_at: string | null;
+  error: string | null;
+  meta: Record<string, unknown> | null;
+}
+
+export interface OutboxItem {
+  id: number;
+  to_email: string;
+  subject: string;
+  type: string | null;
+  status: 'queued' | 'failed' | 'skipped';
+  attempts: number;
+  next_attempt_at: string | null;
+  last_error: string | null;
+  created_at: string | null;
+}
+
+export interface BackgroundJobsView {
+  tick_seconds: number;
+  stale_after_minutes: number;
+  max_email_attempts: number;
+  jobs: { name: string; cadence: 'tick' | 'hourly' | 'daily' }[];
+  runs: JobRunRow[];
+  outbox: {
+    counts: Record<'queued' | 'sent' | 'failed' | 'skipped', number>;
+    items: OutboxItem[];
+  };
+}
+
+export interface RetentionReport {
+  retention_days: number | null;
+  cutoff_date: string | null;
+  employees: { id: number; name: string; separation_date: string | null }[];
+  counts: { type: string; label: string; count: number }[];
+  total: number;
 }
