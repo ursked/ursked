@@ -205,7 +205,7 @@ export default function PermissionsTab() {
             </span>
           </div>
 
-          <div className="overflow-x-auto">
+          <div className="relative overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead>
                 <tr>

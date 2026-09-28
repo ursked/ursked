@@ -132,7 +132,7 @@ export default function AttendanceTab() {
           ) : error ? (
             <p className="text-sm text-red-700">Could not load attendance: {(error as Error).message}</p>
           ) : records && records.length > 0 ? (
-            <div className="overflow-x-auto">
+            <div className="relative overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead>
                   <tr>

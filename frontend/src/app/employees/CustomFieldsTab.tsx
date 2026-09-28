@@ -360,7 +360,7 @@ export default function CustomFieldsTab() {
               <p className="mt-1 text-sm text-gray-500">Add one to start recording it on every employee.</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="relative overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200 text-sm">
                 <thead>
                   <tr>

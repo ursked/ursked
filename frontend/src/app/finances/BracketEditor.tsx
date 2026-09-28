@@ -156,7 +156,7 @@ export default function BracketEditor({ deduction, canEdit, onClose }: {
             : <p className="mt-4 text-sm text-gray-500">Loading…</p>
         ) : (
           <>
-            <div className="mt-4 overflow-x-auto">
+            <div className="relative mt-4 overflow-x-auto">
               <table className="min-w-full text-sm">
                 <thead className="text-left text-xs font-medium uppercase text-gray-500">
                   <tr>
