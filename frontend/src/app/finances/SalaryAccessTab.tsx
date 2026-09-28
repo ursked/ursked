@@ -120,10 +120,21 @@ function MyStatus() {
     onError: (e: Error) => showToast(e.message, 'error'),
   })
 
+  const cancelMut = useMutation({
+    mutationFn: (id: number) => api.cancelSalaryRequest(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['my-salary-status'] })
+      qc.invalidateQueries({ queryKey: ['salary-requests', 'pending'] })
+      showToast('Request withdrawn', 'success')
+    },
+    onError: (e: Error) => showToast(e.message, 'error'),
+  })
+
   const s = statusQ.data
   if (!s) return null
 
   const pendingViewer = s.pending_kinds.includes('viewer')
+  const pendingIds = (s.pending_requests ?? []).map((r) => r.id)
 
   return (
     <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
@@ -142,6 +153,15 @@ function MyStatus() {
         </button>
       )}
       {pendingViewer && <span className="text-amber-600">Request pending approval…</span>}
+      {pendingIds.length > 0 && (
+        <button
+          onClick={() => pendingIds.forEach((id) => cancelMut.mutate(id))}
+          disabled={cancelMut.isPending}
+          className="rounded-md border border-gray-300 px-2.5 py-1 font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+        >
+          Withdraw my request
+        </button>
+      )}
       {open && (
         <div className="mt-2 flex w-full flex-wrap items-center gap-2">
           <input

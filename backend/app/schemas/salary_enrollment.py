@@ -27,10 +27,16 @@ class RequestRow(BaseModel):
     decision_note: Optional[str] = None
 
 
+class PendingRequestRef(BaseModel):
+    id: int
+    kind: str
+
+
 class MyStatusResponse(BaseModel):
     is_viewer: bool
     is_approver: bool
     pending_kinds: List[str] = []
+    pending_requests: List[PendingRequestRef] = []
 
 
 class CreateRequestBody(BaseModel):

@@ -34,6 +34,22 @@ class AttendanceRecord(Base):
     # True when the employee submitted their own hours (POST /attendance/my).
     # Lets admins filter self-reported entries for review before payroll.
     self_reported = Column(Boolean, nullable=False, default=False)
+    # ── Area F (migration 064) ──
+    # Worked on a rostered rest day, or on a day with no published work shift.
+    # Flagged rather than silently counted as a normal day, so a reviewer (and
+    # a policy rule on `is_rest_day`) can see it.
+    is_rest_day_work = Column(Boolean, nullable=False, default=False, server_default="false")
+    # Created by the no-show job (attendance_automation), not by a person.
+    auto_marked = Column(Boolean, nullable=False, default=False, server_default="false")
+    # A status someone chose by hand (e.g. HR marking a day excused). Every
+    # re-derivation (a shift moved, a holiday added, a punch) recomputes the
+    # status from times; without this the hand-picked one was silently lost.
+    status_override = Column(String(20), nullable=True)
+    # The approved leave that turned this day's absence into "excused", so
+    # revoking that leave puts the absence back and nothing else.
+    excused_by_leave_id = Column(
+        Integer, ForeignKey("leave_applications.id", ondelete="SET NULL"), nullable=True
+    )
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -41,17 +57,26 @@ class AttendanceRecord(Base):
     employee = relationship("User", foreign_keys=[employee_id])
     shift = relationship("Shift", foreign_keys=[shift_id])
     recorder = relationship("User", foreign_keys=[recorded_by])
-    overtime_log = relationship("OvertimeLog", back_populates="attendance_record", uselist=False)
+    # One per log_type: the policy engine can record overtime, night
+    # differential and holiday pay for the same day.
+    overtime_logs = relationship("OvertimeLog", back_populates="attendance_record")
     tardiness_record = relationship("TardinessRecord", back_populates="attendance_record", uselist=False)
 
 
 class OvertimeLog(Base):
     __tablename__ = "overtime_logs"
+    # Until migration 064 attendance_record_id alone was unique, so a day that
+    # matched both an overtime rule and a night-differential rule (distinct
+    # effect slots, so the engine applies both) failed with an integrity error
+    # and the punch that triggered it returned a 500.
+    __table_args__ = (
+        UniqueConstraint("attendance_record_id", "log_type", name="uq_overtime_log_record_type"),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
     employee_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    attendance_record_id = Column(Integer, ForeignKey("attendance_records.id", ondelete="CASCADE"), nullable=False, unique=True)
+    attendance_record_id = Column(Integer, ForeignKey("attendance_records.id", ondelete="CASCADE"), nullable=False, index=True)
     date = Column(Date, nullable=False)
     overtime_minutes = Column(Integer, nullable=False)
     overtime_category_id = Column(Integer, ForeignKey("overtime_categories.id", ondelete="SET NULL"), nullable=True)
@@ -62,13 +87,21 @@ class OvertimeLog(Base):
     status = Column(String(20), nullable=False, default="pending")  # pending, approved, converted, rejected
     approved_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     approved_at = Column(DateTime(timezone=True), nullable=True)
+    # Set when a finalized payroll run paid this log. The status stays
+    # 'approved' (analytics count approved + converted as worked overtime);
+    # "paid" is these two columns. A log linked to a finalized period is never
+    # purged or re-created by re-deriving attendance.
+    payroll_period_id = Column(
+        Integer, ForeignKey("payroll_periods.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    paid_at = Column(DateTime(timezone=True), nullable=True)
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
     tenant = relationship("Tenant", backref="overtime_logs")
     employee = relationship("User", foreign_keys=[employee_id])
-    attendance_record = relationship("AttendanceRecord", back_populates="overtime_log")
+    attendance_record = relationship("AttendanceRecord", back_populates="overtime_logs")
     overtime_category = relationship("OvertimeCategory")
     approver = relationship("User", foreign_keys=[approved_by])
 
@@ -223,7 +256,11 @@ class TimePunch(Base):
     )
     distance_m = Column(Float, nullable=True)
 
-    source = Column(String(20), nullable=False, default="web")  # web | admin | import
+    source = Column(String(20), nullable=False, default="web")  # web | admin | import | auto
+    # Closed by the system because nobody clocked out (attendance_automation),
+    # at the scheduled end rather than "now". Worked hours on such a day are an
+    # estimate and are shown for review.
+    auto_closed = Column(Boolean, nullable=False, default=False, server_default="false")
     ip_address = Column(String(45), nullable=True)
     user_agent = Column(String(255), nullable=True)
     notes = Column(Text, nullable=True)

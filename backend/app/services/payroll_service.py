@@ -1,7 +1,7 @@
 import asyncio
 import logging
-from datetime import date, datetime
-from typing import List, Optional
+from datetime import date, datetime, timedelta
+from typing import Dict, Iterable, List, Optional, Tuple
 from uuid import UUID
 
 from sqlalchemy import select, func, and_
@@ -18,17 +18,25 @@ from app.models.payroll import (
     PayrollItem,
 )
 from app.models.user import User
-from app.models.schedule import Shift, DateRemark
+from app.models.schedule import Shift
 from app.models.settings import AppSettings
 from app.models.leave import OvertimeCategory
-from app.models.attendance import OvertimeLog, TardinessRecord, LeaveCreditAdjustment
+from app.models.attendance import AttendanceRecord, OvertimeLog, TardinessRecord, LeaveCreditAdjustment
 from app.models.compensation import CompensationItem
 from app.services.payroll_compute import (
     deduction_amount,
     derive_rates,
-    night_diff_minutes,
+    minutes_on_dates,
+    night_minutes_in,
     period_fraction,
+    span,
+    validate_brackets,
 )
+
+# A period in one of these states has been signed off: its shifts, attendance
+# and overtime are what was paid (or is about to be), so nothing may change
+# them underneath it.
+LOCKED_PERIOD_STATUSES = ("approved", "finalized")
 
 logger = logging.getLogger(__name__)
 
@@ -103,13 +111,96 @@ class PayrollService:
 
     @staticmethod
     async def assign_employee_salary(
-        db: AsyncSession, tenant_id: UUID, data: dict
+        db: AsyncSession, tenant_id: UUID, data: dict, actor: Optional[User] = None,
     ) -> EmployeeSalary:
-        es = EmployeeSalary(tenant_id=tenant_id, **data)
-        db.add(es)
+        """Assign a salary grade from an effective date.
+
+        (employee, effective_date) is unique, so assigning twice on the same
+        date used to be an IntegrityError and a 500. It is a correction of that
+        day's assignment instead, done in place like give_raise, and the audit
+        log records what it was and what it became.
+        """
+        from app.services import audit_service
+
+        employee = await db.get(User, data["employee_id"])
+        if not employee or employee.tenant_id != tenant_id:
+            raise ValueError("Employee not found")
+        grade = await db.get(SalaryGrade, data["salary_grade_id"])
+        if not grade or grade.tenant_id != tenant_id:
+            raise ValueError("Salary grade not found")
+
+        es = (await db.execute(
+            select(EmployeeSalary).where(
+                EmployeeSalary.tenant_id == tenant_id,
+                EmployeeSalary.employee_id == data["employee_id"],
+                EmployeeSalary.effective_date == data["effective_date"],
+            )
+        )).scalar_one_or_none()
+        fields = ("salary_grade_id", "monthly_rate_override", "notes")
+        before = None
+        if es is not None:
+            before = {f: getattr(es, f) for f in fields}
+            es.salary_grade_id = data["salary_grade_id"]
+            es.monthly_rate_override = data.get("monthly_rate_override")
+            if data.get("notes") is not None:
+                es.notes = data.get("notes")
+        else:
+            es = EmployeeSalary(tenant_id=tenant_id, **data)
+            db.add(es)
+        await db.flush()
+        audit_service.record(
+            db, actor=actor, tenant_id=tenant_id,
+            action="salary_assignment_updated" if before else "salary_assigned",
+            resource_type="employee_salary", resource_id=es.id,
+            details={
+                "employee_id": es.employee_id,
+                "effective_date": es.effective_date,
+                "before": before,
+                "after": {f: getattr(es, f) for f in fields},
+            },
+        )
         await db.commit()
         await db.refresh(es)
         return es
+
+    @staticmethod
+    async def employee_rates(
+        db: AsyncSession, tenant_id: UUID, employee_id: int, as_of: date,
+        settings: Optional[AppSettings] = None,
+    ) -> Optional[dict]:
+        """The employee's pay rates on `as_of`: monthly, daily and hourly.
+
+        The one derivation of daily/hourly pay, shared by payroll and by the
+        tardiness deduction (minutes late x hourly / 60), so a deduction can
+        never be worked out on a different rate from the payslip it lands on.
+        None when no salary is assigned on that date.
+        """
+        salary = await PayrollService.get_employee_current_salary(
+            db, tenant_id, employee_id, as_of=as_of
+        )
+        if not salary:
+            return None
+        if settings is None:
+            settings = (await db.execute(
+                select(AppSettings).where(AppSettings.tenant_id == tenant_id)
+            )).scalar_one_or_none()
+        grade = await db.get(SalaryGrade, salary.salary_grade_id)
+        monthly_rate = salary.monthly_rate_override or (grade.monthly_rate if grade else 0.0)
+        wdpm = getattr(settings, "working_days_per_month", 22) or 22
+        shift_hours = getattr(settings, "default_shift_duration_hours", 8) or 8
+        # Effective grade for rate derivation honors a monthly override.
+        eff_grade = grade
+        if grade is None or salary.monthly_rate_override:
+            eff_grade = type("G", (), {
+                "monthly_rate": monthly_rate,
+                "daily_rate": grade.daily_rate if grade else None,
+                "hourly_rate": grade.hourly_rate if grade else None,
+            })()
+        daily_rate, hourly_rate = derive_rates(eff_grade, wdpm, shift_hours)
+        return {
+            "salary": salary, "grade": grade, "monthly": monthly_rate,
+            "daily": daily_rate, "hourly": hourly_rate,
+        }
 
     @staticmethod
     async def get_employee_current_salary(
@@ -378,16 +469,9 @@ class PayrollService:
         if not dt or dt.tenant_id != tenant_id:
             raise ValueError("Deduction type not found")
 
-        ordered = sorted(brackets, key=lambda b: b.get("over_amount", 0) or 0)
-        prev_upper = None
-        for b in ordered:
-            over = b.get("over_amount", 0) or 0
-            up_to = b.get("up_to_amount")
-            if up_to is not None and up_to <= over:
-                raise ValueError("Bracket up_to_amount must be greater than over_amount")
-            if prev_upper is not None and over < prev_upper:
-                raise ValueError("Bracket bands must not overlap")
-            prev_upper = up_to if up_to is not None else float("inf")
+        # Ascending, no gaps, no overlaps, only the last open-ended: a basis in
+        # a gap matched no band and deducted nothing.
+        ordered = validate_brackets(brackets)
 
         for existing in (await db.execute(
             select(DeductionBracket).where(DeductionBracket.deduction_type_id == dt_id)
@@ -426,6 +510,21 @@ class PayrollService:
     async def create_payroll_period(
         db: AsyncSession, tenant_id: UUID, data: dict
     ) -> PayrollPeriod:
+        from app.models.compensation import PayoutSchedule
+
+        dup = (await db.execute(
+            select(PayrollPeriod.name).where(
+                PayrollPeriod.tenant_id == tenant_id,
+                PayrollPeriod.start_date == data["start_date"],
+                PayrollPeriod.end_date == data["end_date"],
+            )
+        )).scalar_one_or_none()
+        if dup:
+            raise ValueError(f'"{dup}" already covers exactly these dates.')
+        if data.get("schedule_id") is not None:
+            sched = await db.get(PayoutSchedule, data["schedule_id"])
+            if not sched or sched.tenant_id != tenant_id:
+                raise ValueError("That payout schedule does not exist.")
         period = PayrollPeriod(tenant_id=tenant_id, **data)
         db.add(period)
         await db.commit()
@@ -472,55 +571,162 @@ class PayrollService:
 
     @staticmethod
     async def _holiday_map(db: AsyncSession, tenant_id: UUID, start: date, end: date) -> dict:
-        """{date: 'regular'|'special'} for holidays in the period."""
-        rows = (await db.execute(
-            select(DateRemark).where(
-                DateRemark.tenant_id == tenant_id,
-                DateRemark.date >= start,
-                DateRemark.date <= end,
-                DateRemark.is_holiday == True,  # noqa: E712
+        """{date: HolidayDay} for holidays touching the period.
+
+        Through holiday_calendar, so recurring holidays count every year (the
+        literal-date query this replaced stopped paying them after year one).
+        One day either side, because a night shift that starts on the period's
+        last day ends in the next.
+        """
+        from app.services.holiday_calendar import holidays_between
+
+        return await holidays_between(
+            db, tenant_id, start - timedelta(days=1), end + timedelta(days=1)
+        )
+
+    @staticmethod
+    def _holiday_multiplier(settings, holiday) -> float:
+        if holiday is not None and holiday.is_special:
+            return getattr(settings, "special_holiday_worked_multiplier", 1.3) or 1.3
+        return getattr(settings, "holiday_worked_multiplier", 2.0) or 2.0
+
+    @staticmethod
+    async def _premiums(
+        db: AsyncSession, tenant_id: UUID, period: PayrollPeriod, employee: User,
+        settings, holidays: dict, hourly_rate: float,
+    ) -> Tuple[float, List[dict], List[int]]:
+        """Holiday and night-differential premiums for what was WORKED.
+
+        Until 2026-09 these were paid from the schedule: drafts, days nobody
+        worked and unpaid breaks all earned premium, while every overnight
+        shift (end before start on one date) earned nothing. Now the hours
+        are the attendance record's worked intervals (paired punches, or the
+        entered times with an overnight end on the next day), net of the
+        unpaid break, and a draft or an unworked shift earns nothing.
+
+        One source of truth per day and kind. When the policy engine created
+        a holiday_shift or night_differential log for the day, that log
+        decides: approved is paid (its minutes, at its category multiplier if
+        it has one), pending is held until someone approves it, rejected or
+        converted-to-leave is not paid in cash. Only when there is no such log
+        does payroll work the premium out itself with the company's
+        multipliers. Either way the log itself is never also paid as
+        overtime, so the same hours cannot be paid twice.
+
+        A premium is the extra over base pay, hours x rate x (multiplier - 1):
+        a monthly salary already pays those hours once. Logs used to be paid
+        at the full multiplier on top of base, paying the base hours twice.
+
+        Returns (amount, breakdown lines, ids of the logs this run pays).
+        """
+        from app.services.attendance_service import AttendanceService
+
+        records = list((await db.execute(
+            select(AttendanceRecord).where(
+                AttendanceRecord.tenant_id == tenant_id,
+                AttendanceRecord.employee_id == employee.id,
+                AttendanceRecord.date >= period.start_date,
+                AttendanceRecord.date <= period.end_date,
+            ).order_by(AttendanceRecord.date)
+        )).scalars().all())
+        if not records:
+            return 0.0, [], []
+
+        logs: Dict[Tuple[int, str], OvertimeLog] = {}
+        for log in (await db.execute(
+            select(OvertimeLog).where(
+                OvertimeLog.attendance_record_id.in_([r.id for r in records]),
+                OvertimeLog.log_type.in_(["holiday_shift", "night_differential"]),
             )
-        )).scalars().all()
-        out = {}
-        for r in rows:
-            out[r.date] = "special" if getattr(r, "is_special", False) else "regular"
-        return out
+        )).scalars().all():
+            logs[(log.attendance_record_id, log.log_type)] = log
+
+        night_start = getattr(settings, "night_shift_start", None)
+        night_end = getattr(settings, "night_shift_end", None)
+        night_mult = getattr(settings, "night_diff_multiplier", 1.10) or 1.10
+
+        total = 0.0
+        lines: List[dict] = []
+        consumed: List[int] = []
+
+        def pay(d, kind, minutes, mult, **extra):
+            nonlocal total
+            hours = minutes / 60.0
+            amount = hours * hourly_rate * max(0.0, mult - 1)
+            if amount <= 0:
+                return
+            total += amount
+            lines.append({
+                "date": str(d), "kind": kind, "hours": round(hours, 2),
+                "multiplier": mult, "amount": round(amount, 2), **extra,
+            })
+
+        def gated(rec, log, kind, fallback_mult):
+            """Apply a policy-engine log's decision. True if the log decided."""
+            if log is None:
+                return False
+            if log.status == "approved" and not log.paid_at:
+                pay(rec.date, kind, log.overtime_minutes or 0,
+                    log.pay_multiplier or fallback_mult, log_id=log.id, source="overtime_log")
+                consumed.append(log.id)
+            elif log.status == "pending":
+                lines.append({
+                    "date": str(rec.date), "kind": kind,
+                    "hours": round((log.overtime_minutes or 0) / 60.0, 2),
+                    "amount": 0.0, "log_id": log.id, "held": True,
+                    "note": "Waiting for approval under Attendance, Overtime.",
+                })
+            return True
+
+        for rec in records:
+            facts = await AttendanceService._facts(db, rec, employee, settings)
+            if not facts.intervals:
+                continue
+            ratio = (facts.paid_worked_minutes / facts.worked_minutes) if facts.worked_minutes else 1.0
+
+            on_holidays = minutes_on_dates(facts.intervals, holidays.keys())
+            first_holiday = holidays.get(min(on_holidays)) if on_holidays else None
+            if not gated(rec, logs.get((rec.id, "holiday_shift")),
+                         f"holiday_{'special' if first_holiday and first_holiday.is_special else 'regular'}",
+                         PayrollService._holiday_multiplier(settings, first_holiday)):
+                for d, mins in sorted(on_holidays.items()):
+                    h = holidays[d]
+                    pay(d, f"holiday_{'special' if h.is_special else 'regular'}",
+                        int(round(mins * ratio)), PayrollService._holiday_multiplier(settings, h),
+                        holiday=h.title)
+
+            if not gated(rec, logs.get((rec.id, "night_differential")), "night_diff", night_mult):
+                nd = night_minutes_in(facts.intervals, night_start, night_end)
+                if nd > 0:
+                    pay(rec.date, "night_diff", int(round(nd * ratio)), night_mult)
+
+        return total, lines, consumed
 
     @staticmethod
     async def _compute_one(
         db: AsyncSession, tenant_id: UUID, period: PayrollPeriod, employee: User,
         ctx: dict, holidays: dict,
     ) -> Optional[PayrollItem]:
-        salary = await PayrollService.get_employee_current_salary(
-            db, tenant_id, employee.id, as_of=period.end_date
-        )
-        if not salary:
-            return None
-
-        grade = await db.get(SalaryGrade, salary.salary_grade_id)
-        monthly_rate = salary.monthly_rate_override or (grade.monthly_rate if grade else 0.0)
-
         settings = ctx["settings"]
-        wdpm = getattr(settings, "working_days_per_month", 22) or 22
-        shift_hours = getattr(settings, "default_shift_duration_hours", 8) or 8
-        # Effective grade for rate derivation honors a monthly override.
-        eff_grade = grade
-        if grade is None or salary.monthly_rate_override:
-            eff_grade = type("G", (), {
-                "monthly_rate": monthly_rate,
-                "daily_rate": grade.daily_rate if grade else None,
-                "hourly_rate": grade.hourly_rate if grade else None,
-            })()
-        daily_rate, hourly_rate = derive_rates(eff_grade, wdpm, shift_hours)
+        rates = await PayrollService.employee_rates(
+            db, tenant_id, employee.id, period.end_date, settings
+        )
+        if rates is None:
+            return None
+        salary = rates["salary"]
+        monthly_rate = rates["monthly"]
+        daily_rate, hourly_rate = rates["daily"], rates["hourly"]
+        warnings: list[str] = []
 
         # Base pay prorated by period type (fixes semi-monthly double-pay).
         base_pay = monthly_rate * period_fraction(period.period_type)
 
         overtime_pay = 0.0
         overtime_details: list[dict] = []
-        premium_details: list[dict] = []
 
         # ── OT: OvertimeLog is authoritative. Track dates to dedupe shift OT. ──
+        # Only ordinary overtime here. Holiday and night-differential logs are
+        # premiums on hours base pay already covers; _premiums pays them.
         ot_log_dates: set[date] = set()
         ot_logs = (await db.execute(
             select(OvertimeLog)
@@ -531,24 +737,18 @@ class PayrollService:
                 OvertimeLog.date >= period.start_date,
                 OvertimeLog.date <= period.end_date,
                 OvertimeLog.status == "approved",
+                OvertimeLog.paid_at.is_(None),
+                OvertimeLog.log_type.notin_(["holiday_shift", "night_differential"]),
             )
         )).scalars().all()
         for log in ot_logs:
             ot_log_dates.add(log.date)
             hours = (log.overtime_minutes or 0) / 60.0
-            # Resolve multiplier: explicit on the log, else premium settings by
-            # log_type, else the category multiplier, else 1.0.
+            # Resolve multiplier: explicit on the log, else the category
+            # multiplier, else 1.0.
             multiplier = log.pay_multiplier
             if multiplier is None:
-                if log.log_type == "night_differential":
-                    multiplier = getattr(settings, "night_diff_multiplier", 1.10) or 1.10
-                elif log.log_type == "holiday_shift":
-                    klass = holidays.get(log.date, "regular")
-                    if klass == "special":
-                        multiplier = getattr(settings, "special_holiday_worked_multiplier", 1.3) or 1.3
-                    else:
-                        multiplier = getattr(settings, "holiday_worked_multiplier", 2.0) or 2.0
-                elif log.overtime_category and log.overtime_category.multiplier_rate:
+                if log.overtime_category and log.overtime_category.multiplier_rate:
                     multiplier = log.overtime_category.multiplier_rate
                 else:
                     multiplier = 1.0
@@ -561,9 +761,23 @@ class PayrollService:
                 "log_type": log.log_type,
                 "amount": round(amount, 2),
                 "source": "overtime_log",
+                "log_id": log.id,
             })
 
-        # ── Legacy shift-status OT (deprecated), skipping dates already logged ──
+        # ── Legacy shift-status OT (deprecated), skipping dates already logged.
+        #    Published shifts only, and only on days the employee actually
+        #    worked: a planned overtime shift nobody turned up for is not pay. ──
+        worked_dates = {
+            d for (d,) in (await db.execute(
+                select(AttendanceRecord.date).where(
+                    AttendanceRecord.tenant_id == tenant_id,
+                    AttendanceRecord.employee_id == employee.id,
+                    AttendanceRecord.date >= period.start_date,
+                    AttendanceRecord.date <= period.end_date,
+                    AttendanceRecord.actual_start_time.isnot(None),
+                )
+            )).all()
+        }
         shift_ot = (await db.execute(
             select(Shift).where(
                 Shift.tenant_id == tenant_id,
@@ -571,15 +785,15 @@ class PayrollService:
                 Shift.date >= period.start_date,
                 Shift.date <= period.end_date,
                 Shift.status.in_(["overtime", "ot"]),
+                Shift.is_published == True,  # noqa: E712
             )
         )).scalars().all()
         for shift in shift_ot:
-            if shift.date in ot_log_dates:
-                continue  # OvertimeLog wins
+            if shift.date in ot_log_dates or shift.date not in worked_dates:
+                continue  # OvertimeLog wins; unworked plans are not paid
             if not (shift.start_time and shift.end_time):
                 continue
-            start_dt = datetime.combine(shift.date, shift.start_time)
-            end_dt = datetime.combine(shift.date, shift.end_time)
+            start_dt, end_dt = span(shift.date, shift.start_time, shift.end_time)
             hours = (end_dt - start_dt).total_seconds() / 3600
             multiplier = 1.25
             if shift.remarks and shift.remarks in ctx["ot_categories"]:
@@ -598,50 +812,15 @@ class PayrollService:
                 "source": "shift_status",
             })
 
-        # ── Holiday / night premiums on regular worked shifts ──
-        premium_pay = 0.0
-        worked = (await db.execute(
-            select(Shift).where(
-                Shift.tenant_id == tenant_id,
-                Shift.employee_id == employee.id,
-                Shift.date >= period.start_date,
-                Shift.date <= period.end_date,
-                Shift.status.in_(["worked", "scheduled"]),
+        # ── Holiday / night premiums on what was worked ──
+        premium_pay, premium_details, premium_log_ids = await PayrollService._premiums(
+            db, tenant_id, period, employee, settings, holidays, hourly_rate
+        )
+        if any(p.get("held") for p in premium_details):
+            warnings.append(
+                "Some holiday or night-differential pay is waiting for approval under "
+                "Attendance, Overtime, and was not paid in this run."
             )
-        )).scalars().all()
-        night_start = getattr(settings, "night_shift_start", None)
-        night_end = getattr(settings, "night_shift_end", None)
-        night_mult = getattr(settings, "night_diff_multiplier", 1.10) or 1.10
-        for shift in worked:
-            if not (shift.start_time and shift.end_time):
-                continue
-            hrs = (datetime.combine(shift.date, shift.end_time)
-                   - datetime.combine(shift.date, shift.start_time)).total_seconds() / 3600
-            if hrs <= 0:
-                continue
-            # Holiday premium (worked hours × (multiplier − 1))
-            if shift.date in holidays:
-                klass = holidays[shift.date]
-                mult = (getattr(settings, "special_holiday_worked_multiplier", 1.3) or 1.3) \
-                    if klass == "special" else (getattr(settings, "holiday_worked_multiplier", 2.0) or 2.0)
-                extra = hrs * hourly_rate * (mult - 1)
-                if extra:
-                    premium_pay += extra
-                    premium_details.append({
-                        "date": str(shift.date), "kind": f"holiday_{klass}",
-                        "hours": round(hrs, 2), "multiplier": mult, "amount": round(extra, 2),
-                    })
-            # Night differential premium
-            nd_min = night_diff_minutes(shift.start_time, shift.end_time, night_start, night_end)
-            if nd_min > 0:
-                extra = (nd_min / 60.0) * hourly_rate * (night_mult - 1)
-                if extra:
-                    premium_pay += extra
-                    premium_details.append({
-                        "date": str(shift.date), "kind": "night_diff",
-                        "hours": round(nd_min / 60.0, 2), "multiplier": night_mult,
-                        "amount": round(extra, 2),
-                    })
 
         # ── Leave cash-conversion line items falling in this period ──
         conversion_pay = 0.0
@@ -669,6 +848,8 @@ class PayrollService:
             })
 
         # ── Tardiness salary deductions ──
+        # A record resolved before the amount was worked out (it deducted 0)
+        # gets the employee's per-minute rate x minutes late now.
         tardiness_deduction = 0.0
         tardiness_details: list[dict] = []
         for tard in (await db.execute(
@@ -680,7 +861,9 @@ class PayrollService:
                 TardinessRecord.resolution_type == "salary_deduction",
             )
         )).scalars().all():
-            amount = tard.deduction_amount or 0.0
+            amount = tard.deduction_amount
+            if amount is None:
+                amount = round(hourly_rate / 60.0 * (tard.tardiness_minutes or 0), 2)
             if amount > 0:
                 tardiness_deduction += amount
                 tardiness_details.append({
@@ -690,10 +873,10 @@ class PayrollService:
                 })
 
         # ── Variable compensation due in this run (bonus/incentive/allowance/
-        #    salary_adjustment/leave_cash/correction). When the run has a
-        #    payout_date, pay everything scheduled for that date (this is how a
-        #    Jan-1 holiday earned amount can be paid in a later run). Otherwise
-        #    fall back to earned_on within the range so legacy runs still work. ──
+        #    leave_cash/correction). When the run has a payout_date, pay
+        #    everything scheduled for that date (this is how a Jan-1 holiday
+        #    earned amount can be paid in a later run). Otherwise fall back to
+        #    earned_on within the range so legacy runs still work. ──
         earnings_pay = 0.0
         earnings_details: list[dict] = []
         comp_stmt = select(CompensationItem).where(
@@ -727,16 +910,30 @@ class PayrollService:
         gross_pay = base_pay + overtime_pay + premium_pay + conversion_pay + earnings_pay
 
         # ── Statutory / mandatory deductions (fixed/percentage/tiered) ──
+        # Employee deductions and employer contributions are kept in separate
+        # lists: the payslip listed both under "deductions", so its lines did
+        # not add up to Total deductions and employees read the employer's
+        # share as money taken from them.
         deduction_details: list[dict] = []
+        employee_deductions: list[dict] = [
+            {"name": f"Late {t['date']} ({t['minutes_late']} min)", "amount": t["amount"], "kind": "tardiness"}
+            for t in tardiness_details
+        ]
+        employer_contributions: list[dict] = []
         total_deductions = tardiness_deduction
         total_contributions = 0.0
         for ded in ctx["deductions"]:
             amount, entry = deduction_amount(ded, gross_pay, base_pay, list(ded.brackets))
             deduction_details.append(entry)
+            if entry.get("warning"):
+                warnings.append(entry["warning"])
+            line = {"code": ded.code, "name": ded.name, "amount": entry["amount"]}
             if ded.is_employer_contribution:
                 total_contributions += amount
+                employer_contributions.append(line)
             else:
                 total_deductions += amount
+                employee_deductions.append(line)
 
         net_pay = gross_pay - total_deductions
 
@@ -753,11 +950,15 @@ class PayrollService:
             net_pay=round(net_pay, 2),
             breakdown={
                 "deductions": deduction_details,
+                "employee_deductions": employee_deductions,
+                "employer_contributions": employer_contributions,
                 "overtime": overtime_details,
                 "premiums": premium_details,
+                "premium_log_ids": premium_log_ids,
                 "leave_conversions": conversion_details,
                 "earnings": earnings_details,
                 "tardiness": tardiness_details,
+                "warnings": warnings,
                 "rates": {"daily": daily_rate, "hourly": hourly_rate,
                           "period_fraction": period_fraction(period.period_type)},
             },
@@ -767,12 +968,21 @@ class PayrollService:
     async def _run_compute(
         db: AsyncSession, tenant_id: UUID, period: PayrollPeriod, *,
         progress: bool = False,
-    ) -> List[dict]:
+    ) -> dict:
         """Recompute all items for a period in `db`. Assumes status already set.
 
-        Returns a list of skipped-employee dicts (those with no effective salary
-        as of the period end) so the caller can surface who was excluded instead
-        of silently dropping them from payroll."""
+        Returns {"skipped": [...], "warnings": [...]}: employees left out
+        because they have no salary as of the period end (so the caller can
+        surface who was excluded instead of silently dropping them), and
+        per-employee problems such as a tiered deduction with no brackets."""
+        from app.services.compensation_service import CompensationService
+
+        # Recurring allowances ("every month" / "every cutoff") are expanded
+        # here, for this run, so they are paid every time without a separate
+        # job or button. Idempotent: an occurrence already made for a template
+        # and date is never made twice.
+        await CompensationService.expand_for_period(db, tenant_id, period)
+
         ctx = await PayrollService._load_compute_context(db, tenant_id)
         holidays = await PayrollService._holiday_map(
             db, tenant_id, period.start_date, period.end_date
@@ -792,24 +1002,35 @@ class PayrollService:
         await db.flush()
 
         skipped: List[dict] = []
+        warnings: List[dict] = []
         total = len(employees)
         for idx, employee in enumerate(employees, start=1):
             item = await PayrollService._compute_one(
                 db, tenant_id, period, employee, ctx, holidays
             )
+            name = f"{employee.first_name} {employee.last_name}"
             if item is not None:
                 db.add(item)
+                for msg in (item.breakdown or {}).get("warnings") or []:
+                    warnings.append({"employee_id": employee.id, "employee_name": name, "message": msg})
             else:
                 skipped.append({
                     "employee_id": employee.id,
-                    "employee_name": f"{employee.first_name} {employee.last_name}",
+                    "employee_name": name,
                     "reason": "no_salary_assigned",
                 })
             if progress and (idx % 25 == 0 or idx == total):
                 period.compute_progress = {"done": idx, "total": total}
                 await db.flush()
 
-        return skipped
+        return {"skipped": skipped, "warnings": warnings}
+
+    @staticmethod
+    def _outcome_progress(outcome: dict) -> Optional[dict]:
+        """What stays on the period after a compute: who was skipped and why,
+        and any warnings, so the Payroll screen can list them."""
+        kept = {k: v for k, v in outcome.items() if v}
+        return kept or None
 
     @staticmethod
     async def compute_payroll(
@@ -822,11 +1043,9 @@ class PayrollService:
         if period.status not in ("draft", "computed", "compute_failed"):
             raise ValueError(f"Cannot compute payroll in '{period.status}' status")
 
-        skipped = await PayrollService._run_compute(db, tenant_id, period)
+        outcome = await PayrollService._run_compute(db, tenant_id, period)
         period.status = "computed"
-        # Retain the skipped list (employees without a salary) so it can be
-        # surfaced; clear otherwise so no stale progress lingers.
-        period.compute_progress = {"skipped": skipped} if skipped else None
+        period.compute_progress = PayrollService._outcome_progress(outcome)
         period.computed_at = datetime.utcnow()
         period.computed_by = computed_by
         await db.commit()
@@ -866,11 +1085,11 @@ class PayrollService:
             if not period:
                 return
             try:
-                skipped = await PayrollService._run_compute(
+                outcome = await PayrollService._run_compute(
                     db, tenant_id, period, progress=True
                 )
                 period.status = "computed"
-                period.compute_progress = {"skipped": skipped} if skipped else None
+                period.compute_progress = PayrollService._outcome_progress(outcome)
                 period.computed_at = datetime.utcnow()
                 period.computed_by = computed_by
                 await db.commit()
@@ -880,8 +1099,10 @@ class PayrollService:
                 period = await db.get(PayrollPeriod, period_id)
                 if period:
                     period.status = "compute_failed"
-                    period.notes = f"Compute failed: {exc}"
-                    period.compute_progress = None
+                    # Shown on the Payroll screen next to Retry.
+                    period.compute_progress = {
+                        "error": f"Compute failed: {exc}".strip()[:500],
+                    }
                     await db.commit()
 
     @staticmethod
@@ -910,9 +1131,10 @@ class PayrollService:
         if period.status != "approved":
             raise ValueError(f"Cannot finalize payroll in '{period.status}' status")
 
-        # Mark the compensation lines that were swept into each item as paid, so
-        # they cannot be double-paid by a later run. The item's breakdown records
-        # exactly which CompensationItem ids were included.
+        now = datetime.utcnow()
+        # Mark what each item paid, so none of it can be paid again or
+        # silently changed. The item's breakdown records exactly which
+        # compensation lines and overtime logs were included.
         items = (await db.execute(
             select(PayrollItem).where(
                 PayrollItem.tenant_id == tenant_id,
@@ -920,29 +1142,97 @@ class PayrollService:
             )
         )).scalars().all()
         for item in items:
+            breakdown = item.breakdown or {}
             comp_ids = [
-                e.get("id") for e in ((item.breakdown or {}).get("earnings") or [])
+                e.get("id") for e in (breakdown.get("earnings") or [])
                 if e.get("id") is not None
             ]
-            if not comp_ids:
-                continue
-            comps = (await db.execute(
-                select(CompensationItem).where(
-                    CompensationItem.tenant_id == tenant_id,
-                    CompensationItem.id.in_(comp_ids),
-                    CompensationItem.status == "scheduled",
-                )
-            )).scalars().all()
-            for c in comps:
-                c.status = "paid"
-                c.payroll_item_id = item.id
+            if comp_ids:
+                comps = (await db.execute(
+                    select(CompensationItem).where(
+                        CompensationItem.tenant_id == tenant_id,
+                        CompensationItem.id.in_(comp_ids),
+                        CompensationItem.status == "scheduled",
+                    )
+                )).scalars().all()
+                for c in comps:
+                    c.status = "paid"
+                    c.payroll_item_id = item.id
+
+            # Overtime this run paid. Until 2026-09 finalize left it looking
+            # unpaid, and the next attendance edit purged it and re-created it
+            # as pending, so approved overtime vanished from a closed payroll.
+            log_ids = [
+                e.get("log_id") for e in (breakdown.get("overtime") or [])
+                if e.get("log_id") is not None
+            ] + list(breakdown.get("premium_log_ids") or [])
+            if log_ids:
+                for log in (await db.execute(
+                    select(OvertimeLog).where(
+                        OvertimeLog.tenant_id == tenant_id,
+                        OvertimeLog.id.in_(log_ids),
+                    )
+                )).scalars().all():
+                    log.payroll_period_id = period.id
+                    log.paid_at = now
 
         period.status = "finalized"
-        period.finalized_at = datetime.utcnow()
+        period.finalized_at = now
         period.finalized_by = finalized_by
         await db.commit()
         await db.refresh(period)
         return period
+
+    # ── Locked periods ────────────────────────────────────────────
+
+    @staticmethod
+    async def locked_periods_for(
+        db: AsyncSession, tenant_id: UUID, pairs: Iterable[Tuple[int, date]],
+    ) -> Dict[Tuple[int, date], PayrollPeriod]:
+        """For each (employee_id, date), the approved or finalized payroll
+        period that already paid that employee for that date, if any.
+
+        "Paid that employee" means the period has a payroll item for them: an
+        employee skipped by a run (no salary yet) is not locked by it."""
+        pairs = {(e, d) for e, d in pairs if e is not None and d is not None}
+        if not pairs:
+            return {}
+        dates = [d for _, d in pairs]
+        periods = list((await db.execute(
+            select(PayrollPeriod).where(
+                PayrollPeriod.tenant_id == tenant_id,
+                PayrollPeriod.status.in_(LOCKED_PERIOD_STATUSES),
+                PayrollPeriod.start_date <= max(dates),
+                PayrollPeriod.end_date >= min(dates),
+            ).order_by(PayrollPeriod.start_date)
+        )).scalars().all())
+        if not periods:
+            return {}
+        covered = {
+            (pid, eid) for pid, eid in (await db.execute(
+                select(PayrollItem.payroll_period_id, PayrollItem.employee_id).where(
+                    PayrollItem.payroll_period_id.in_([p.id for p in periods]),
+                    PayrollItem.employee_id.in_({e for e, _ in pairs}),
+                )
+            )).all()
+        }
+        out: Dict[Tuple[int, date], PayrollPeriod] = {}
+        for e, d in pairs:
+            for p in periods:
+                if p.start_date <= d <= p.end_date and (p.id, e) in covered:
+                    out[(e, d)] = p
+                    break
+        return out
+
+    @staticmethod
+    def locked_message(period: PayrollPeriod, employee_name: str, d: date, extra: int = 0) -> str:
+        state = "finalized" if period.status == "finalized" else "approved and waiting to be finalized"
+        more = f" (and {extra} other day{'s' if extra != 1 else ''})" if extra else ""
+        return (
+            f'The payroll period "{period.name}" is {state}, and it has already paid '
+            f"{employee_name} for {d.strftime('%d %b %Y')}{more}. That day can no longer be "
+            "changed; post a correction under Finances, Bonuses & Allowances instead."
+        )
 
     # ── Payroll Items / Summary ───────────────────────────────────
 
@@ -1002,6 +1292,28 @@ class PayrollService:
     _PAYSLIP_VISIBLE_STATUSES = ("approved", "finalized")
 
     @staticmethod
+    def split_deductions(breakdown: dict) -> Tuple[List[dict], List[dict]]:
+        """(what was deducted from the employee, what the employer paid on
+        top). The first list adds up to Total deductions; the second is not
+        taken from anyone's pay. Runs computed before 2026-09 only have the
+        mixed `deductions` list, so it is split by its is_employer flag."""
+        if "employee_deductions" in breakdown or "employer_contributions" in breakdown:
+            return (
+                list(breakdown.get("employee_deductions") or []),
+                list(breakdown.get("employer_contributions") or []),
+            )
+        emp: List[dict] = [
+            {"name": f"Late {t.get('date')} ({t.get('minutes_late')} min)",
+             "amount": t.get("amount", 0), "kind": "tardiness"}
+            for t in (breakdown.get("tardiness") or [])
+        ]
+        er: List[dict] = []
+        for d in breakdown.get("deductions") or []:
+            line = {"code": d.get("code"), "name": d.get("name") or d.get("code"), "amount": d.get("amount", 0)}
+            (er if d.get("is_employer") else emp).append(line)
+        return emp, er
+
+    @staticmethod
     async def list_my_payslips(
         db: AsyncSession, tenant_id: UUID, employee_id: int
     ) -> List[dict]:
@@ -1056,7 +1368,10 @@ class PayrollService:
 
         employee = await db.get(User, employee_id)
         grade = await db.get(SalaryGrade, item.salary_grade_id) if item.salary_grade_id else None
+        employee_deductions, employer_contributions = PayrollService.split_deductions(item.breakdown or {})
         return {
+            "employee_deductions": employee_deductions,
+            "employer_contributions": employer_contributions,
             "period_id": period.id,
             "period_name": period.name,
             "start_date": period.start_date,

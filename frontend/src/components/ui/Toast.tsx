@@ -104,7 +104,11 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     (message: string, type: ToastType = 'info', duration: number = 5000) => {
       const id = Math.random().toString(36).substring(2, 9);
       const toast: Toast = { id, message, type, duration };
-      setToasts((prev) => [...prev, toast]);
+      // The same message already on screen is not shown twice: a failing
+      // refresh or a double-tapped button used to stack identical toasts.
+      setToasts((prev) =>
+        prev.some((t) => t.message === message && t.type === type) ? prev : [...prev, toast],
+      );
 
       setTimeout(() => {
         removeToast(id);
@@ -116,14 +120,18 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <ToastContext.Provider value={{ showToast }}>
       {children}
-      {/* Toast container */}
-      <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 sm:top-4 sm:bottom-auto">
+      {/* Toast container. On a phone it spans the width above the home
+          indicator (safe-area inset) instead of a fixed 320px box pinned to the
+          right edge; from sm up it sits top-right below any notch. z-[60] keeps
+          it above the navigation drawer and modals (z-50), whose actions are
+          what usually raise a toast. */}
+      <div className="fixed z-[60] flex flex-col gap-2 left-4 right-4 bottom-[calc(1rem+env(safe-area-inset-bottom))] sm:left-auto sm:right-4 sm:bottom-auto sm:top-[calc(1rem+env(safe-area-inset-top))] pointer-events-none">
         {toasts.map((toast) => {
           const styles = toastStyles[toast.type];
           return (
             <div
               key={toast.id}
-              className={`${styles.bg} ${styles.border} border-l-4 rounded-lg shadow-lg p-4 min-w-[320px] max-w-md animate-fade-in flex items-start gap-3`}
+              className={`${styles.bg} ${styles.border} border-l-4 rounded-lg shadow-lg p-4 w-full sm:w-auto sm:min-w-[320px] sm:max-w-md animate-fade-in flex items-start gap-3 pointer-events-auto`}
               role="alert"
             >
               <span className={`${styles.icon} flex-shrink-0 mt-0.5`}>
@@ -132,6 +140,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
               <p className="text-sm text-gray-800 flex-1">{toast.message}</p>
               <button
                 onClick={() => removeToast(toast.id)}
+                aria-label="Dismiss"
                 className="flex-shrink-0 text-gray-400 hover:text-gray-600 transition-colors"
               >
                 <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">

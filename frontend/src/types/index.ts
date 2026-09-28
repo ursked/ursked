@@ -2052,3 +2052,240 @@ export interface HolidaySyncResult {
   regions: HolidayRegion[];
   holiday_off_created: number;
 }
+
+// ── Area P: role-appropriate home dashboard (GET /analytics/dashboard) ──
+export interface PersonalDashboardShift {
+  date: string;
+  start_time: string | null;
+  end_time: string | null;
+  status: string;
+  status_label: string;
+  category: string | null;
+}
+
+export interface PersonalDashboard {
+  today: string;
+  next_shifts: PersonalDashboardShift[];
+  // null when the balance could not be computed (not "0 days left").
+  leave_balances: { leave_type: string; name: string; available_days: number; total_days: number }[] | null;
+  pending_leave_requests: { id: number; leave_type: string; start_date: string; end_date: string; days: number }[];
+  pending_schedule_requests: number;
+  clock: { enabled: boolean; clocked_in: boolean; since: string | null };
+}
+
+export interface HomeDashboard {
+  // company: metrics cover everyone; team: only the employees you manage;
+  // personal: no reports:view, so metrics is null.
+  view: 'company' | 'team' | 'personal';
+  metrics: DashboardMetrics | null;
+  personal: PersonalDashboard;
+}
+
+// ── Area R: report layouts, data options, templates, scheduled-export runs ──
+// These extend the report-builder interfaces declared above (TypeScript merges
+// same-named interfaces), so this block stays append-only.
+
+export interface HeadingRow {
+  text: string;
+  /** How many columns the line spans from the left; unset = all of them. */
+  span?: number | null;
+  align?: 'left' | 'center' | 'right';
+  bold?: boolean;
+}
+
+/** A heading over the columns `from`..`to` (instance ids, e.g. "date::2"). */
+export interface HeaderBand {
+  label: string;
+  from: string;
+  to: string;
+}
+
+export interface BlockSpec {
+  by: string;
+  blank_rows_between: number;
+  repeat_value: 'every_row' | 'first_row';
+  sheet_per_group: boolean;
+}
+
+export interface LayoutSpec {
+  heading_rows: HeadingRow[];
+  header_tiers: HeaderBand[][];
+  blocks?: BlockSpec | null;
+  sheet_name?: string | null;
+  style: 'plain' | 'banded';
+  freeze_header: boolean;
+}
+
+export interface DataSourceOption {
+  key: string;
+  label: string;
+  type: 'boolean' | 'string' | 'choice';
+  default?: unknown;
+  help?: string | null;
+  choices?: { value: string; label: string }[];
+}
+
+export interface DataSource {
+  options?: DataSourceOption[];
+}
+
+export interface DataSourceColumn {
+  is_custom?: boolean;
+}
+
+export interface ExportSpec {
+  layout?: LayoutSpec | null;
+  source_options?: Record<string, unknown>;
+  /** Fills {report_name} and names the downloaded workbook's sheet. */
+  report_name?: string;
+}
+
+export interface DataExportConfig {
+  layout?: LayoutSpec | null;
+  source_options?: Record<string, unknown>;
+}
+
+export interface PreviewColumn {
+  type?: string | null;
+}
+
+export interface PreviewResponse {
+  /** The layout's headings with {tokens} filled in. */
+  headings?: string[];
+  /** The worksheet names the download will have. */
+  sheet_names?: string[];
+}
+
+export interface ScheduledExport {
+  /** The next run in the company's own time, e.g. "Mon 29 Sep 2026, 08:00". */
+  next_run_local?: string | null;
+  timezone?: string | null;
+  owner_name?: string | null;
+}
+
+export interface ScheduledExportRun {
+  id: number;
+  status: string;
+  error?: string | null;
+  ran_at?: string | null;
+  rows?: number | null;
+  delivered?: number | null;
+  recipients?: number | null;
+}
+
+export interface ReportTemplate {
+  key: string;
+  name: string;
+  description: string;
+  spec: ExportSpec;
+}
+
+// ── Area F: payroll, finance, attendance, time clock (2026-09 audit) ──────────
+// Interface merges, so the declarations above stay untouched.
+
+export interface DeductionType {
+  calculation_basis?: 'gross' | 'base';
+}
+
+/** One band of a tiered deduction table. For a basis B in [over_amount, up_to_amount):
+ *  amount = base_amount + rate x (B if rate_basis is 'full', else B - over_amount). */
+export interface DeductionBracket {
+  id?: number;
+  over_amount: number;
+  up_to_amount: number | null;
+  base_amount: number;
+  rate: number;
+  rate_basis: 'excess' | 'full';
+}
+
+export interface PayrollComputeWarning {
+  employee_id: number;
+  employee_name: string;
+  message: string;
+}
+
+export interface PayrollSkippedEmployee {
+  employee_id: number;
+  employee_name: string;
+  reason: string;
+}
+
+/** While computing: {done, total}. Afterwards: who was skipped, any warnings,
+ *  or (compute_failed) the error. */
+export interface PayrollComputeProgress {
+  done?: number;
+  total?: number;
+  skipped?: PayrollSkippedEmployee[];
+  warnings?: PayrollComputeWarning[];
+  error?: string;
+}
+
+export interface PayrollPeriod {
+  payout_date?: string | null;
+  schedule_id?: number | null;
+  compute_progress?: PayrollComputeProgress | null;
+}
+
+export interface PayslipLine {
+  name: string;
+  amount: number;
+  code?: string | null;
+  kind?: string;
+}
+
+export interface MyPayslipDetail {
+  /** Taken from the employee's pay; adds up to total_deductions. */
+  employee_deductions: PayslipLine[];
+  /** Paid by the employer on top; not deducted from the employee. */
+  employer_contributions: PayslipLine[];
+}
+
+export interface AttendanceRecord {
+  status_override?: string | null;
+  self_reported?: boolean;
+  is_rest_day_work?: boolean;
+  auto_marked?: boolean;
+  excused_by_leave_id?: number | null;
+}
+
+export interface OvertimeLog {
+  log_type?: string;
+  payroll_period_id?: number | null;
+  paid_at?: string | null;
+  default_leave_type?: string | null;
+}
+
+export interface TardinessRecord {
+  amount_hidden?: boolean;
+}
+
+export interface SuggestedDeduction {
+  minutes: number;
+  amount: number | null;
+  amount_hidden: boolean;
+  has_salary: boolean;
+}
+
+export interface ConversionLeaveType {
+  code: string;
+  name: string;
+}
+
+export interface TimePunch {
+  source?: string | null;
+  auto_closed?: boolean;
+  employee_name?: string | null;
+  work_site_name?: string | null;
+}
+
+export interface MySalaryStatus {
+  pending_requests?: { id: number; kind: string }[];
+}
+
+export interface AppSettings {
+  // Area F: attendance automation.
+  auto_clockout_after_hours?: number;
+  auto_clockout_unscheduled_hours?: number;
+  auto_mark_absent?: boolean;
+  auto_absent_after_minutes?: number;
+}

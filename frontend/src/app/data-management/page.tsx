@@ -1,17 +1,26 @@
 'use client'
 
 import DashboardLayout from '@/components/layout/DashboardLayout'
-import { useAuth } from '@/contexts/AuthContext'
-import { hasAnyRole } from '@/lib/roles'
+import { usePermissions } from '@/contexts/PermissionsContext'
 import ExportBuilder from './ExportBuilder'
 import SchedulePanel from './SchedulePanel'
 
 export default function DataManagementPage() {
-  const { user } = useAuth()
+  // The page follows the Reports row of the Permissions screen, the same check
+  // the API makes: reports:create runs reports. It used to be administrators
+  // only on screen while the API let HR and Finance export everything.
+  const { hasPermission, isLoading } = usePermissions()
+  const canRun = hasPermission('reports', 'create')
 
-  const isAdmin = user && hasAnyRole(user, ['tenant_admin'])
+  if (isLoading) {
+    return (
+      <DashboardLayout>
+        <div className="flex min-h-[60vh] items-center justify-center text-sm text-gray-600">Loading…</div>
+      </DashboardLayout>
+    )
+  }
 
-  if (!isAdmin) {
+  if (!canRun) {
     return (
       <DashboardLayout>
         <div className="flex items-center justify-center min-h-[60vh]">
@@ -23,7 +32,8 @@ export default function DataManagementPage() {
             </div>
             <h3 className="mt-4 text-lg font-semibold text-gray-900">Access Denied</h3>
             <p className="mt-2 text-sm text-gray-600">
-              You do not have permission to view this page. Only tenant administrators can access data management.
+              Running reports is not part of your role. An administrator can allow it on the
+              Permissions screen, under Reports.
             </p>
           </div>
         </div>
@@ -42,8 +52,14 @@ export default function DataManagementPage() {
           </p>
         </div>
 
-        <ExportBuilder />
-        <SchedulePanel />
+        <ExportBuilder
+          canSave={hasPermission('reports', 'edit')}
+          canDelete={hasPermission('reports', 'delete')}
+        />
+        <SchedulePanel
+          canEdit={hasPermission('reports', 'edit')}
+          canDelete={hasPermission('reports', 'delete')}
+        />
       </div>
     </DashboardLayout>
   )

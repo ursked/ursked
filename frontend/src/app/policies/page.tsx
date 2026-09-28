@@ -2,34 +2,47 @@
 
 import { useState } from 'react'
 import DashboardLayout from '@/components/layout/DashboardLayout'
-import { useAuth } from '@/contexts/AuthContext'
-import { hasAnyRole } from '@/lib/roles'
+import { usePermissions } from '@/contexts/PermissionsContext'
 import HolidaysTab from '@/app/policies/HolidaysTab'
 import LeavePoliciesV2 from '@/app/policies/leave/LeavePoliciesV2'
 import ChainTester from '@/app/policies/leave/ChainTester'
+import WorkSitesTab from '@/app/policies/WorkSitesTab'
 import ApprovalRulesTab from '@/app/settings/ApprovalRulesTab'
 import OvertimeTab from '@/app/settings/OvertimeTab'
 import PolicyRulesTab from '@/app/settings/PolicyRulesTab'
 import ScheduleFormatsTab from '@/app/settings/ScheduleFormatsTab'
 
-const TABS = [
-  { key: 'holidays', label: 'Holidays' },
-  { key: 'leave', label: 'Leave Policies' },
-  { key: 'approval-rules', label: 'Approval Rules' },
-  { key: 'overtime', label: 'Overtime' },
-  { key: 'policy-rules', label: 'Policy Rules' },
-  { key: 'schedule-formats', label: 'Schedule Formats' },
-] as const
+type Check = (module: string, action: string) => boolean
 
-type TabKey = (typeof TABS)[number]['key']
+// Each tab shows when the caller can at least READ what its API serves, and
+// each tab's own buttons follow the matching create/edit/delete permission.
+// The page used to be hard-coded to admin and HR: it hid the tabs from roles
+// the Permissions screen allowed, and showed HR tabs whose saves all 403.
+const TABS: { key: string; label: string; visible: (can: Check) => boolean }[] = [
+  { key: 'holidays', label: 'Holidays', visible: (can) => can('schedules', 'view') || can('settings', 'view') },
+  { key: 'leave', label: 'Leave Policies', visible: (can) => can('leave', 'view') },
+  { key: 'approval-rules', label: 'Approval Rules', visible: (can) => can('leave', 'view') },
+  { key: 'overtime', label: 'Overtime', visible: (can) => can('leave', 'view') || can('settings', 'view') },
+  { key: 'policy-rules', label: 'Policy Rules', visible: (can) => can('settings', 'view') },
+  { key: 'schedule-formats', label: 'Schedule Formats', visible: (can) => can('settings', 'view') },
+  { key: 'work-sites', label: 'Work Sites', visible: (can) => can('settings', 'view') },
+]
 
 export default function PoliciesPage() {
-  const { user } = useAuth()
-  const [activeTab, setActiveTab] = useState<TabKey>('holidays')
+  const { hasPermission, isLoading } = usePermissions()
+  const visible = TABS.filter((t) => t.visible(hasPermission))
+  const [chosen, setChosen] = useState<string | null>(null)
+  const activeTab = visible.find((t) => t.key === chosen)?.key ?? visible[0]?.key
 
-  const isAdmin = user && hasAnyRole(user, ['tenant_admin', 'hr'])
+  if (isLoading) {
+    return (
+      <DashboardLayout>
+        <div className="py-12 text-center text-sm text-gray-500">Loading…</div>
+      </DashboardLayout>
+    )
+  }
 
-  if (!isAdmin) {
+  if (!visible.length) {
     return (
       <DashboardLayout>
         <div className="flex items-center justify-center min-h-[60vh]">
@@ -41,7 +54,7 @@ export default function PoliciesPage() {
             </div>
             <h3 className="mt-4 text-lg font-semibold text-gray-900">Access Denied</h3>
             <p className="mt-2 text-sm text-gray-500">
-              You do not have permission to view this page. Only tenant administrators and HR can access policies.
+              Your role cannot see any company policies. Ask an administrator to grant it on the Permissions screen.
             </p>
           </div>
         </div>
@@ -55,16 +68,18 @@ export default function PoliciesPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Policies</h1>
           <p className="mt-1 text-sm text-gray-500">
-            Configure holidays, leave, overtime, schedule formats, and automation rules for your organization.
+            Configure holidays, leave, overtime, schedule formats, work sites and automation rules for your organization.
           </p>
         </div>
 
         <div className="border-b border-gray-200 overflow-x-auto">
-          <nav className="-mb-px flex space-x-8 min-w-max">
-            {TABS.map((tab) => (
+          <nav className="-mb-px flex space-x-8 min-w-max" role="tablist">
+            {visible.map((tab) => (
               <button
                 key={tab.key}
-                onClick={() => setActiveTab(tab.key)}
+                role="tab"
+                aria-selected={activeTab === tab.key}
+                onClick={() => setChosen(tab.key)}
                 className={`whitespace-nowrap border-b-2 py-3 px-1 text-sm font-medium transition-colors ${
                   activeTab === tab.key
                     ? 'border-purple-500 text-purple-600'
@@ -88,6 +103,7 @@ export default function PoliciesPage() {
         {activeTab === 'overtime' && <OvertimeTab />}
         {activeTab === 'policy-rules' && <PolicyRulesTab />}
         {activeTab === 'schedule-formats' && <ScheduleFormatsTab />}
+        {activeTab === 'work-sites' && <WorkSitesTab />}
       </div>
     </DashboardLayout>
   )

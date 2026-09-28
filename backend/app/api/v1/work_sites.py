@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.middleware.auth import get_current_user, require_permission
+from app.models.attendance import TimePunch
+from app.models.schedule import Shift
 from app.models.user import User
 from app.models.work_site import WorkArrangementRule, WorkSite
 from app.schemas.attendance import (
@@ -20,6 +22,10 @@ from app.schemas.attendance import (
 from app.services.timeclock_service import TimeclockService
 
 router = APIRouter(prefix="/work-sites", tags=["work-sites"])
+
+# Work sites are company settings: settings:create / edit / delete to change
+# them (the list-type rule of the permission contract). Reading stays open to
+# every employee, below.
 
 
 @router.get("", response_model=List[WorkSiteResponse])
@@ -42,7 +48,7 @@ async def list_work_sites(
 @router.post("", response_model=WorkSiteResponse, status_code=201)
 async def create_work_site(
     data: WorkSiteCreate,
-    current_user: User = Depends(require_permission("settings", "edit")),
+    current_user: User = Depends(require_permission("settings", "create")),
     db: AsyncSession = Depends(get_db),
 ):
     dup = (
@@ -54,6 +60,12 @@ async def create_work_site(
         )
     ).scalar_one_or_none()
     if dup:
+        if not dup.is_active:
+            raise HTTPException(
+                409,
+                f"A work site named '{data.name}' was removed earlier and is kept because "
+                "punches refer to it. Turn it back on from the list of removed sites instead.",
+            )
         raise HTTPException(409, f"A work site named '{data.name}' already exists.")
 
     site = WorkSite(
@@ -77,7 +89,17 @@ async def update_work_site(
     site = await db.get(WorkSite, site_id)
     if not site or site.tenant_id != current_user.tenant_id:
         raise HTTPException(404, "Work site not found")
-    for key, value in data.model_dump(exclude_unset=True).items():
+    changes = data.model_dump(exclude_unset=True)
+    if "name" in changes and changes["name"] != site.name:
+        taken = (await db.execute(
+            select(WorkSite.id).where(
+                WorkSite.tenant_id == current_user.tenant_id,
+                WorkSite.name == changes["name"],
+            )
+        )).first()
+        if taken:
+            raise HTTPException(409, f"A work site named '{changes['name']}' already exists.")
+    for key, value in changes.items():
         setattr(site, key, value)
     await db.commit()
     await db.refresh(site)
@@ -87,15 +109,24 @@ async def update_work_site(
 @router.delete("/{site_id}", status_code=204)
 async def delete_work_site(
     site_id: int,
-    current_user: User = Depends(require_permission("settings", "edit")),
+    current_user: User = Depends(require_permission("settings", "delete")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Deactivates rather than deletes. Punches reference the site they were
-    judged against, and removing it would rewrite history."""
+    """Deletes a site nothing refers to. A site that punches were judged
+    against, or that shifts expect people at, is deactivated instead:
+    removing it would rewrite history."""
     site = await db.get(WorkSite, site_id)
     if not site or site.tenant_id != current_user.tenant_id:
         raise HTTPException(404, "Work site not found")
-    site.is_active = False
+    used = (await db.execute(
+        select(TimePunch.id).where(TimePunch.work_site_id == site.id).limit(1)
+    )).first() or (await db.execute(
+        select(Shift.id).where(Shift.work_site_id == site.id).limit(1)
+    )).first()
+    if used:
+        site.is_active = False
+    else:
+        await db.delete(site)
     await db.commit()
 
 

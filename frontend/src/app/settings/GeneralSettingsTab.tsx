@@ -1174,6 +1174,77 @@ export default function GeneralSettingsTab() {
         </div>
       </div>
 
+      {/* ── Section: Attendance Automation (area F) ───────────────── */}
+      <div className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-xl">
+        <div className="border-b border-gray-200 px-6 py-4">
+          <h2 className="text-lg font-semibold text-gray-900">Attendance Automation</h2>
+          <p className="mt-1 text-sm text-gray-500">
+            What happens when someone forgets to clock out, or does not turn up for a published shift.
+            Both apply only to companies using the time clock.
+          </p>
+        </div>
+        <div className="px-6 py-6 space-y-6">
+          <NumberSetting
+            id="auto_clockout_after_hours"
+            label="Close a forgotten clock-in after the shift ends (hours)"
+            help="The day is closed at the shift's scheduled end, not at the moment it is noticed, and marked for review."
+            value={appSettings?.auto_clockout_after_hours}
+            min={0.5} max={24} step={0.5}
+            disabled={updateSettingsMutation.isPending}
+            onCommit={(n) => updateSettingsMutation.mutate(
+              { auto_clockout_after_hours: n },
+              { onSuccess: () => showToast('Automatic clock-out saved', 'success'),
+                onError: (err: Error) => showToast(err.message, 'error') },
+            )}
+          />
+          <NumberSetting
+            id="auto_clockout_unscheduled_hours"
+            label="With no shift, close it after (hours from clock-in)"
+            help="The day is then closed one normal working day after the clock-in."
+            value={appSettings?.auto_clockout_unscheduled_hours}
+            min={1} max={24}
+            disabled={updateSettingsMutation.isPending}
+            onCommit={(n) => updateSettingsMutation.mutate(
+              { auto_clockout_unscheduled_hours: n },
+              { onSuccess: () => showToast('Automatic clock-out saved', 'success'),
+                onError: (err: Error) => showToast(err.message, 'error') },
+            )}
+          />
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={appSettings ? appSettings.auto_mark_absent !== false : true}
+              disabled={updateSettingsMutation.isPending}
+              onChange={(e) => updateSettingsMutation.mutate(
+                { auto_mark_absent: e.target.checked },
+                { onSuccess: () => showToast('Absence setting saved', 'success'),
+                  onError: (err: Error) => showToast(err.message, 'error') },
+              )}
+              className="mt-0.5 h-4 w-4 rounded text-purple-600 border-gray-300 focus:ring-purple-500"
+            />
+            <div>
+              <p className="text-sm font-medium text-gray-900">Mark no-shows absent</p>
+              <p className="text-xs text-gray-500 mt-0.5">
+                A published shift that ends with no clock-in, no approved leave and no holiday is recorded as absent.
+              </p>
+            </div>
+          </label>
+          <NumberSetting
+            id="auto_absent_after_minutes"
+            label="Wait after the shift starts (minutes)"
+            help="Nobody is marked absent before this long after their shift was due to start, nor before it ends."
+            value={appSettings?.auto_absent_after_minutes}
+            min={15} max={1440}
+            disabled={updateSettingsMutation.isPending || appSettings?.auto_mark_absent === false}
+            onCommit={(n) => updateSettingsMutation.mutate(
+              { auto_absent_after_minutes: n },
+              { onSuccess: () => showToast('Absence setting saved', 'success'),
+                onError: (err: Error) => showToast(err.message, 'error') },
+            )}
+          />
+        </div>
+      </div>
+
       {/* ── Section: Employee Data Retention ─────────────────────── */}
       <div className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-xl">
         <div className="border-b border-gray-200 px-6 py-4">

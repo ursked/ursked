@@ -7,7 +7,7 @@ sort, rename, format, serialise) lives in `export_pipeline` so that preview,
 download and the scheduler all run the identical code path.
 """
 
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 from uuid import UUID
 
 from sqlalchemy import select
@@ -15,7 +15,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.data_export import DataExportConfig
 from app.services import export_pipeline as pipeline
-from app.services.data_source_registry import DATA_SOURCES, get_source, get_sources_metadata
+from app.services.data_source_registry import (
+    DATA_SOURCES,
+    clean_source_options,
+    get_source,
+    options_for,
+    tenant_columns,
+)
 from app.services.formula_engine import FormulaEngine, FormulaError
 
 
@@ -44,6 +50,26 @@ def _multi_label_for(key: str) -> str:
     source = DATA_SOURCES.get(src_key, {})
     col = next((c for c in source.get("columns", []) if c["key"] == col_key), None)
     return f"{source.get('label', src_key)} > {col['label'] if col else col_key}"
+
+
+async def _column_catalogue(
+    db: AsyncSession, tenant_id: UUID, source_keys: List[str], namespaced: bool
+) -> Dict[str, Dict[str, Any]]:
+    """{column key: {label, type}} as this tenant sees them (the employees
+    source carries the company's own Personnel # wording and custom fields)."""
+    out: Dict[str, Dict[str, Any]] = {}
+    for src in source_keys:
+        source = DATA_SOURCES.get(src)
+        if not source:
+            continue
+        for c in await tenant_columns(db, tenant_id, src):
+            if namespaced:
+                out[f"{src}.{c['key']}"] = {
+                    "label": f"{source['label']} > {c['label']}", "type": c.get("type"),
+                }
+            else:
+                out[c["key"]] = {"label": c["label"], "type": c.get("type")}
+    return out
 
 
 def _formula_scope(row: Dict[str, Any]) -> Dict[str, Any]:
@@ -154,8 +180,11 @@ class DataExportService:
             date_to=data.get("date_to"),
             output_format=(data.get("output_format") or "csv"),
             row_limit=data.get("row_limit"),
+            layout=_layout_json(data.get("layout")),
+            source_options=clean_source_options(data["data_source"], data.get("source_options")),
             created_by=created_by,
         )
+        _check_layout(config)
         db.add(config)
         return config
 
@@ -199,11 +228,20 @@ class DataExportService:
                 data[key] = _as_dicts(data[key])
         if "column_formats" in data and data["column_formats"] is not None:
             data["column_formats"] = _as_dict_map(data["column_formats"])
+        if "layout" in data:
+            data["layout"] = _layout_json(data["layout"])
+        if "source_options" in data:
+            data["source_options"] = clean_source_options(
+                data.get("data_source") or config.data_source, data["source_options"]
+            )
 
         for key, value in data.items():
             if hasattr(config, key):
                 setattr(config, key, value)
 
+        # A partial update can break a layout it never mentioned (removing a
+        # column a heading groups), so check the merged result.
+        _check_layout(config)
         return config
 
     @staticmethod
@@ -225,14 +263,23 @@ class DataExportService:
         spec: Dict[str, Any],
         *,
         limit: Optional[int] = None,
-    ) -> Tuple[List[Dict[str, Any]], int, List[Tuple[str, str]]]:
+        viewer: Any = None,
+        employee_scope: Optional[Set[int]] = None,
+    ) -> Tuple[List[Dict[str, Any]], int, List[pipeline.OutputColumn]]:
         """Load, transform and shape one export.
 
-        Returns (rows, total_before_limit, output_columns) where output_columns
-        is an ordered list of (field_key, header). One entry point for preview,
-        download and the scheduler, so the three cannot drift apart — which is
-        exactly how scheduled exports ended up unable to run a multi-source
-        config at all while the download path could.
+        Returns (rows, total_before_limit, output_columns). Rows hold RAW values
+        keyed by output column instance id; output_columns are OutputColumn
+        tuples (key, header, type, format). Preview and CSV format at the edge
+        (pipeline.format_rows), the workbook types each cell instead. One entry
+        point for preview, download and the scheduler, so the three cannot
+        drift apart — which is exactly how scheduled exports ended up unable to
+        run a multi-source config at all while the download path could.
+
+        `employee_scope` limits every source that has an employee to those
+        people (None = everyone); `viewer` decides which custom employee fields
+        appear. Both are the caller's to work out: an ad-hoc run uses the person
+        asking, a scheduled one the schedule's owner.
 
         Stage order is documented in `export_pipeline` and is restated to the
         user in the builder, so do not reorder it casually.
@@ -242,36 +289,43 @@ class DataExportService:
         custom_columns = list(spec.get("custom_columns") or [])
         group_by = [g for g in (spec.get("group_by") or []) if g]
         aggregations = list(spec.get("aggregations") or [])
+        options = spec.get("source_options") or {}
 
         # A relative window re-resolves on every run; absolute dates pass through.
         date_from, date_to = pipeline.resolve_date_window(
             spec.get("date_preset"), spec.get("date_from"), spec.get("date_to")
         )
+        common: Dict[str, Any] = {"date_from": date_from, "date_to": date_to, "viewer": viewer}
+        if employee_scope is not None:
+            common["employee_ids"] = set(employee_scope)
+        if spec.get("name_format"):
+            common["name_format"] = spec["name_format"]
 
         # 1. Load
         if data_source == "multi":
             rows = await DataExportService._load_multi_rows(
-                db, tenant_id, columns,
-                name_format=spec.get("name_format"),
+                db, tenant_id, [pipeline.field_of(c) for c in columns],
                 date_from=date_from, date_to=date_to,
+                common=common, options=options,
             )
-            label_for = _multi_label_for
+            used = sorted({c.split(".", 1)[0] for c in columns if "." in c})
+            catalogue = await _column_catalogue(db, tenant_id, used, namespaced=True)
+            label_for = lambda k: (catalogue.get(k) or {}).get("label") or _multi_label_for(k)  # noqa: E731
             valid_columns = list(columns)
         else:
             source = get_source(data_source)
             if not source:
                 raise ValueError(f"Unknown data source: {data_source}")
-            query_kwargs = {}
-            if spec.get("name_format"):
-                query_kwargs["name_format"] = spec["name_format"]
-            rows = await source["query"](db, tenant_id, **query_kwargs)
+            rows = await source["query"](
+                db, tenant_id, **common, **options_for(data_source, options)
+            )
             if date_from or date_to:
                 rows = _apply_date_range(
                     rows, date_from, date_to, is_date_source=data_source in DATE_SOURCES
                 )
-            source_col_keys = {c["key"] for c in source["columns"]}
-            valid_columns = [c for c in columns if c in source_col_keys]
-            label_for = _single_label_for(data_source)
+            catalogue = await _column_catalogue(db, tenant_id, [data_source], namespaced=False)
+            valid_columns = [c for c in columns if pipeline.field_of(c) in catalogue]
+            label_for = lambda k: (catalogue.get(k) or {}).get("label") or k  # noqa: E731
 
         # 2. Calculate BEFORE filtering and grouping, so a computed column can be
         #    filtered on and grouped by. Formulas see the whole source row, not
@@ -306,7 +360,8 @@ class DataExportService:
         if effective_limit and effective_limit > 0:
             rows = rows[:effective_limit]
 
-        # 7. Project, rename, format
+        # 7. Project and rename. Values stay raw: formatting is the render
+        #    stage's job, which is what lets the workbook hold real dates.
         output_columns = pipeline.build_output_columns(
             columns=valid_columns,
             custom_columns=custom_columns,
@@ -314,25 +369,34 @@ class DataExportService:
             aggregations=aggregations,
             label_for=label_for,
             aliases=spec.get("column_aliases"),
+            type_for=lambda k: (catalogue.get(k) or {}).get("type"),
+            formats=spec.get("column_formats"),
         )
-        shaped = pipeline.project_rows(rows, output_columns, spec.get("column_formats"))
+        shaped = pipeline.project_rows(rows, output_columns)
         return shaped, total, output_columns
 
     @staticmethod
     def serialise(
         rows: List[Dict[str, Any]],
-        output_columns: List[Tuple[str, str]],
+        output_columns: List[Tuple],
         output_format: str = "csv",
         sheet_name: str = "Export",
+        *,
+        layout: Any = None,
+        context: Optional[Dict[str, Any]] = None,
     ) -> Tuple[bytes, str, str]:
-        """Return (payload, media_type, file_extension)."""
+        """Return (payload, media_type, file_extension) for run_export's rows."""
         if (output_format or "csv").lower() == "xlsx":
             return (
-                pipeline.generate_xlsx(rows, output_columns, sheet_name),
+                pipeline.generate_xlsx(rows, output_columns, sheet_name, layout=layout, context=context),
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 "xlsx",
             )
-        return pipeline.generate_csv(rows, output_columns).encode("utf-8"), "text/csv", "csv"
+        return (
+            pipeline.generate_csv(rows, output_columns, layout=layout, context=context).encode("utf-8"),
+            "text/csv",
+            "csv",
+        )
 
     # ── Row loading ──────────────────────────────────────────────
 
@@ -344,6 +408,8 @@ class DataExportService:
         name_format: Optional[str] = None,
         date_from: Optional[str] = None,
         date_to: Optional[str] = None,
+        common: Optional[Dict[str, Any]] = None,
+        options: Optional[Dict[str, Any]] = None,
     ) -> List[Dict[str, Any]]:
         """Query and merge several sources, joined on employee id (+ date).
 
@@ -364,8 +430,8 @@ class DataExportService:
         if not source_cols:
             return []
 
-        # Query each needed source
-        query_kwargs = {}
+        # Query each needed source, with the same scope, viewer and window.
+        query_kwargs = dict(common or {})
         if name_format:
             query_kwargs["name_format"] = name_format
         source_rows: Dict[str, List[Dict[str, Any]]] = {}
@@ -373,7 +439,9 @@ class DataExportService:
             source = get_source(src_key)
             if not source:
                 continue
-            rows = await source["query"](db, tenant_id, **query_kwargs)
+            rows = await source["query"](
+                db, tenant_id, **query_kwargs, **options_for(src_key, options)
+            )
             # Apply date range filter per source
             if date_from or date_to:
                 rows = _apply_date_range(
@@ -516,3 +584,27 @@ def _apply_date_range(
             continue
         result.append(row)
     return result
+
+
+def _layout_json(layout: Any) -> Optional[Dict[str, Any]]:
+    """A layout as stored: plain JSON, with `from` spelled as the API spells it."""
+    if layout is None:
+        return None
+    if hasattr(layout, "model_dump"):
+        return layout.model_dump(by_alias=True)
+    return dict(layout)
+
+
+def _check_layout(config: DataExportConfig) -> None:
+    problem = pipeline.layout_problems(
+        config.layout,
+        pipeline.output_keys_for({
+            "columns": config.columns,
+            "custom_columns": config.custom_columns,
+            "group_by": config.group_by,
+            "aggregations": config.aggregations,
+        }),
+        config.column_aliases or {},
+    )
+    if problem:
+        raise ValueError(problem)

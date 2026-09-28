@@ -7,7 +7,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.compensation import PayoutSchedule
-from app.models.schedule import DateRemark
 from app.services.payroll_compute import resolve_payout_date
 
 
@@ -81,9 +80,29 @@ class PayoutScheduleService:
 
     @staticmethod
     async def delete(db: AsyncSession, tenant_id: UUID, schedule_id: int) -> bool:
+        """Delete a schedule no payroll period uses. A period records which
+        schedule set its payout date; deleting it would leave that run with
+        no explanation of when it pays, so that is refused with the names of
+        the periods (ValueError)."""
+        from app.models.payroll import PayrollPeriod
+
         sched = await db.get(PayoutSchedule, schedule_id)
         if not sched or sched.tenant_id != tenant_id:
             return False
+        used = (await db.execute(
+            select(PayrollPeriod.name).where(
+                PayrollPeriod.tenant_id == tenant_id,
+                PayrollPeriod.schedule_id == schedule_id,
+            ).order_by(PayrollPeriod.start_date.desc())
+        )).scalars().all()
+        if used:
+            names = ", ".join(f'"{n}"' for n in used[:3])
+            more = f" and {len(used) - 3} more" if len(used) > 3 else ""
+            raise ValueError(
+                f"This schedule is used by the payroll period{'s' if len(used) > 1 else ''} "
+                f"{names}{more}, so it cannot be deleted. Switch it off instead by "
+                "making another schedule active."
+            )
         await db.delete(sched)
         await db.flush()
         return True
@@ -113,13 +132,16 @@ class PayoutScheduleService:
             return None
         holidays: set = set()
         if schedule.payout_day_adjust in ("prev_business_day", "next_business_day"):
-            res = await db.execute(
-                select(DateRemark.date).where(
-                    DateRemark.tenant_id == tenant_id,
-                    DateRemark.is_holiday == True,  # noqa: E712
-                )
-            )
-            holidays = {row[0] for row in res.all()}
+            # Through holiday_calendar so a recurring holiday moves the payout
+            # every year, not only in the year it was entered. The payout can
+            # land a year past earned_on (month offset up to 12) plus the walk.
+            from datetime import timedelta
+
+            from app.services.holiday_calendar import holidays_between
+
+            holidays = set((await holidays_between(
+                db, tenant_id, earned_on, earned_on + timedelta(days=400)
+            )).keys())
         return resolve_payout_date(
             earned_on, schedule.cutoffs,
             adjust=schedule.payout_day_adjust, holidays=holidays,

@@ -55,6 +55,33 @@
   }
 }
 
+/* Viewport height that follows the mobile browser's toolbars.
+ *
+ * 100vh is the height with the toolbars hidden, so a full-height layout ran
+ * under the bottom toolbar and the home indicator until the user scrolled.
+ * 100dvh tracks the visible area. `--app-vh` is one percent of it, or of
+ * 100vh where dvh is unknown, and is also what calc()s such as "the viewport
+ * minus the header" in panels and grids use. (The fallback lives in @supports
+ * rather than as a repeated declaration because the CSS minifier keeps only
+ * the last of two `height:` lines.) */
+:root {
+  --app-vh: 1vh;
+}
+@supports (height: 100dvh) {
+  :root {
+    --app-vh: 1dvh;
+  }
+}
+
+@layer utilities {
+  .h-app {
+    height: calc(var(--app-vh) * 100);
+  }
+  .min-h-app {
+    min-height: calc(var(--app-vh) * 100);
+  }
+}
+
 @layer components {
   /* Shared form control used by the finances/compensation tabs. */
   .input {

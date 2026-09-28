@@ -133,6 +133,8 @@ class SalaryEnrollmentService:
             "is_viewer": await SalaryEnrollmentService.is_viewer(db, tenant_id, user_id),
             "is_approver": await SalaryEnrollmentService.is_approver(db, tenant_id, user_id),
             "pending_kinds": [p.kind for p in pending],
+            # Ids too, so the requester can withdraw their own request.
+            "pending_requests": [{"id": p.id, "kind": p.kind} for p in pending],
         }
 
     # ── Request / decide / revoke ─────────────────────────────────────

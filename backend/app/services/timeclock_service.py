@@ -14,11 +14,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.attendance import AttendanceRecord, TimePunch
+from app.models.configurable_types import ScheduleFormat
 from app.models.schedule import Shift
 from app.models.settings import AppSettings
+from app.models.user import User
 from app.models.work_site import WorkArrangementRule, WorkSite
-from app.services.attendance_service import AttendanceService
+from app.services.attendance_service import AttendanceService, tenant_zone, to_local
 from app.services.geo_service import evaluate_geofence
+from app.services.payroll_compute import span
 
 # Statuses meaning "no location was supplied with the punch".
 _MISSING_LOCATION = {"denied", "unavailable", "timeout", "insecure_context"}
@@ -122,19 +125,26 @@ class TimeclockService:
     async def _day_shifts(
         db: AsyncSession, tenant_id: UUID, employee_id: int, business_date: date_cls
     ) -> List[Shift]:
-        return list(
-            (
-                await db.execute(
-                    select(Shift)
-                    .where(
-                        Shift.tenant_id == tenant_id,
-                        Shift.employee_id == employee_id,
-                        Shift.date == business_date,
-                    )
-                    .order_by(Shift.sequence_number.asc())
-                )
-            ).scalars().all()
-        )
+        """The day's PUBLISHED shifts. A draft is not a roster yet: clocking in
+        against it made people late for shifts nobody had told them about."""
+        return await AttendanceService.published_shifts(db, tenant_id, employee_id, business_date)
+
+    @staticmethod
+    async def _expectation(
+        db: AsyncSession, tenant_id: UUID, shift: Optional[Shift]
+    ) -> Tuple[str, Optional[int]]:
+        """(geofence mode, pinned work site) for a punch against `shift`.
+
+        The shift's work_site_id is the site to measure against. A shift that
+        names a site but no arrangement expects the employee there; otherwise
+        the arrangement decides, failing open as before.
+        """
+        arrangement = shift.work_arrangement if shift else None
+        pinned = getattr(shift, "work_site_id", None) if shift else None
+        if pinned and not (arrangement or "").strip():
+            return "require_site", pinned
+        mode = await TimeclockService._arrangement_mode(db, tenant_id, arrangement)
+        return mode, pinned
 
     @staticmethod
     def _match_shift(shifts: List[Shift], local_time: time_cls, punch_type: str) -> Optional[Shift]:
@@ -252,6 +262,28 @@ class TimeclockService:
         utc_now, local_dt = _tenant_now(tz_name)
 
         open_punch = await TimeclockService.open_punch(db, tenant_id, employee_id)
+        if open_punch is not None:
+            close_at, deadline = await TimeclockService.auto_close_times(db, open_punch, settings)
+            if punch_type == "in":
+                # A clock-out forgotten yesterday must not block today. If the
+                # open punch's shift is over (its grace has run out, or it is
+                # from an earlier day and its end has passed), close it at the
+                # scheduled end, flagged, and let today's clock-in through.
+                new_day = await TimeclockService._resolve_business_date(
+                    db, tenant_id, employee_id, local_dt, "in", None
+                )
+                stale = utc_now >= deadline or (
+                    open_punch.business_date < new_day and utc_now >= close_at
+                )
+                if stale:
+                    await TimeclockService.auto_close(db, open_punch, close_at, settings)
+                    open_punch = None
+            elif utc_now >= deadline:
+                # Clocking out long after the shift ended: close it where the
+                # auto clock-out would have (the scheduled end), flagged for
+                # review, rather than billing every hour since.
+                return await TimeclockService.auto_close(db, open_punch, close_at, settings)
+
         if punch_type == "in" and open_punch is not None:
             raise TimeclockError(
                 "You are already clocked in. Clock out before starting again.",
@@ -270,7 +302,7 @@ class TimeclockService:
         shifts = await TimeclockService._day_shifts(db, tenant_id, employee_id, business_date)
         matched = TimeclockService._match_shift(shifts, local_dt.time(), punch_type)
         arrangement = matched.work_arrangement if matched else None
-        mode = await TimeclockService._arrangement_mode(db, tenant_id, arrangement)
+        mode, pinned_site_id = await TimeclockService._expectation(db, tenant_id, matched)
 
         # Location. A punch is never refused because of it.
         if latitude is not None and longitude is not None:
@@ -291,7 +323,7 @@ class TimeclockService:
         )
         geofence_status, site_id, distance_m = evaluate_geofence(
             sites, latitude, longitude, accuracy_m, mode,
-            pinned_site_id=getattr(matched, "work_site_id", None) if matched else None,
+            pinned_site_id=pinned_site_id,
             default_radius_m=settings.timeclock_default_radius_m or 200,
         )
 
@@ -344,29 +376,102 @@ class TimeclockService:
         db: AsyncSession, tenant_id: UUID, employee_id: int,
         business_date: date_cls, recorded_by: Optional[int],
     ) -> Optional[AttendanceRecord]:
-        """Rebuild the day's AttendanceRecord from its punches."""
-        punches = await TimeclockService.punches_for_day(db, tenant_id, employee_id, business_date)
-        start, end, hours = TimeclockService._derive_times(punches)
+        """Rebuild the day's AttendanceRecord from its punches.
 
-        record = await AttendanceService.upsert_attendance(
-            db,
-            tenant_id=tenant_id,
-            employee_id=employee_id,
-            attendance_date=business_date,
-            actual_start=start,
-            actual_end=end,
-            recorded_by=recorded_by,
-            self_reported=True,
+        The record's hours are the sum of PAIRED intervals, and they are known
+        before the policy engine runs. Previously the engine ran on
+        first-in-to-last-out hours and the paired figure was written over the
+        record afterwards, so overtime rules saw the unpaid gap of a split day
+        as overtime. A day a locked payroll period has paid is left alone.
+        """
+        from app.services.payroll_service import PayrollService
+
+        if await PayrollService.locked_periods_for(db, tenant_id, [(employee_id, business_date)]):
+            return None
+        return await AttendanceService.sync_from_punches(
+            db, tenant_id, employee_id, business_date, recorded_by=recorded_by
         )
-        if record is not None:
-            # Paired-interval hours, not first-in-to-last-out. Only override once a
-            # pair has closed; an open day keeps whatever upsert derived (None).
-            if hours is not None:
-                record.hours_worked = hours
-            for p in punches:
-                p.attendance_record_id = record.id
-            await db.flush()
-        return record
+
+    # ── automatic clock-out ──────────────────────────────────────────────────
+
+    @staticmethod
+    async def auto_close_times(
+        db: AsyncSession, punch: TimePunch, settings: Optional[AppSettings],
+    ) -> Tuple[datetime, datetime]:
+        """(when to close an open clock-in, when it counts as forgotten), UTC.
+
+        With a shift: closed at the scheduled end, once auto_clockout_after_hours
+        have passed since it. Without one: forgotten auto_clockout_unscheduled_hours
+        after the clock-in, and closed one ordinary working day after it (the
+        schedule format's hours, else the company default) -- nobody is paid
+        16 hours for forgetting to clock out.
+        """
+        tz = tenant_zone(settings)
+        in_local = to_local(punch.punched_at, tz)
+        shift = await db.get(Shift, punch.shift_id) if punch.shift_id else None
+        if shift is not None and shift.start_time and shift.end_time and shift.is_published:
+            _, end_local = span(shift.date, shift.start_time, shift.end_time)
+            close_local = max(end_local, in_local)
+            after = getattr(settings, "auto_clockout_after_hours", None) or 4
+            deadline_local = end_local + timedelta(hours=after)
+        else:
+            day_hours = None
+            emp = await db.get(User, punch.employee_id)
+            if emp and emp.schedule_format:
+                fmt = (await db.execute(
+                    select(ScheduleFormat).where(
+                        ScheduleFormat.tenant_id == punch.tenant_id,
+                        ScheduleFormat.code == emp.schedule_format,
+                    )
+                )).scalar_one_or_none()
+                day_hours = fmt.hours_per_day if fmt else None
+            day_hours = day_hours or getattr(settings, "default_shift_duration_hours", None) or 8
+            unscheduled = getattr(settings, "auto_clockout_unscheduled_hours", None) or 16
+            close_local = in_local + timedelta(hours=min(day_hours, unscheduled))
+            deadline_local = in_local + timedelta(hours=unscheduled)
+
+        def utc(local: datetime) -> datetime:
+            return local.replace(tzinfo=tz).astimezone(timezone.utc)
+
+        return utc(close_local), utc(deadline_local)
+
+    @staticmethod
+    async def auto_close(
+        db: AsyncSession, punch: TimePunch, close_at: datetime,
+        settings: Optional[AppSettings],
+    ) -> TimePunch:
+        """Close an open clock-in with a system clock-out at `close_at`,
+        flagged auto_closed for review, and re-derive its day."""
+        tz = tenant_zone(settings)
+        local = to_local(close_at, tz)
+        out = TimePunch(
+            tenant_id=punch.tenant_id,
+            employee_id=punch.employee_id,
+            business_date=punch.business_date,
+            punch_type="out",
+            shift_id=punch.shift_id,
+            sequence_number=punch.sequence_number or 1,
+            work_arrangement=punch.work_arrangement,
+            punched_at=close_at,
+            local_time=local.time().replace(microsecond=0),
+            location_status="not_required",
+            geofence_status="not_applicable",
+            source="auto",
+            auto_closed=True,
+            notes=(
+                "No clock-out was recorded, so this was closed automatically at "
+                f"{local.strftime('%H:%M')}. Check the hours with the employee."
+            ),
+        )
+        db.add(out)
+        await db.flush()
+        punch.paired_punch_id = out.id
+        out.paired_punch_id = punch.id
+        await db.flush()
+        await TimeclockService._rederive_day(
+            db, punch.tenant_id, punch.employee_id, punch.business_date, None
+        )
+        return out
 
     @staticmethod
     async def attach_location(
@@ -401,13 +506,14 @@ class TimeclockService:
             )
 
         settings = await _settings(db, tenant_id)
-        mode = await TimeclockService._arrangement_mode(db, tenant_id, punch.work_arrangement)
+        shift = await db.get(Shift, punch.shift_id) if punch.shift_id else None
+        mode, pinned_site_id = await TimeclockService._expectation(db, tenant_id, shift)
         sites = list(
             (await db.execute(select(WorkSite).where(WorkSite.tenant_id == tenant_id))).scalars().all()
         )
         geofence_status, site_id, distance_m = evaluate_geofence(
             sites, latitude, longitude, accuracy_m, mode,
-            pinned_site_id=None,
+            pinned_site_id=pinned_site_id,
             default_radius_m=(settings.timeclock_default_radius_m if settings else 200) or 200,
         )
 

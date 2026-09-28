@@ -27,6 +27,12 @@ function lines(breakdown: Record<string, unknown>, key: string): Array<Record<st
   return Array.isArray(v) ? (v as Array<Record<string, unknown>>) : []
 }
 
+const PREMIUM_LABEL: Record<string, string> = {
+  holiday_regular: 'Holiday pay',
+  holiday_special: 'Special holiday pay',
+  night_diff: 'Night differential',
+}
+
 export default function MyPayslipsPage() {
   const { format: peso } = useCurrency()
   const [openId, setOpenId] = useState<number | null>(null)
@@ -103,8 +109,13 @@ function PayslipModal({
 
   const earnings = slip ? lines(slip.breakdown, 'earnings') : []
   const overtime = slip ? lines(slip.breakdown, 'overtime') : []
-  const premiums = slip ? lines(slip.breakdown, 'premiums') : []
-  const deductions = slip ? lines(slip.breakdown, 'deductions') : []
+  const premiums = slip ? lines(slip.breakdown, 'premiums').filter((p) => !p.held) : []
+  const conversions = slip ? lines(slip.breakdown, 'leave_conversions') : []
+  // The employer's share used to be listed with the deductions, so the lines
+  // did not add up to "Total deductions" and read as money taken from the
+  // employee. Deductions and employer contributions are separate lists now.
+  const deductions = slip?.employee_deductions ?? []
+  const employerShare = slip?.employer_contributions ?? []
 
   return (
     <Modal
@@ -151,8 +162,16 @@ function PayslipModal({
           {premiums.map((pr, i) => (
             <PayRow
               key={`pr-${i}`}
-              label={`${(pr.kind as string) ?? 'Premium'} ${pr.date ?? ''}`.trim()}
+              label={`${PREMIUM_LABEL[pr.kind as string] ?? 'Premium'} ${pr.date ?? ''}`.trim()}
               value={peso(pr.amount as number)}
+              muted
+            />
+          ))}
+          {conversions.map((c, i) => (
+            <PayRow
+              key={`lc-${i}`}
+              label={`Leave converted to cash (${c.days ?? ''} day${c.days === 1 ? '' : 's'})`}
+              value={peso(c.amount as number)}
               muted
             />
           ))}
@@ -172,8 +191,8 @@ function PayslipModal({
           {deductions.map((d, i) => (
             <PayRow
               key={`d-${i}`}
-              label={(d.name as string) || (d.code as string) || 'Deduction'}
-              value={`-${peso(d.amount as number)}`}
+              label={d.name || d.code || 'Deduction'}
+              value={`-${peso(d.amount)}`}
               muted
             />
           ))}
@@ -182,6 +201,17 @@ function PayslipModal({
           <div className="border-t border-gray-200 pt-2">
             <PayRow label="Net pay" value={peso(slip.net_pay)} bold />
           </div>
+
+          {employerShare.length > 0 && (
+            <div className="rounded-lg border border-gray-200 p-3">
+              <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-600">
+                Employer contributions (not deducted from your pay)
+              </div>
+              {employerShare.map((c, i) => (
+                <PayRow key={`er-${i}`} label={c.name || c.code || 'Contribution'} value={peso(c.amount)} muted />
+              ))}
+            </div>
+          )}
         </div>
       )}
     </Modal>

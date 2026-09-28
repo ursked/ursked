@@ -1,4 +1,13 @@
-"""Formatted XLSX work-schedule export.
+"""Formatted XLSX work-schedule export — SUPERSEDED, kept for one release.
+
+GET /schedules/export.xlsx now serves the report builder's built-in template
+(report_templates.REGULAR_WORK_SCHEDULE), which expresses everything below and
+fixes what this exporter got wrong: it kept only the first segment of a split
+shift, included draft shifts, stamped HOL OFF on worked holidays, missed
+recurring holidays and could not be limited to a manager's team. Nothing routes
+here any more. It stays one release as the reference the template is tested
+against (tests/test_work_schedule_template.py) and as a fallback; delete it
+together with that comparison once the template has been in use for a cutoff.
 
 Reproduces the formal "Regular Work Schedule" layout used by clients: a merged
 title, a two-row banded header, and one row per employee per day with Excel

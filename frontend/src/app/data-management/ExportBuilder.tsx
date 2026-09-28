@@ -7,25 +7,36 @@ import { useToast } from '@/components/ui/Toast';
 import { ErrorMessage } from '@/components/ui/ErrorBoundary';
 import type {
   AggregationSpec,
+  BlockSpec,
   ColumnFormat,
   DataExportConfig,
   DataSource,
   ExportSpec,
   FilterCondition,
+  HeaderBand,
+  LayoutSpec,
   PreviewResponse,
+  ReportTemplate,
 } from '@/types';
 import PreviewGrid, { type ColumnAction } from './PreviewGrid';
 import StepsPanel, { type Step } from './StepsPanel';
 import {
+  BlockDialog,
   CalculatedColumnDialog,
+  DataOptionsDialog,
   FilterDialog,
   FormatDialog,
   GroupDialog,
+  HeaderBandDialog,
+  PageSetupDialog,
   RenameDialog,
+  TemplatePickerDialog,
   aggLabelFor,
   operatorLabel,
   type FieldOption,
+  type OutputOption,
 } from './dialogs';
+import { emptyLayout, errorText, fieldOf, newInstanceId, outputKeys, reconcileLayout } from './reportLayout';
 
 const EMPTY_SPEC: ExportSpec = {
   data_source: '',
@@ -43,6 +54,8 @@ const EMPTY_SPEC: ExportSpec = {
   output_format: 'csv',
   row_limit: null,
   name_format: 'first_last',
+  layout: null,
+  source_options: {},
 };
 
 const PERIODS: { value: string; label: string }[] = [
@@ -66,15 +79,29 @@ type DialogState =
   | { kind: 'rename'; field: FieldOption }
   | { kind: 'group' }
   | { kind: 'calc'; existing?: { name: string; formula: string } }
+  | { kind: 'band'; from: string; to: string; label?: string; editing?: { tier: number; index: number } }
+  | { kind: 'blocks' }
+  | { kind: 'page' }
+  | { kind: 'templates' }
+  | { kind: 'options' }
   | null;
 
-export default function ExportBuilder() {
+export default function ExportBuilder({
+  canSave = true,
+  canDelete = false,
+}: {
+  /** reports:edit — save and change reports. */
+  canSave?: boolean;
+  /** reports:delete — delete saved reports. */
+  canDelete?: boolean;
+}) {
   const { showToast } = useToast();
   const queryClient = useQueryClient();
 
   const [spec, setSpec] = useState<ExportSpec>(EMPTY_SPEC);
   const [reportName, setReportName] = useState('');
   const [loadedConfigId, setLoadedConfigId] = useState<number | null>(null);
+  const [fromTemplate, setFromTemplate] = useState<string | null>(null);
   const [dialog, setDialog] = useState<DialogState>(null);
   const [showPicker, setShowPicker] = useState(true);
   const [downloading, setDownloading] = useState(false);
@@ -85,6 +112,11 @@ export default function ExportBuilder() {
   const { data: configs } = useQuery<DataExportConfig[]>({
     queryKey: ['export-configs'],
     queryFn: () => api.getExportConfigs(),
+  });
+
+  const { data: templates } = useQuery<ReportTemplate[]>({
+    queryKey: ['export-templates'],
+    queryFn: () => api.getReportTemplates(),
   });
 
   // ── Field catalogue ────────────────────────────────────────────
@@ -115,15 +147,33 @@ export default function ExportBuilder() {
     return out;
   }, [sources, activeSources, spec.custom_columns]);
 
+  /** A field by its key, or by an instance id ("date::2" is Date). */
   const fieldByKey = useCallback(
-    (key: string): FieldOption =>
-      allFields.find((f) => f.key === key) || { key, label: key, type: 'string' },
+    (key: string): FieldOption => {
+      const f = fieldOf(key);
+      return allFields.find((x) => x.key === f) || { key: f, label: f, type: 'string' };
+    },
     [allFields]
+  );
+
+  /** An output column: the field's label and type, the instance's key. */
+  const instanceField = useCallback(
+    (key: string): FieldOption => ({ ...fieldByKey(key), key }),
+    [fieldByKey]
+  );
+
+  // The data options (e.g. include drafts) of the sources in play.
+  const sourceOptions = useMemo(
+    () =>
+      activeSources.length === 1
+        ? sources?.find((s) => s.key === activeSources[0])?.options || []
+        : [],
+    [sources, activeSources]
   );
 
   // ── Live preview ───────────────────────────────────────────────
   const ready = spec.data_source !== '' && (spec.columns.length > 0 || spec.group_by.length > 0);
-  const previewKey = JSON.stringify(spec);
+  const previewKey = JSON.stringify([spec, reportName]);
   const [debouncedKey, setDebouncedKey] = useState(previewKey);
   useEffect(() => {
     const t = setTimeout(() => setDebouncedKey(previewKey), 350);
@@ -138,10 +188,23 @@ export default function ExportBuilder() {
     refetch: refetchPreview,
   } = useQuery<PreviewResponse>({
     queryKey: ['export-preview', debouncedKey],
-    queryFn: () => api.previewExport({ ...spec, limit: 50 }),
+    queryFn: () => api.previewExport({ ...spec, report_name: reportName.trim() || undefined, limit: 50 }),
     enabled: ready,
     retry: false,
   });
+
+  /** Output columns with the heading they will have in the file. */
+  const outputs: OutputOption[] = useMemo(() => {
+    const headers = new Map((preview?.column_headers || []).map((h) => [h.key, h.header] as const));
+    return outputKeys(spec).map((k) => ({
+      key: k,
+      label: spec.column_aliases[k] || headers.get(k) || fieldByKey(k).label,
+    }));
+  }, [spec, preview, fieldByKey]);
+  const outputLabel = useCallback(
+    (k: string) => outputs.find((o) => o.key === k)?.label || fieldByKey(k).label,
+    [outputs, fieldByKey]
+  );
 
   // Distinct values per column, so a filter can offer real choices instead of
   // asking someone to remember what is in the data.
@@ -159,7 +222,11 @@ export default function ExportBuilder() {
   );
 
   // ── Mutations ──────────────────────────────────────────────────
-  const patch = (p: Partial<ExportSpec>) => setSpec((s) => ({ ...s, ...p }));
+  /** Every change goes through here, so a layout can never outlive the
+   * columns it names. */
+  const patch = (p: Partial<ExportSpec>) => setSpec((s) => reconcileLayout({ ...s, ...p }));
+  const layoutOf = (s: ExportSpec): LayoutSpec => s.layout || emptyLayout();
+  const patchLayout = (p: Partial<LayoutSpec>) => patch({ layout: { ...layoutOf(spec), ...p } });
 
   const chooseSource = (key: string) => {
     const src = sources?.find((s) => s.key === key);
@@ -168,6 +235,7 @@ export default function ExportBuilder() {
       ? activeSources.filter((k) => k !== key)
       : [...activeSources, key];
     setActiveSources(next);
+    setFromTemplate(null);
 
     if (next.length === 0) {
       setSpec({ ...EMPTY_SPEC });
@@ -196,16 +264,41 @@ export default function ExportBuilder() {
     setShowPicker(false);
   };
 
-  const removeColumn = (key: string) =>
+  const removeColumn = (key: string) => {
+    const columns = spec.columns.filter((c) => c !== key);
+    const field = fieldOf(key);
+    // Filters and sorts belong to the field, so they go only with its last copy.
+    const lastCopy = !columns.some((c) => fieldOf(c) === field);
+    const aliases = { ...spec.column_aliases };
+    delete aliases[key];
+    const formats = { ...spec.column_formats };
+    delete formats[key];
     patch({
-      columns: spec.columns.filter((c) => c !== key),
+      columns,
+      column_aliases: aliases,
+      column_formats: formats,
       custom_columns: spec.custom_columns.filter((c) => c.name !== key),
-      sorts: spec.sorts.filter((s) => s.column !== key),
-      filters: spec.filters.filter((f) => f.column !== key),
+      sorts: lastCopy ? spec.sorts.filter((s) => fieldOf(s.column) !== field) : spec.sorts,
+      filters: lastCopy ? spec.filters.filter((f) => fieldOf(f.column) !== field) : spec.filters,
     });
+  };
 
-  const setSort = (key: string, direction: 'asc' | 'desc') =>
-    patch({ sorts: [{ column: key, direction }, ...spec.sorts.filter((s) => s.column !== key)] });
+  /** "Use this column again": a second copy right after this one, with the
+   * same display format, so it can be renamed on its own (FROM and TO). */
+  const duplicateColumn = (key: string) => {
+    const id = newInstanceId(key, spec.columns);
+    const i = spec.columns.indexOf(key);
+    const columns = [...spec.columns];
+    columns.splice(i + 1, 0, id);
+    const formats = { ...spec.column_formats };
+    if (formats[key]) formats[id] = formats[key];
+    patch({ columns, column_formats: formats });
+  };
+
+  const setSort = (key: string, direction: 'asc' | 'desc') => {
+    const field = fieldOf(key);
+    patch({ sorts: [{ column: field, direction }, ...spec.sorts.filter((s) => fieldOf(s.column) !== field)] });
+  };
 
   const moveColumn = (key: string, delta: number) => {
     const i = spec.columns.indexOf(key);
@@ -220,30 +313,59 @@ export default function ExportBuilder() {
   const saveMutation = useMutation({
     mutationFn: async () => {
       const body = { ...spec, name: reportName.trim(), description: undefined };
+      delete body.report_name;
       if (loadedConfigId) return api.updateExportConfig(loadedConfigId, body);
       return api.createExportConfig(body);
     },
     onSuccess: (cfg) => {
       setLoadedConfigId(cfg.id);
+      setFromTemplate(null);
       queryClient.invalidateQueries({ queryKey: ['export-configs'] });
       showToast('Report saved.', 'success');
     },
-    onError: (e: unknown) =>
-      showToast(e instanceof Error ? e.message : 'Could not save the report.', 'error'),
+    onError: (e: unknown) => showToast(errorText(e, 'Could not save the report.'), 'error'),
   });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => api.deleteExportConfig(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['export-configs'] });
+      queryClient.invalidateQueries({ queryKey: ['export-schedules'] });
+      setLoadedConfigId(null);
+      showToast('Report deleted.', 'success');
+    },
+    onError: (e: unknown) => showToast(errorText(e, 'Could not delete the report.'), 'error'),
+  });
+
+  const confirmDelete = () => {
+    if (!loadedConfigId) return;
+    const name = configs?.find((c) => c.id === loadedConfigId)?.name || reportName;
+    if (
+      confirm(
+        `Delete the saved report “${name}”? Any schedule that emails it is deleted too. What is on screen stays until you leave the page.`
+      )
+    ) {
+      deleteMutation.mutate(loadedConfigId);
+    }
+  };
+
+  const openSpec = (next: ExportSpec) => {
+    const srcKeys =
+      next.data_source === 'multi'
+        ? Array.from(new Set((next.columns || []).map((c) => c.split('.')[0])))
+        : [next.data_source];
+    setActiveSources(srcKeys);
+    setShowPicker(false);
+    setSpec(reconcileLayout({ ...EMPTY_SPEC, ...next }));
+  };
 
   const loadConfig = async (id: number) => {
     try {
       const cfg = await api.getExportConfig(id);
-      const srcKeys =
-        cfg.data_source === 'multi'
-          ? Array.from(new Set((cfg.columns || []).map((c) => c.split('.')[0])))
-          : [cfg.data_source];
-      setActiveSources(srcKeys);
       setReportName(cfg.name);
       setLoadedConfigId(cfg.id);
-      setShowPicker(false);
-      setSpec({
+      setFromTemplate(null);
+      openSpec({
         data_source: cfg.data_source,
         columns: cfg.columns || [],
         custom_columns: cfg.custom_columns || [],
@@ -259,16 +381,30 @@ export default function ExportBuilder() {
         output_format: (cfg.output_format as 'csv' | 'xlsx') || 'csv',
         row_limit: cfg.row_limit ?? null,
         name_format: cfg.name_format || 'first_last',
+        layout: cfg.layout || null,
+        source_options: cfg.source_options || {},
       });
     } catch (e) {
-      showToast(e instanceof Error ? e.message : 'Could not open that report.', 'error');
+      showToast(errorText(e, 'Could not open that report.'), 'error');
     }
+  };
+
+  const openTemplate = (t: ReportTemplate) => {
+    setLoadedConfigId(null);
+    setReportName(t.name);
+    setFromTemplate(t.name);
+    openSpec({ ...EMPTY_SPEC, ...t.spec });
+    setDialog(null);
   };
 
   const download = async (format: 'csv' | 'xlsx') => {
     setDownloading(true);
     try {
-      const blob = await api.exportData({ ...spec, output_format: format });
+      const blob = await api.exportData({
+        ...spec,
+        output_format: format,
+        report_name: reportName.trim() || undefined,
+      });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -278,7 +414,7 @@ export default function ExportBuilder() {
       a.remove();
       URL.revokeObjectURL(url);
     } catch (e) {
-      showToast(e instanceof Error ? e.message : 'Download failed.', 'error');
+      showToast(errorText(e, 'Download failed.'), 'error');
     } finally {
       setDownloading(false);
     }
@@ -288,6 +424,7 @@ export default function ExportBuilder() {
   const actionsFor = useCallback(
     (key: string): ColumnAction[] => {
       const field = fieldByKey(key);
+      const inst = instanceField(key);
       const grouped = spec.group_by.length > 0;
       const acts: ColumnAction[] = [
         {
@@ -308,23 +445,35 @@ export default function ExportBuilder() {
             setDialog({
               kind: 'filter',
               field,
-              existing: spec.filters.find((f) => f.column === key),
+              existing: spec.filters.find((f) => fieldOf(f.column) === field.key),
             }),
         },
         {
           key: 'rename',
           label: 'Rename this column…',
-          onSelect: () => setDialog({ kind: 'rename', field }),
+          onSelect: () => setDialog({ kind: 'rename', field: inst }),
         },
         {
           key: 'format',
           label: 'Change how it looks…',
           hint: 'Dates, decimals, letter case',
-          onSelect: () => setDialog({ kind: 'format', field }),
+          onSelect: () => setDialog({ kind: 'format', field: inst }),
+        },
+        {
+          key: 'band',
+          label: 'Group under a heading…',
+          hint: 'One label over several columns',
+          onSelect: () => setDialog({ kind: 'band', from: key, to: key }),
         },
       ];
       if (!grouped) {
         acts.push(
+          {
+            key: 'again',
+            label: 'Use this column again',
+            hint: 'A second copy you can rename, e.g. FROM and TO',
+            onSelect: () => duplicateColumn(key),
+          },
           { key: 'left', label: 'Move left', onSelect: () => moveColumn(key, -1) },
           { key: 'right', label: 'Move right', onSelect: () => moveColumn(key, 1) },
           {
@@ -332,7 +481,7 @@ export default function ExportBuilder() {
             label: 'Summarise by this column…',
             hint: 'One row per value, with totals',
             onSelect: () => {
-              patch({ group_by: [key] });
+              patch({ group_by: [field.key] });
               setDialog({ kind: 'group' });
             },
           },
@@ -341,14 +490,15 @@ export default function ExportBuilder() {
       }
       return acts;
     },
-    [spec, fieldByKey] // eslint-disable-line react-hooks/exhaustive-deps
+    [spec, fieldByKey, instanceField] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   const markersFor = useCallback(
     (key: string) => {
       const m: string[] = [];
-      if (spec.filters.some((f) => f.column === key)) m.push('filtered');
-      const s = spec.sorts.find((x) => x.column === key);
+      const field = fieldOf(key);
+      if (spec.filters.some((f) => fieldOf(f.column) === field)) m.push('filtered');
+      const s = spec.sorts.find((x) => fieldOf(x.column) === field);
       if (s) m.push(s.direction === 'asc' ? '↑' : '↓');
       if (spec.column_aliases[key]) m.push('renamed');
       if (spec.column_formats[key]) m.push('formatted');
@@ -360,6 +510,7 @@ export default function ExportBuilder() {
   // ── Steps, in words ────────────────────────────────────────────
   const steps: Step[] = useMemo(() => {
     const out: Step[] = [];
+    const layout = spec.layout;
     if (activeSources.length && sources) {
       const names = activeSources.map((k) => sources.find((s) => s.key === k)?.label || k);
       out.push({
@@ -370,6 +521,32 @@ export default function ExportBuilder() {
             ? `Start with ${names.join(' and ')}, matched up by employee and date`
             : `Start with ${names[0]}`,
         onEdit: () => setShowPicker(true),
+      });
+    }
+    const opts = spec.source_options || {};
+    const dropOption = (k: string) => {
+      const next = { ...opts };
+      delete next[k];
+      patch({ source_options: next });
+    };
+    if (opts.include_drafts) {
+      out.push({
+        id: 'opt-drafts',
+        kind: 'source',
+        text: 'Include draft shifts that have not been published yet',
+        onEdit: () => setDialog({ kind: 'options' }),
+        onRemove: () => dropOption('include_drafts'),
+      });
+    }
+    if (opts.fill_calendar_days) {
+      const word = String(opts.rest_day_label || 'FREE');
+      const everyone = opts.include_employees === 'all_active' ? ' for every active employee' : '';
+      out.push({
+        id: 'opt-fill',
+        kind: 'source',
+        text: `Show every day in the period${everyone}, marking days without a shift as ${word}`,
+        onEdit: () => setDialog({ kind: 'options' }),
+        onRemove: () => dropOption('fill_calendar_days'),
       });
     }
     if (spec.date_preset) {
@@ -404,6 +581,29 @@ export default function ExportBuilder() {
         onEdit: () => setDialog({ kind: 'calc', existing: cc }),
         onRemove: () =>
           patch({ custom_columns: spec.custom_columns.filter((_, ix) => ix !== i) }),
+      });
+    });
+    // "Show Date twice, as FROM and TO".
+    const byField = new Map<string, string[]>();
+    for (const c of spec.columns) byField.set(fieldOf(c), [...(byField.get(fieldOf(c)) || []), c]);
+    byField.forEach((copies, field) => {
+      if (copies.length < 2) return;
+      const times = copies.length === 2 ? 'twice' : `${copies.length} times`;
+      const names = copies.map((c) => outputLabel(c));
+      const extra = copies.slice(1);
+      out.push({
+        id: `copies-${field}`,
+        kind: 'column',
+        text: `Show ${fieldByKey(field).label} ${times}, as ${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`,
+        onRemove: () => {
+          const aliases = { ...spec.column_aliases };
+          const formats = { ...spec.column_formats };
+          extra.forEach((c) => {
+            delete aliases[c];
+            delete formats[c];
+          });
+          patch({ columns: spec.columns.filter((c) => !extra.includes(c)), column_aliases: aliases, column_formats: formats });
+        },
       });
     });
     if (spec.group_by.length) {
@@ -441,8 +641,8 @@ export default function ExportBuilder() {
       out.push({
         id: `fmt-${k}`,
         kind: 'format',
-        text: `Change how ${fieldByKey(k).label} is displayed`,
-        onEdit: () => setDialog({ kind: 'format', field: fieldByKey(k) }),
+        text: `Change how ${outputLabel(k)} is displayed`,
+        onEdit: () => setDialog({ kind: 'format', field: instanceField(k) }),
         onRemove: () => {
           const next = { ...spec.column_formats };
           delete next[k];
@@ -450,8 +650,78 @@ export default function ExportBuilder() {
         },
       });
     });
+    if (layout) {
+      layout.heading_rows.forEach((h, i) => {
+        out.push({
+          id: `heading-${i}`,
+          kind: 'layout',
+          text: `Put “${h.text}” across the top`,
+          onEdit: () => setDialog({ kind: 'page' }),
+          onRemove: () => patchLayout({ heading_rows: layout.heading_rows.filter((_, ix) => ix !== i) }),
+        });
+      });
+      layout.header_tiers.forEach((tier, t) =>
+        tier.forEach((b, i) => {
+          const from = outputLabel(b.from);
+          const to = outputLabel(b.to);
+          const cols = b.from === b.to ? from : `${from} to ${to}`;
+          const joined = outputs.findIndex((o) => o.key === b.to) - outputs.findIndex((o) => o.key === b.from) === 1
+            ? `${from} and ${to}` : cols;
+          out.push({
+            id: `band-${t}-${i}`,
+            kind: 'layout',
+            text: `Group ${joined} under “${b.label.replace(/\n/g, ' ')}”`,
+            onEdit: () => setDialog({ kind: 'band', from: b.from, to: b.to, label: b.label, editing: { tier: t, index: i } }),
+            onRemove: () => removeBand(t, i),
+          });
+        })
+      );
+      if (layout.blocks) {
+        const b = layout.blocks;
+        const gap = b.blank_rows_between === 0 ? '' : `, with ${b.blank_rows_between} blank row${b.blank_rows_between === 1 ? '' : 's'} between`;
+        out.push({
+          id: 'blocks',
+          kind: 'layout',
+          text: b.sheet_per_group
+            ? `Put each ${outputLabel(b.by)} on its own tab`
+            : `Start a new block for each ${outputLabel(b.by)}${gap}`,
+          onEdit: () => setDialog({ kind: 'blocks' }),
+          onRemove: () => patchLayout({ blocks: null }),
+        });
+      }
+      if (layout.sheet_name || layout.style === 'banded') {
+        out.push({
+          id: 'page',
+          kind: 'layout',
+          text: [
+            layout.style === 'banded' ? 'Look like a printed form, with grey headings and borders' : '',
+            layout.sheet_name ? `Name the sheet “${layout.sheet_name}”` : '',
+          ].filter(Boolean).join('. '),
+          onEdit: () => setDialog({ kind: 'page' }),
+          onRemove: () => patchLayout({ sheet_name: null, style: 'plain' }),
+        });
+      }
+    }
     return out;
-  }, [spec, sources, activeSources, preview, fieldByKey, allFields]);
+  }, [spec, sources, activeSources, preview, fieldByKey, instanceField, allFields, outputs, outputLabel]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const removeBand = (tier: number, index: number) => {
+    const layout = layoutOf(spec);
+    const tiers = layout.header_tiers
+      .map((t, ti) => (ti === tier ? t.filter((_, i) => i !== index) : t))
+      .filter((t) => t.length > 0);
+    patchLayout({ header_tiers: tiers });
+  };
+
+  const saveBand = (tier: number, band: HeaderBand, editing?: { tier: number; index: number }) => {
+    const layout = layoutOf(spec);
+    let tiers = layout.header_tiers.map((t) => [...t]);
+    if (editing) tiers[editing.tier] = tiers[editing.tier].filter((_, i) => i !== editing.index);
+    while (tiers.length <= tier) tiers.push([]);
+    tiers[tier] = [...tiers[tier], band];
+    tiers = tiers.filter((t) => t.length > 0);
+    patchLayout({ header_tiers: tiers });
+  };
 
   // ── Render ─────────────────────────────────────────────────────
   if (sourcesError) {
@@ -464,6 +734,8 @@ export default function ExportBuilder() {
   }
 
   const grouped = spec.group_by.length > 0;
+  const layout = spec.layout;
+  const perTab = !!layout?.blocks?.sheet_per_group;
 
   return (
     <div className="space-y-4">
@@ -473,12 +745,12 @@ export default function ExportBuilder() {
           value={reportName}
           onChange={(e) => setReportName(e.target.value)}
           placeholder="Name this report"
-          className="min-h-[44px] flex-1 rounded-lg border border-gray-300 px-3 text-sm font-medium text-gray-900 sm:max-w-xs"
+          className="min-h-[44px] min-w-0 flex-1 rounded-lg border border-gray-300 px-3 text-sm font-medium text-gray-900 sm:max-w-xs"
         />
         <select
           value={loadedConfigId ?? ''}
           onChange={(e) => (e.target.value ? loadConfig(Number(e.target.value)) : null)}
-          className="min-h-[44px] rounded-lg border border-gray-300 px-3 text-sm text-gray-800"
+          className="min-h-[44px] min-w-0 max-w-full rounded-lg border border-gray-300 px-3 text-sm text-gray-800"
           aria-label="Open a saved report"
         >
           <option value="">Open a saved report…</option>
@@ -488,15 +760,36 @@ export default function ExportBuilder() {
             </option>
           ))}
         </select>
-        <div className="ml-auto flex flex-wrap gap-2">
+        {(templates || []).length > 0 && (
           <button
             type="button"
-            disabled={!ready || !reportName.trim() || saveMutation.isPending}
-            onClick={() => saveMutation.mutate()}
-            className="min-h-[44px] rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-50"
+            onClick={() => setDialog({ kind: 'templates' })}
+            className="min-h-[44px] rounded-lg border border-gray-300 px-3 text-sm font-medium text-gray-800 hover:bg-gray-50"
           >
-            {saveMutation.isPending ? 'Saving…' : loadedConfigId ? 'Save changes' : 'Save report'}
+            Start from a template…
           </button>
+        )}
+        <div className="ml-auto flex flex-wrap gap-2">
+          {canDelete && loadedConfigId && (
+            <button
+              type="button"
+              disabled={deleteMutation.isPending}
+              onClick={confirmDelete}
+              className="min-h-[44px] rounded-lg px-3 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+            >
+              Delete
+            </button>
+          )}
+          {canSave && (
+            <button
+              type="button"
+              disabled={!ready || !reportName.trim() || saveMutation.isPending}
+              onClick={() => saveMutation.mutate()}
+              className="min-h-[44px] rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-50"
+            >
+              {saveMutation.isPending ? 'Saving…' : loadedConfigId ? 'Save changes' : 'Save report'}
+            </button>
+          )}
           <button
             type="button"
             disabled={!ready || downloading}
@@ -514,7 +807,23 @@ export default function ExportBuilder() {
             CSV
           </button>
         </div>
+        {layout && (
+          // CSV cannot hold merged headings or tabs. Say what happens to them
+          // rather than letting the file quietly look different.
+          <p className={`w-full text-xs ${perTab ? 'rounded-lg bg-amber-50 px-3 py-2 text-amber-900' : 'text-gray-600'}`}>
+            {perTab
+              ? 'A CSV file has no tabs, so the CSV puts every tab in one file, one after another. Use Excel to get a tab each.'
+              : 'In the CSV, lines across the top come first and a heading over columns is added to each column’s name.'}
+          </p>
+        )}
       </div>
+
+      {fromTemplate && (
+        <p className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+          Started from the “{fromTemplate}” template. Change anything you like;
+          {canSave ? ' saving makes it your own report and the template stays as it was.' : ' download it as it is or adjust it first.'}
+        </p>
+      )}
 
       {/* min-w-0 is load-bearing. A grid item defaults to min-width:auto, so the
           wide preview table forces the whole column to its own width and drags
@@ -614,6 +923,15 @@ export default function ExportBuilder() {
                   />
                 </>
               )}
+              {sourceOptions.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setDialog({ kind: 'options' })}
+                  className="min-h-[44px] rounded-lg border border-gray-300 px-3 text-sm font-medium text-gray-800 hover:bg-gray-50"
+                >
+                  Which rows…
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setDialog({ kind: 'group' })}
@@ -634,6 +952,20 @@ export default function ExportBuilder() {
                   onPick={(k) => patch({ columns: [...spec.columns, k] })}
                 />
               )}
+              <button
+                type="button"
+                onClick={() => setDialog({ kind: 'blocks' })}
+                className="min-h-[44px] rounded-lg border border-gray-300 px-3 text-sm font-medium text-gray-800 hover:bg-gray-50"
+              >
+                {layout?.blocks ? 'Change blocks' : 'Blocks…'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setDialog({ kind: 'page' })}
+                className="min-h-[44px] rounded-lg border border-gray-300 px-3 text-sm font-medium text-gray-800 hover:bg-gray-50"
+              >
+                Page setup…
+              </button>
             </div>
           )}
 
@@ -644,13 +976,20 @@ export default function ExportBuilder() {
             returned={preview?.returned ?? 0}
             isLoading={previewLoading}
             isError={previewError}
-            errorMessage={previewErrObj instanceof Error ? previewErrObj.message : undefined}
+            errorMessage={previewErrObj ? errorText(previewErrObj, '') || undefined : undefined}
             onRetry={() => refetchPreview()}
             actionsFor={actionsFor}
             markersFor={markersFor}
+            layout={layout}
+            headings={preview?.headings}
+            sheetNames={preview?.sheet_names}
+            onBandClick={(tier, index) => {
+              const b = layout?.header_tiers[tier]?.[index];
+              if (b) setDialog({ kind: 'band', from: b.from, to: b.to, label: b.label, editing: { tier, index } });
+            }}
             emptyHint={
               activeSources.length === 0
-                ? 'Choose what you want to report on above and the data appears here immediately.'
+                ? 'Choose what you want to report on above, or start from a template, and the data appears here immediately.'
                 : undefined
             }
           />
@@ -668,7 +1007,7 @@ export default function ExportBuilder() {
           onClose={() => setDialog(null)}
           onSave={(f) => {
             patch({
-              filters: [...spec.filters.filter((x) => x.column !== f.column), f],
+              filters: [...spec.filters.filter((x) => fieldOf(x.column) !== fieldOf(f.column)), f],
             });
             setDialog(null);
           }}
@@ -726,6 +1065,66 @@ export default function ExportBuilder() {
           }}
         />
       )}
+      {dialog?.kind === 'band' && (
+        <HeaderBandDialog
+          columns={outputs}
+          tiers={layout?.header_tiers || []}
+          initial={{ from: dialog.from, to: dialog.to, label: dialog.label, tier: dialog.editing?.tier }}
+          editing={dialog.editing}
+          onClose={() => setDialog(null)}
+          onRemove={dialog.editing ? () => { removeBand(dialog.editing!.tier, dialog.editing!.index); setDialog(null); } : undefined}
+          onSave={(tier, band) => {
+            saveBand(tier, band, dialog.editing);
+            setDialog(null);
+          }}
+        />
+      )}
+      {dialog?.kind === 'blocks' && (
+        <BlockDialog
+          columns={outputs}
+          existing={layout?.blocks}
+          sortedBy={spec.sorts[0] ? fieldOf(spec.sorts[0].column) : null}
+          onClose={() => setDialog(null)}
+          onSave={(blocks: BlockSpec | null, orderFirst) => {
+            const next: Partial<ExportSpec> = { layout: { ...layoutOf(spec), blocks } };
+            if (blocks && orderFirst) {
+              const field = fieldOf(blocks.by);
+              next.sorts = [{ column: field, direction: 'asc' }, ...spec.sorts.filter((s) => fieldOf(s.column) !== field)];
+            }
+            patch(next);
+            setDialog(null);
+          }}
+        />
+      )}
+      {dialog?.kind === 'page' && (
+        <PageSetupDialog
+          layout={layoutOf(spec)}
+          columnCount={outputs.length}
+          onClose={() => setDialog(null)}
+          onSave={(p) => {
+            patchLayout(p);
+            setDialog(null);
+          }}
+        />
+      )}
+      {dialog?.kind === 'templates' && (
+        <TemplatePickerDialog
+          templates={templates || []}
+          onClose={() => setDialog(null)}
+          onPick={openTemplate}
+        />
+      )}
+      {dialog?.kind === 'options' && (
+        <DataOptionsDialog
+          options={sourceOptions}
+          values={spec.source_options || {}}
+          onClose={() => setDialog(null)}
+          onSave={(v) => {
+            patch({ source_options: v });
+            setDialog(null);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -752,7 +1151,7 @@ function AddColumnMenu({
         Add a column…
       </button>
       {open && (
-        <div className="absolute right-0 z-40 mt-1 w-72 rounded-lg border border-gray-200 bg-white p-2 shadow-xl">
+        <div className="absolute left-0 z-40 mt-1 w-72 max-w-[calc(100vw-2rem)] rounded-lg border border-gray-200 bg-white p-2 shadow-xl sm:left-auto sm:right-0">
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}

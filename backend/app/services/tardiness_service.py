@@ -23,11 +23,14 @@ class TardinessService:
         resolution_type: Optional[str] = None,
         skip: int = 0,
         limit: int = 50,
+        employee_ids=None,
     ) -> Tuple[List[TardinessRecord], int]:
         base = select(TardinessRecord).where(TardinessRecord.tenant_id == tenant_id)
 
         if employee_id:
             base = base.where(TardinessRecord.employee_id == employee_id)
+        if employee_ids is not None:
+            base = base.where(TardinessRecord.employee_id.in_(list(employee_ids)))
         if resolution_type:
             base = base.where(TardinessRecord.resolution_type == resolution_type)
 
@@ -52,6 +55,21 @@ class TardinessService:
         return result.scalar_one_or_none()
 
     @staticmethod
+    async def default_deduction(
+        db: AsyncSession, tenant_id: UUID, employee_id: int, minutes: int, on_date,
+    ) -> Optional[float]:
+        """Minutes late x the employee's per-minute rate, derived exactly as
+        payroll derives its hourly rate (monthly / working days / shift hours,
+        unless the grade sets daily or hourly rates). None when the employee
+        has no salary on that date, so the caller can say so."""
+        from app.services.payroll_service import PayrollService
+
+        rates = await PayrollService.employee_rates(db, tenant_id, employee_id, on_date)
+        if rates is None:
+            return None
+        return round(rates["hourly"] / 60.0 * (minutes or 0), 2)
+
+    @staticmethod
     async def resolve_tardiness(
         db: AsyncSession,
         tenant_id: UUID,
@@ -67,13 +85,34 @@ class TardinessService:
         if not record:
             return None
 
+        from sqlalchemy import delete
+
+        # Re-resolving replaces the previous outcome. Before, switching from a
+        # leave deduction to anything else (or re-saving one) left the old
+        # leave debit behind, so the employee lost credits twice.
+        await db.execute(
+            delete(LeaveCreditAdjustment).where(
+                LeaveCreditAdjustment.tenant_id == tenant_id,
+                LeaveCreditAdjustment.source_type == "tardiness_record",
+                LeaveCreditAdjustment.source_id == record.id,
+            )
+        )
+        record.deduction_amount = None
+        record.leave_credits_deducted = None
+
         record.resolution_type = resolution_type
         record.recorded_by = resolved_by
         if notes:
             record.notes = notes
 
-        if resolution_type == "salary_deduction" and deduction_amount:
-            record.deduction_amount = deduction_amount
+        if resolution_type == "salary_deduction":
+            # An amount typed in the resolve dialog wins; otherwise the
+            # employee's rate x minutes late. Payroll deducts whatever is here.
+            if deduction_amount is None:
+                deduction_amount = await TardinessService.default_deduction(
+                    db, tenant_id, record.employee_id, record.tardiness_minutes, record.date
+                )
+            record.deduction_amount = round(deduction_amount, 2) if deduction_amount is not None else None
 
         elif resolution_type == "leave_deduction":
             # Convert tardiness to leave credit deduction

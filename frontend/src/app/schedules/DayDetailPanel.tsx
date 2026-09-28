@@ -52,7 +52,7 @@ export default function DayDetailPanel({
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
       <div className="absolute inset-0 bg-black/30" onClick={onClose} />
-      <div className="relative w-full max-w-md bg-white shadow-2xl flex flex-col animate-slide-in-right">
+      <div className="relative w-full max-w-md bg-white shadow-2xl flex flex-col animate-slide-in-right pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pr-[env(safe-area-inset-right)]">
         {/* Header */}
         <div className="px-6 py-4 border-b flex items-center justify-between">
           <div>

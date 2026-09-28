@@ -299,7 +299,7 @@ export default function LinearGridView({
         // resolves to `touch-action: pan-x pan-y`, which EXCLUDES pinch-zoom,
         // so the one surface in the product carrying 8-11px text was also the
         // one surface a user could not magnify.
-        className="overflow-auto overscroll-none rounded-xl touch-pan-x touch-pan-y touch-pinch-zoom h-[70vh] sm:h-auto sm:max-h-[calc(100vh-320px)]"
+        className="overflow-auto overscroll-none rounded-xl touch-pan-x touch-pan-y touch-pinch-zoom h-[calc(var(--app-vh)*70)] sm:h-auto sm:max-h-[calc(var(--app-vh)*100-320px)]"
       >
         {/* border-separate, NOT border-collapse. position:sticky on a th/td is
             ignored by WebKit when the table collapses its borders, so on iOS the

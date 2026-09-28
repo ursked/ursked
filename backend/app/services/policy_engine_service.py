@@ -39,6 +39,9 @@ CONDITION_FIELDS = frozenset({
     "schedule_format", "overtime_minutes", "tardiness_minutes", "undertime_minutes",
     "is_holiday", "is_special", "day_of_week", "employee_type", "shift_hours",
     "hours_worked", "status",
+    # Worked with no published work shift that day (rostered rest day or
+    # nothing rostered). Lets a tenant attach a rest-day premium or review.
+    "is_rest_day",
     # Stateful aggregates (computed at evaluation from the employee's history).
     "late_count_month", "late_count_week", "absent_count_month",
 })
@@ -132,6 +135,53 @@ def compute_holiday_minutes(
         current_date += timedelta(days=1)
 
     return total_holiday_mins
+
+
+def _interval_holiday_minutes(context: Dict[str, Any]) -> Optional[int]:
+    """Holiday minutes from the day's worked intervals (paired punches or the
+    entered times), net of the unpaid break. None when the caller did not
+    supply intervals, so the time-of-day fallback is used."""
+    intervals = context.get("worked_intervals")
+    if intervals is None:
+        return None
+    from app.services.payroll_compute import minutes_on_dates
+
+    raw = sum(minutes_on_dates(intervals, context.get("holiday_dates") or set()).values())
+    return int(round(raw * (context.get("paid_ratio") or 1.0)))
+
+
+def _interval_night_minutes(context: Dict[str, Any], start_hour: int, end_hour: int) -> Optional[int]:
+    intervals = context.get("worked_intervals")
+    if intervals is None:
+        return None
+    from app.services.payroll_compute import night_minutes_in
+
+    raw = night_minutes_in(intervals, time(start_hour % 24, 0), time(end_hour % 24, 0))
+    return int(round(raw * (context.get("paid_ratio") or 1.0)))
+
+
+async def _existing_log(db: AsyncSession, attendance: AttendanceRecord, log_type: str) -> bool:
+    """A log of this kind survived the purge because a finalized payroll run
+    paid it. Creating another would pay the same hours twice (and break the
+    one-log-per-kind key)."""
+    return (await db.execute(
+        select(OvertimeLog.id).where(
+            OvertimeLog.attendance_record_id == attendance.id,
+            OvertimeLog.log_type == log_type,
+        ).limit(1)
+    )).first() is not None
+
+
+async def _conversion_leave_type(db: AsyncSession, category) -> Optional[str]:
+    """The leave type code a category converts into. Leave balances count
+    ot_conversion credits per leave type; an untyped credit is added to every
+    type, so one converted day showed as a day of every kind of leave."""
+    if category is None or not getattr(category, "leave_credit_type_id", None):
+        return None
+    from app.models.leave import LeaveType
+
+    lt = await db.get(LeaveType, category.leave_credit_type_id)
+    return lt.code if lt else None
 
 
 class PolicyEngineService:
@@ -625,6 +675,8 @@ class PolicyEngineService:
         For holiday OT rules, only counts OT minutes proportional to holiday time."""
         if attendance.overtime_minutes <= 0:
             return None
+        if await _existing_log(db, attendance, "overtime"):
+            return None
 
         ot_minutes = attendance.overtime_minutes
 
@@ -634,8 +686,16 @@ class PolicyEngineService:
             actual_start = context.get("actual_start_time")
             actual_end = context.get("actual_end_time")
             attendance_date = context.get("attendance_date")
+            intervals = context.get("worked_intervals")
 
-            if holiday_dates and actual_start and actual_end and attendance_date:
+            if holiday_dates and intervals:
+                from app.services.payroll_compute import interval_minutes, minutes_on_dates
+
+                total_mins = interval_minutes(intervals)
+                holiday_mins = sum(minutes_on_dates(intervals, holiday_dates).values())
+                if total_mins > 0 and holiday_mins < total_mins:
+                    ot_minutes = max(1, int(round(attendance.overtime_minutes * holiday_mins / total_mins)))
+            elif holiday_dates and actual_start and actual_end and attendance_date:
                 # Calculate total shift minutes
                 start_dt = datetime.combine(attendance_date, actual_start)
                 end_dt = datetime.combine(attendance_date, actual_end)
@@ -690,6 +750,17 @@ class PolicyEngineService:
             return None
 
         leave_credits_deducted = None
+        deduction_amount = None
+        if resolution_type == "salary_deduction":
+            # The employee's own per-minute rate x minutes late, derived the
+            # way payroll derives it. Nothing set it before, so every
+            # "salary deduction" deducted 0.
+            from app.services.tardiness_service import TardinessService
+
+            deduction_amount = await TardinessService.default_deduction(
+                db, attendance.tenant_id, attendance.employee_id,
+                attendance.tardiness_minutes, attendance.date,
+            )
         if resolution_type == "leave_deduction" and round_to_hours:
             # Round up tardiness to nearest N hours, convert to day credits
             hours_late = math.ceil(attendance.tardiness_minutes / (round_to_hours * 60)) * round_to_hours
@@ -702,6 +773,7 @@ class PolicyEngineService:
             date=attendance.date,
             tardiness_minutes=attendance.tardiness_minutes,
             resolution_type=resolution_type,
+            deduction_amount=deduction_amount,
             leave_credits_deducted=leave_credits_deducted,
             policy_rule_id=rule.id,
         )
@@ -736,11 +808,15 @@ class PolicyEngineService:
         actual_end = context.get("actual_end_time")
         if not actual_start or not actual_end:
             return None
+        if await _existing_log(db, attendance, "night_differential"):
+            return None
 
         start_hour = int(action.get("start_hour", 22))
         end_hour = int(action.get("end_hour", 6))
 
-        night_mins = compute_night_minutes(actual_start, actual_end, start_hour, end_hour)
+        night_mins = _interval_night_minutes(context, start_hour, end_hour)
+        if night_mins is None:
+            night_mins = compute_night_minutes(actual_start, actual_end, start_hour, end_hour)
         if night_mins <= 0:
             return None
 
@@ -780,6 +856,7 @@ class PolicyEngineService:
                     tenant_id=attendance.tenant_id,
                     employee_id=attendance.employee_id,
                     adjustment_type="ot_conversion",
+                    leave_type=await _conversion_leave_type(db, category),
                     credits=credits,
                     source_id=nd_log.id,
                     source_type="overtime_log",
@@ -806,7 +883,12 @@ class PolicyEngineService:
         holiday_dates = context.get("holiday_dates", set())
         attendance_date = context.get("attendance_date", attendance.date)
 
-        if actual_start and actual_end and holiday_dates:
+        if await _existing_log(db, attendance, "holiday_shift"):
+            return None
+        interval_mins = _interval_holiday_minutes(context) if holiday_dates else None
+        if interval_mins is not None:
+            worked_mins = interval_mins
+        elif actual_start and actual_end and holiday_dates:
             # Day-boundary-aware: only count minutes on holiday dates
             worked_mins = compute_holiday_minutes(
                 actual_start, actual_end, attendance_date, holiday_dates
@@ -859,6 +941,7 @@ class PolicyEngineService:
                     tenant_id=attendance.tenant_id,
                     employee_id=attendance.employee_id,
                     adjustment_type="ot_conversion",
+                    leave_type=await _conversion_leave_type(db, category),
                     credits=credits,
                     source_id=hp_log.id,
                     source_type="overtime_log",

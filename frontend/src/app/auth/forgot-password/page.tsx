@@ -26,7 +26,7 @@ export default function ForgotPasswordPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-white to-blue-50 px-4">
+    <div className="min-h-app flex items-center justify-center bg-gradient-to-br from-purple-50 via-white to-purple-50 px-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <h1 className="text-2xl font-bold text-gray-900">Forgot your password?</h1>
@@ -35,8 +35,8 @@ export default function ForgotPasswordPage() {
         <div className="bg-white rounded-xl shadow-lg p-8">
           {sent ? (
             <div className="text-center py-4">
-              <div className="inline-flex items-center justify-center w-12 h-12 bg-blue-100 rounded-full mb-4">
-                <svg className="w-6 h-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <div className="inline-flex items-center justify-center w-12 h-12 bg-purple-100 rounded-full mb-4">
+                <svg className="w-6 h-6 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                 </svg>
               </div>
@@ -47,7 +47,7 @@ export default function ForgotPasswordPage() {
               </p>
               <Link
                 href="/auth/login"
-                className="inline-flex items-center gap-2 px-6 py-2.5 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+                className="inline-flex items-center gap-2 px-6 py-2.5 text-sm font-medium text-white bg-purple-600 rounded-lg hover:bg-purple-700 transition-colors"
               >
                 Back to Sign In
               </Link>
@@ -72,7 +72,7 @@ export default function ForgotPasswordPage() {
                       onChange={(e) => setEmail(e.target.value)}
                       required
                       autoFocus
-                      className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
+                      className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition-all"
                       placeholder="you@example.com"
                     />
                   </div>
@@ -81,7 +81,7 @@ export default function ForgotPasswordPage() {
                 <button
                   type="submit"
                   disabled={submitting || !email}
-                  className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  className="w-full bg-purple-600 text-white py-3 rounded-lg font-medium hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
                   {submitting ? (
                     <>
@@ -102,7 +102,7 @@ export default function ForgotPasswordPage() {
 
         <p className="text-center mt-6 text-gray-600 text-sm">
           Remembered it?{' '}
-          <Link href="/auth/login" className="text-blue-600 hover:text-blue-700 font-medium">
+          <Link href="/auth/login" className="text-purple-600 hover:text-purple-700 font-medium">
             Sign in
           </Link>
         </p>

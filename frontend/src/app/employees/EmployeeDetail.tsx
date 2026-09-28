@@ -57,7 +57,7 @@ export default function EmployeeDetail({ employee, onClose, onEdit, canEdit }: E
       <div className="fixed inset-0 bg-black/50" onClick={onClose} />
       <div className="fixed inset-y-0 right-0 flex max-w-full pl-10">
         <div className="w-screen max-w-md">
-          <div className="flex flex-col h-full bg-white shadow-xl">
+          <div className="flex flex-col h-full bg-white shadow-xl pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pr-[env(safe-area-inset-right)]">
             {/* Header */}
             <div className="px-6 py-5 border-b border-gray-100">
               <div className="flex items-center justify-between">

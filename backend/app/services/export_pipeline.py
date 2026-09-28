@@ -18,18 +18,47 @@ to the user in plain English:
     5. group       group-by + aggregates, which REPLACES the row shape
     6. sort        one or more keys
     7. limit       top N
-    8. project     choose, order, rename and format the output columns
+    8. project     choose, order and rename the output columns (raw values)
+    9. render      lay the rows out on a page: display formatting for preview
+                   and CSV, typed cells and number formats for Excel, and the
+                   optional layout (headings, header bands, blocks, tabs)
 
 Aggregation deliberately sits after the formula stage: "total overtime per
 department" is only expressible if a computed department column already exists.
-Sorting sits after aggregation so you can sort by a total.
+Sorting sits after aggregation so you can sort by a total. Rendering never adds,
+removes or reorders a data row: grouping changes the rows, the layout changes
+the page, which is why the two can be combined.
+
+Values stay RAW until stage 9. They used to be stringified in stage 8, so a
+start time reached the workbook as the text '14:00' (or '2:00 PM') and nobody
+could sort or subtract it. Now preview and CSV format at the edge, and the
+workbook gets a real date/time/number with a matching Excel number format.
+
+Column identity
+---------------
+A report can show the same field more than once (the work schedule shows the
+shift date as both FROM and TO), so an output column is an INSTANCE of a field:
+
+    instance_id := field_key | field_key "::" integer >= 2
+
+The first instance's id is the field key itself, so every config saved before
+instances existed is already valid. What keys off what:
+
+    instance id   columns, column_aliases, column_formats,
+                  layout.header_tiers[].from/to, layout.blocks.by
+    field key     filters, sorts, group_by, aggregations, formulas
+
+Anything that reads a row applies `field_of()` first, because rows are keyed by
+field, never by instance.
 """
 
 from __future__ import annotations
 
 import io
-from datetime import date, datetime, timedelta
-from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
+import re
+from dataclasses import dataclass, field
+from datetime import date, datetime, time, timedelta
+from typing import Any, Callable, Dict, Iterable, List, NamedTuple, Optional, Tuple
 
 # ── Date windows ─────────────────────────────────────────────────────
 #
@@ -111,6 +140,37 @@ def _end_of_month(d: date) -> date:
     if d.month == 12:
         return d.replace(day=31)
     return d.replace(month=d.month + 1, day=1) - timedelta(days=1)
+
+
+# ── Column identity ──────────────────────────────────────────────────
+
+INSTANCE_SEP = "::"
+
+
+def field_of(instance_id: str) -> str:
+    """The field an output column shows: 'date::2' -> 'date', 'date' -> 'date'.
+
+    Splits only on the LAST '::' and only when the right side is an integer of
+    at least 2, so a field whose own name happens to contain '::' is left alone.
+    """
+    if not isinstance(instance_id, str) or INSTANCE_SEP not in instance_id:
+        return instance_id
+    base, _sep, tail = instance_id.rpartition(INSTANCE_SEP)
+    if base and tail.isdigit() and int(tail) >= 2:
+        return base
+    return instance_id
+
+
+def new_instance_id(field_key: str, existing: Iterable[str]) -> str:
+    """The next unused instance id for `field_key`: 'date' -> 'date::2'."""
+    taken = set(existing)
+    base = field_of(field_key)
+    if base not in taken:
+        return base
+    n = 2
+    while f"{base}{INSTANCE_SEP}{n}" in taken:
+        n += 1
+    return f"{base}{INSTANCE_SEP}{n}"
 
 
 # ── Filters ──────────────────────────────────────────────────────────
@@ -223,7 +283,7 @@ def apply_filters(
         return rows
     out = rows
     for f in filters:
-        col = f.get("column", "")
+        col = field_of(f.get("column", ""))
         op = f.get("operator", "eq")
         val = f.get("value")
         out = [r for r in out if match_filter(r.get(col, ""), op, val)]
@@ -250,6 +310,10 @@ def aggregate_label(func: str, column_label: str) -> str:
     return f"{AGGREGATE_FUNCTIONS.get(func, func.title())} {column_label}"
 
 
+def aggregate_output_key(agg: Dict[str, Any]) -> str:
+    return agg.get("output_key") or agg.get("label") or agg.get("column")
+
+
 def apply_grouping(
     rows: List[Dict[str, Any]],
     group_by: List[str],
@@ -265,6 +329,7 @@ def apply_grouping(
     if not group_by:
         return rows
 
+    group_by = [field_of(g) for g in group_by]
     buckets: Dict[Tuple, List[Dict[str, Any]]] = {}
     order: List[Tuple] = []
     for r in rows:
@@ -279,15 +344,14 @@ def apply_grouping(
         members = buckets[key]
         row: Dict[str, Any] = {g: key[i] for i, g in enumerate(group_by)}
         for agg in aggregations or []:
-            out_key = agg.get("output_key") or agg.get("label") or agg.get("column")
-            row[out_key] = _compute_aggregate(members, agg)
+            row[aggregate_output_key(agg)] = _compute_aggregate(members, agg)
         out.append(row)
     return out
 
 
 def _compute_aggregate(members: List[Dict[str, Any]], agg: Dict[str, Any]) -> Any:
     func = agg.get("func", "sum")
-    col = agg.get("column", "")
+    col = field_of(agg.get("column", ""))
 
     if func == "count":
         return len(members)
@@ -351,7 +415,7 @@ def apply_sort(rows: List[Dict[str, Any]], sorts: List[Dict[str, Any]]) -> List[
         return rows
     out = list(rows)
     for s in reversed(sorts):
-        col = s.get("column")
+        col = field_of(s.get("column") or "")
         if not col:
             continue
         desc = str(s.get("direction", "asc")).lower() == "desc"
@@ -372,6 +436,20 @@ DATE_PATTERNS = {
 }
 
 TIME_PATTERNS = {"24h": "%H:%M", "12h": "%I:%M %p"}
+
+# The same choices, as Excel number formats, so a recipient sees in the cell
+# exactly what the preview showed while the value underneath stays a real date.
+EXCEL_DATE_FORMATS = {
+    "iso": "yyyy-mm-dd",
+    "dmy": "dd/mm/yyyy",
+    "mdy": "mm/dd/yyyy",
+    "long": "dd mmmm yyyy",
+    "month_year": "mmmm yyyy",
+    "day_month": "dd mmm",
+    "weekday": "ddd dd mmm",
+}
+EXCEL_TIME_FORMATS = {"24h": "hh:mm", "12h": "h:mm AM/PM"}
+EXCEL_DATETIME_FORMAT = "yyyy-mm-dd hh:mm"
 
 
 def format_value(value: Any, spec: Optional[Dict[str, Any]]) -> Any:
@@ -426,6 +504,10 @@ def format_value(value: Any, spec: Optional[Dict[str, Any]]) -> Any:
 
 
 def _parse_date(value: Any) -> Optional[date]:
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
     s = str(value).strip()
     for fmt in ("%Y-%m-%d", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S"):
         try:
@@ -438,7 +520,21 @@ def _parse_date(value: Any) -> Optional[date]:
         return None
 
 
+def _parse_datetime(value: Any) -> Optional[datetime]:
+    if isinstance(value, datetime):
+        return value.replace(tzinfo=None)
+    s = str(value).strip()
+    try:
+        # Excel has no time zones; the wall-clock value as stored is what the
+        # CSV and the preview show, so that is what the cell holds.
+        return datetime.fromisoformat(s).replace(tzinfo=None)
+    except ValueError:
+        return None
+
+
 def _parse_time(value: Any) -> Optional[datetime]:
+    if isinstance(value, time):
+        return datetime(1900, 1, 1, value.hour, value.minute, value.second)
     s = str(value).strip()
     for fmt in ("%H:%M:%S", "%H:%M"):
         try:
@@ -451,6 +547,39 @@ def _parse_time(value: Any) -> Optional[datetime]:
 # ── Output shaping ───────────────────────────────────────────────────
 
 
+class OutputColumn(NamedTuple):
+    """One column of the output, in order.
+
+    `key` is the instance id (see "Column identity"), `type` the source column
+    type (string, number, date, time, datetime; None when unknown, e.g. a
+    calculated column) and `format` the user's display format, if any. It is a
+    tuple so code that only wants (key, header) can still unpack the first two.
+    """
+
+    key: str
+    header: str
+    type: Optional[str] = None
+    format: Optional[Dict[str, Any]] = None
+
+
+def output_keys_for(spec: Dict[str, Any]) -> List[str]:
+    """The instance ids a spec will output, in order, without running it.
+
+    Used to validate a layout at save time against the columns it names.
+    """
+    group_by = [g for g in (spec.get("group_by") or []) if g]
+    if group_by:
+        keys = list(group_by)
+        for agg in spec.get("aggregations") or []:
+            a = agg if isinstance(agg, dict) else agg.model_dump()
+            keys.append(aggregate_output_key(a))
+        return keys
+    keys = list(spec.get("columns") or [])
+    for cc in spec.get("custom_columns") or []:
+        keys.append(cc["name"] if isinstance(cc, dict) else cc.name)
+    return keys
+
+
 def build_output_columns(
     *,
     columns: List[str],
@@ -459,49 +588,507 @@ def build_output_columns(
     aggregations: Optional[List[Dict[str, Any]]],
     label_for: Callable[[str], str],
     aliases: Optional[Dict[str, str]] = None,
-) -> List[Tuple[str, str]]:
-    """Return the ordered (field_key, header) pairs for the output.
+    type_for: Optional[Callable[[str], Optional[str]]] = None,
+    formats: Optional[Dict[str, Dict[str, Any]]] = None,
+) -> List[OutputColumn]:
+    """Return the ordered output columns.
 
     When grouping is on, the selected columns are irrelevant — the shape is
     group-by keys plus aggregates — so the caller does not have to keep the two
     in sync and the UI can say so plainly.
     """
     aliases = aliases or {}
-    pairs: List[Tuple[str, str]] = []
+    formats = formats or {}
+    type_for = type_for or (lambda _k: None)
+    out: List[OutputColumn] = []
+
+    def col(key: str, header: str, typ: Optional[str]) -> OutputColumn:
+        return OutputColumn(key, header, typ, formats.get(key) or None)
 
     if group_by:
         for g in group_by:
-            pairs.append((g, aliases.get(g) or label_for(g)))
+            out.append(col(g, aliases.get(g) or label_for(field_of(g)), type_for(field_of(g))))
         for agg in aggregations or []:
-            key = agg.get("output_key") or agg.get("label") or agg.get("column")
+            key = aggregate_output_key(agg)
+            func = agg.get("func", "sum")
             header = aliases.get(key) or agg.get("label") or aggregate_label(
-                agg.get("func", "sum"), label_for(agg.get("column", ""))
+                func, label_for(field_of(agg.get("column", "")))
             )
-            pairs.append((key, header))
-        return pairs
+            typ = type_for(field_of(agg.get("column", ""))) if func in ("min", "max", "first") else "number"
+            out.append(col(key, header, typ))
+        return out
 
     for c in columns:
-        pairs.append((c, aliases.get(c) or label_for(c)))
+        out.append(col(c, aliases.get(c) or label_for(field_of(c)), type_for(field_of(c))))
     for cc in custom_columns or []:
         name = cc["name"]
-        pairs.append((name, aliases.get(name) or name))
-    return pairs
+        out.append(col(name, aliases.get(name) or name, None))
+    return out
 
 
 def project_rows(
     rows: List[Dict[str, Any]],
-    output_columns: List[Tuple[str, str]],
+    output_columns: List[Tuple],
     formats: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> List[Dict[str, Any]]:
-    """Reduce each row to the output fields, applying per-column formatting."""
-    formats = formats or {}
+    """Reduce each row to the output columns, keyed by instance id. RAW values.
+
+    `formats` is accepted for callers written before the raw/display split and
+    applied if given; the pipeline itself passes none and formats at the edge.
+    """
     out = []
     for r in rows:
         row = {}
-        for key, _header in output_columns:
-            row[key] = format_value(r.get(key, ""), formats.get(key))
+        for c in output_columns:
+            key = c[0]
+            v = r.get(key, r.get(field_of(key), ""))
+            row[key] = format_value(v, formats.get(key)) if formats else v
         out.append(row)
     return out
+
+
+def format_rows(
+    rows: List[Dict[str, Any]], output_columns: List[Tuple]
+) -> List[Dict[str, Any]]:
+    """Display values for the preview and CSV: each column's format applied."""
+    fmts = {c[0]: (c[3] if len(c) > 3 else None) for c in output_columns}
+    out = []
+    for r in rows:
+        out.append({k: format_value(r.get(k, ""), f) for k, f in fmts.items()})
+    return out
+
+
+# ── Excel typing ─────────────────────────────────────────────────────
+
+
+def excel_number_format(col_type: Optional[str], fmt: Optional[Dict[str, Any]]) -> Optional[str]:
+    """The Excel number format matching what the preview shows for a column."""
+    fmt = fmt or {}
+    kind = fmt.get("kind")
+    if kind == "date" or (col_type == "date" and kind in (None, "")):
+        return EXCEL_DATE_FORMATS.get(fmt.get("pattern") or "iso", EXCEL_DATE_FORMATS["iso"])
+    if col_type == "datetime" and kind in (None, ""):
+        return EXCEL_DATETIME_FORMAT
+    if kind == "time" or (col_type == "time" and kind in (None, "")):
+        return EXCEL_TIME_FORMATS.get(fmt.get("pattern") or "24h", EXCEL_TIME_FORMATS["24h"])
+    if kind == "number":
+        decimals = max(0, min(int(fmt.get("decimals") or 0), 10))
+        body = "#,##0" if fmt.get("thousands") else "0"
+        if decimals:
+            body += "." + "0" * decimals
+
+        def lit(s: Any) -> str:
+            s = str(s or "").replace('"', "")
+            return f'"{s}"' if s else ""
+
+        return f"{lit(fmt.get('prefix'))}{body}{lit(fmt.get('suffix'))}"
+    return None
+
+
+def _number(value: Any) -> Optional[Any]:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return value
+    s = str(value)
+    if not _looks_numeric(s):
+        return None
+    n = _as_number(s.replace(",", ""))
+    if n is None:
+        return None
+    return int(n) if float(n).is_integer() and "." not in s else n
+
+
+def typed_cell(
+    value: Any, col_type: Optional[str], fmt: Optional[Dict[str, Any]] = None
+) -> Tuple[Any, Optional[str]]:
+    """(cell value, Excel number format) for one raw value.
+
+    The declared column type decides, not the look of the value: a Personnel #
+    of "00123" is text and keeps its zeros, a start time is a time. Untyped
+    columns (calculated ones) keep the old behaviour of recognising numbers and
+    ISO dates, so their cells do not change. A value that will not parse as its
+    type is written as its display text rather than as an error.
+    """
+    if value is None or value == "":
+        return None, None
+    fmt = fmt or None
+    kind = (fmt or {}).get("kind")
+
+    if kind == "text":
+        return str(format_value(value, fmt)), None
+
+    if kind == "date" or col_type == "date":
+        d = _parse_date(value)
+        if d is not None:
+            return d, excel_number_format("date", fmt)
+    elif col_type == "datetime":
+        dt = _parse_datetime(value)
+        if dt is not None:
+            return dt, excel_number_format("datetime", fmt)
+    elif kind == "time" or col_type == "time":
+        t = _parse_time(value)
+        if t is not None:
+            return t.time(), excel_number_format("time", fmt)
+    elif kind == "number" or col_type == "number":
+        n = _number(value)
+        if n is not None:
+            return n, excel_number_format("number", fmt)
+    elif col_type is None:
+        if isinstance(value, bool):
+            return value, None
+        n = _number(value)
+        if n is not None:
+            return n, None
+        s = str(value)
+        if len(s) >= 8 and s[:4].isdigit():
+            d = _parse_date(s)
+            if d is not None:
+                return d, EXCEL_DATE_FORMATS["iso"]
+        return s, None
+    else:
+        return str(value), None
+
+    # Did not parse as its type: show what the preview shows.
+    return str(format_value(value, fmt)), None
+
+
+# ── Layout ───────────────────────────────────────────────────────────
+#
+# A layout describes the page, never the data. It is optional: a report
+# without one is the flat sheet it always was. The object is:
+#
+#   heading_rows  [{text, span, align, bold}]  lines above the table; `span`
+#                 is how many columns the line is merged across (all if unset)
+#   header_tiers  [[{label, from, to}]]  rows of header bands above the column
+#                 headings; a band groups the columns from..to (instance ids)
+#   blocks        {by, blank_rows_between, repeat_value, sheet_per_group}
+#                 start a new block whenever the `by` column changes value
+#   sheet_name    worksheet name, tokens allowed
+#   style         "plain" (the builder's look) or "banded" (grey headings and
+#                 a border round every cell, like a printed form)
+#   freeze_header keep the headings on screen while scrolling
+#
+# A column not covered by a band in some tier has its heading merged
+# VERTICALLY up through that tier. That is derived, never specified, and is
+# what produces A2:A3 / D2:D3 / K2:K3 in the client's work schedule.
+#
+# Headings and sheet names may use {report_name}, {date_from}, {date_to} and
+# {group}; dates also take a strftime pattern, e.g. {date_from:%b %d}. Tokens
+# resolve from a fixed dict, never eval, and an unknown token stays as typed:
+# a formatting choice must never turn into an error.
+
+LAYOUT_STYLES = ("plain", "banded")
+REPEAT_VALUES = ("every_row", "first_row")
+MAX_SHEETS = 500
+MAX_BLANK_ROWS = 10
+
+_TOKEN_RE = re.compile(r"\{(report_name|date_from|date_to|group)(?::([^{}]*))?\}")
+
+
+def resolve_tokens(text: Optional[str], context: Optional[Dict[str, Any]]) -> str:
+    if not text:
+        return ""
+    ctx = context or {}
+
+    def sub(m: "re.Match[str]") -> str:
+        name, pattern = m.group(1), m.group(2)
+        v = ctx.get(name)
+        if v in (None, ""):
+            return ""
+        if pattern and name in ("date_from", "date_to"):
+            d = _parse_date(v)
+            if d is None:
+                return str(v)
+            try:
+                return d.strftime(pattern)
+            except (ValueError, TypeError):
+                return m.group(0)
+        return str(v)
+
+    return _TOKEN_RE.sub(sub, text)
+
+
+def _layout_dict(layout: Any) -> Optional[Dict[str, Any]]:
+    if layout is None:
+        return None
+    if hasattr(layout, "model_dump"):
+        return layout.model_dump(by_alias=True)
+    return layout
+
+
+def layout_problems(layout: Any, output_keys: List[str], labels: Optional[Dict[str, str]] = None) -> Optional[str]:
+    """A plain-English reason the layout cannot be drawn, or None.
+
+    Checked when a report is saved or run, so a band that names a removed column
+    fails loudly at save time rather than silently vanishing from the file.
+    """
+    layout = _layout_dict(layout)
+    if not layout:
+        return None
+    labels = labels or {}
+    pos = {k: i for i, k in enumerate(output_keys)}
+
+    def name(k: str) -> str:
+        return labels.get(k) or k
+
+    for t, tier in enumerate(layout.get("header_tiers") or []):
+        spans = []
+        for band in tier or []:
+            label = (band.get("label") or "").strip() or "(untitled)"
+            a, b = band.get("from"), band.get("to")
+            if a not in pos or b not in pos:
+                missing = a if a not in pos else b
+                return (
+                    f"The heading “{label}” groups {name(missing)}, which is not a "
+                    "column of this report. Add the column back or change the heading."
+                )
+            if pos[a] > pos[b]:
+                return f"The heading “{label}” starts after it ends. Pick its first column, then its last."
+            for other_label, lo, hi in spans:
+                if pos[a] <= hi and lo <= pos[b]:
+                    return (
+                        f"The headings “{other_label}” and “{label}” cover the same "
+                        "columns. Headings on the same row cannot overlap."
+                    )
+            spans.append((label, pos[a], pos[b]))
+    blocks = layout.get("blocks")
+    if blocks:
+        by = blocks.get("by")
+        if by not in pos:
+            return (
+                f"Blocks are started by {name(by)}, which is not a column of this report. "
+                "Add the column back or choose another one."
+            )
+    return None
+
+
+@dataclass
+class SheetCell:
+    row: int
+    col: int
+    value: Any
+    number_format: Optional[str] = None
+    role: str = "body"  # heading | band | header | body
+    bold: bool = False
+    align: Optional[str] = None
+
+
+@dataclass
+class SheetSpec:
+    """One worksheet, fully decided, with no openpyxl in sight.
+
+    The Excel and CSV writers both draw from this, which is how the CSV can be
+    a faithful flattening of the workbook instead of a separate guess.
+    """
+
+    title: str
+    ncols: int
+    cells: List[SheetCell] = field(default_factory=list)
+    merges: List[Tuple[int, int, int, int]] = field(default_factory=list)
+    freeze: Optional[str] = None
+    widths: Dict[int, float] = field(default_factory=dict)
+    heights: Dict[int, float] = field(default_factory=dict)
+    style: str = "flat"  # flat | plain | banded
+    # For the CSV: ("heading", [text]) | ("header", [labels]) | ("body", [texts]) | ("blank", [])
+    lines: List[Tuple[str, List[str]]] = field(default_factory=list)
+
+
+_SHEET_BAD = set('[]:*?/\\')
+
+
+def safe_sheet_title(name: str, taken: Optional[set] = None, fallback: str = "Export") -> str:
+    """Excel's rules: at most 31 characters, none of []:*?/\\, not blank, no
+    leading or trailing apostrophe, unique in the workbook (case-insensitive)."""
+    s = "".join(c for c in (name or "") if c not in _SHEET_BAD).replace("\n", " ").strip().strip("'").strip()
+    s = s[:31].strip() or fallback
+    if taken is None:
+        return s
+    lower = {t.lower() for t in taken}
+    if s.lower() not in lower:
+        return s
+    n = 2
+    while True:
+        suffix = f" ({n})"
+        cand = s[: 31 - len(suffix)].rstrip() + suffix
+        if cand.lower() not in lower:
+            return cand
+        n += 1
+
+
+def _display_text(value: Any) -> str:
+    return "" if value is None else str(value)
+
+
+def _flat_widths(output_columns: List[OutputColumn], display_rows: List[Dict[str, Any]]) -> Dict[int, float]:
+    widths: Dict[int, float] = {}
+    for ci, c in enumerate(output_columns, start=1):
+        widest = max((len(line) for line in str(c.header).split("\n")), default=0)
+        for r in display_rows[:200]:
+            widest = max(widest, len(str(r.get(c.key, ""))))
+        widths[ci] = min(max(widest + 2, 10), 45)
+    return widths
+
+
+def build_sheet_plan(
+    rows: List[Dict[str, Any]],
+    output_columns: List[Tuple],
+    layout: Any = None,
+    context: Optional[Dict[str, Any]] = None,
+    *,
+    sheet_name: str = "Export",
+) -> List[SheetSpec]:
+    """Decide every cell of the workbook for `rows` (raw, projected).
+
+    Pure: no openpyxl, no database. Returns one SheetSpec per worksheet (more
+    than one only with blocks.sheet_per_group). Never adds, drops or reorders a
+    data row; blocks only insert blank rows between runs of the same value.
+    """
+    cols = [OutputColumn(*c) if not isinstance(c, OutputColumn) else c for c in output_columns]
+    display = format_rows(rows, cols)
+    layout = _layout_dict(layout)
+    ctx = dict(context or {})
+
+    if not layout:
+        return [_flat_plan(rows, display, cols, sheet_name)]
+
+    blocks = layout.get("blocks") or None
+    by = blocks.get("by") if blocks else None
+
+    if blocks and blocks.get("sheet_per_group") and by:
+        groups: Dict[str, List[int]] = {}
+        for i, r in enumerate(rows):
+            groups.setdefault(_display_text(r.get(by)), []).append(i)
+        if len(groups) > MAX_SHEETS:
+            raise ValueError(
+                f"This would make {len(groups):,} tabs, one per value of the block column. "
+                f"A workbook this size is not usable; the limit is {MAX_SHEETS}. "
+                "Filter the report down, or turn off “one tab per block”."
+            )
+        taken: set = set()
+        plans = []
+        for gval, idxs in groups.items():
+            gctx = dict(ctx, group=gval)
+            title_src = layout.get("sheet_name") or "{group}"
+            title = safe_sheet_title(resolve_tokens(title_src, gctx), taken, fallback="Blank")
+            taken.add(title)
+            plans.append(
+                _layout_plan([rows[i] for i in idxs], [display[i] for i in idxs], cols, layout, gctx, title)
+            )
+        if not plans:
+            plans.append(_layout_plan([], [], cols, layout, ctx, safe_sheet_title(
+                resolve_tokens(layout.get("sheet_name"), ctx) or sheet_name)))
+        return plans
+
+    title = safe_sheet_title(resolve_tokens(layout.get("sheet_name"), ctx) or sheet_name)
+    return [_layout_plan(rows, display, cols, layout, ctx, title)]
+
+
+def _body_cells(
+    plan: SheetSpec, r_index: int, raw: Dict[str, Any], disp: Dict[str, Any], cols: List[OutputColumn],
+    blank_keys: Iterable[str] = (),
+) -> None:
+    blank = set(blank_keys)
+    texts = []
+    for ci, c in enumerate(cols, start=1):
+        if c.key in blank:
+            texts.append("")
+            continue
+        v, nf = typed_cell(raw.get(c.key), c.type, c.format)
+        plan.cells.append(SheetCell(r_index, ci, v, nf, "body"))
+        texts.append(_display_text(disp.get(c.key, "")))
+    plan.lines.append(("body", texts))
+
+
+def _flat_plan(rows, display, cols: List[OutputColumn], sheet_name: str) -> SheetSpec:
+    """Exactly the sheet the builder has always produced: one header row,
+    frozen, auto-sized columns."""
+    plan = SheetSpec(title=safe_sheet_title(sheet_name), ncols=len(cols), style="flat")
+    for ci, c in enumerate(cols, start=1):
+        plan.cells.append(SheetCell(1, ci, c.header, None, "header"))
+    plan.lines.append(("header", [c.header for c in cols]))
+    for ri, (raw, disp) in enumerate(zip(rows, display), start=2):
+        _body_cells(plan, ri, raw, disp, cols)
+    plan.freeze = "A2"
+    plan.widths = _flat_widths(cols, display)
+    return plan
+
+
+def _layout_plan(rows, display, cols: List[OutputColumn], layout: Dict[str, Any], ctx, title: str) -> SheetSpec:
+    ncols = len(cols)
+    style = layout.get("style") if layout.get("style") in LAYOUT_STYLES else "plain"
+    plan = SheetSpec(title=title, ncols=ncols, style=style)
+    pos = {c.key: i + 1 for i, c in enumerate(cols)}
+    r = 1
+
+    # Headings.
+    for h in layout.get("heading_rows") or []:
+        text = resolve_tokens(h.get("text"), ctx)
+        span = h.get("span") or ncols
+        span = max(1, min(int(span), max(ncols, 1)))
+        plan.cells.append(SheetCell(r, 1, text or None, None, "heading",
+                                    bold=bool(h.get("bold", True)), align=h.get("align") or "left"))
+        if span > 1:
+            plan.merges.append((r, 1, r, span))
+        plan.lines.append(("heading", [text]))
+        r += 1
+
+    # Header bands, then the leaf headings.
+    tiers = layout.get("header_tiers") or []
+    first_header_row = r
+    leaf_row = r + len(tiers)
+    deepest: Dict[int, int] = {}
+    band_of: Dict[int, List[str]] = {}
+    for t, tier in enumerate(tiers):
+        row = first_header_row + t
+        for band in tier or []:
+            a, b = pos.get(band.get("from")), pos.get(band.get("to"))
+            if a is None or b is None or a > b:
+                continue  # validated at save; never draw a broken band
+            label = band.get("label") or ""
+            plan.cells.append(SheetCell(row, a, label, None, "band"))
+            if b > a:
+                plan.merges.append((row, a, row, b))
+            if "\n" in label:
+                plan.heights[row] = max(plan.heights.get(row, 0), 14.0 * (label.count("\n") + 1))
+            for ci in range(a, b + 1):
+                deepest[ci] = t
+                band_of.setdefault(ci, []).append(label.replace("\n", " ").strip())
+    for ci, c in enumerate(cols, start=1):
+        top = first_header_row + deepest.get(ci, -1) + 1
+        plan.cells.append(SheetCell(top, ci, c.header, None, "header"))
+        if top < leaf_row:
+            plan.merges.append((top, ci, leaf_row, ci))
+    # CSV has one header line, so a band is folded into each column name.
+    plan.lines.append((
+        "header",
+        [" — ".join(band_of.get(ci, []) + [c.header.replace("\n", " ")]) for ci, c in enumerate(cols, start=1)],
+    ))
+
+    # Body, in blocks.
+    body_first = leaf_row + 1
+    r = body_first
+    blocks = layout.get("blocks") or None
+    by = blocks.get("by") if blocks else None
+    gap = max(0, min(int((blocks or {}).get("blank_rows_between") or 0), MAX_BLANK_ROWS)) if by else 0
+    first_only = bool(blocks and blocks.get("repeat_value") == "first_row")
+    prev: Optional[str] = None
+    for i, (raw, disp) in enumerate(zip(rows, display)):
+        key = _display_text(raw.get(by)) if by else None
+        new_block = bool(by) and (i == 0 or key != prev)
+        if new_block and i > 0:
+            for _ in range(gap):
+                plan.lines.append(("blank", []))
+                r += 1
+        blank = [by] if (by and first_only and not new_block) else []
+        _body_cells(plan, r, raw, disp, cols, blank)
+        prev = key
+        r += 1
+
+    if layout.get("freeze_header", True):
+        plan.freeze = f"A{body_first}"
+    plan.widths = _flat_widths(cols, display)
+    return plan
 
 
 # ── Serialisation ────────────────────────────────────────────────────
@@ -520,80 +1107,124 @@ def csv_safe(value: Any) -> str:
     return s
 
 
-def generate_csv(rows: List[Dict[str, Any]], output_columns: List[Tuple[str, str]]) -> str:
+def generate_csv(
+    rows: List[Dict[str, Any]],
+    output_columns: List[Tuple],
+    layout: Any = None,
+    context: Optional[Dict[str, Any]] = None,
+) -> str:
+    """CSV from the same sheet plan as the workbook.
+
+    A flat report is exactly what it always was. With a layout, the headings
+    become lines of their own, header bands are folded into the column names
+    ("WORK SCHEDULE (Dates) — FROM") and blocks keep their blank lines. Tabs
+    cannot exist in a CSV, so one-tab-per-block puts every tab in the one file,
+    each after a blank line; the builder says so before you download.
+    """
     import csv as _csv
 
     buf = io.StringIO()
     writer = _csv.writer(buf)
-    writer.writerow([h for _k, h in output_columns])
-    for r in rows:
-        writer.writerow([csv_safe(r.get(k, "")) for k, _h in output_columns])
+    plans = build_sheet_plan(rows, output_columns, layout, context)
+    for i, plan in enumerate(plans):
+        if i > 0:
+            writer.writerow([])
+        for kind, cells in plan.lines:
+            if kind == "blank":
+                writer.writerow([])
+            elif kind == "body":
+                writer.writerow([csv_safe(c) for c in cells])
+            else:
+                writer.writerow([csv_safe(c) for c in cells])
     return buf.getvalue()
 
 
 def generate_xlsx(
     rows: List[Dict[str, Any]],
-    output_columns: List[Tuple[str, str]],
+    output_columns: List[Tuple],
     sheet_name: str = "Export",
+    layout: Any = None,
+    context: Optional[Dict[str, Any]] = None,
 ) -> bytes:
     """Write a real workbook: typed cells, a frozen header, sized columns.
 
-    Numbers are written as numbers and dates as dates, so the recipient can
-    sort, sum and pivot without re-typing the whole sheet — which is the main
-    reason people ask for Excel instead of CSV in the first place.
+    Numbers are written as numbers, dates as dates and times as times, each
+    with the number format that matches the preview, so the recipient can sort,
+    sum and pivot without re-typing the sheet — which is the main reason people
+    ask for Excel instead of CSV in the first place.
     """
     from openpyxl import Workbook
-    from openpyxl.styles import Alignment, Font, PatternFill
-    from openpyxl.utils import get_column_letter
 
+    plans = build_sheet_plan(rows, output_columns, layout, context, sheet_name=sheet_name)
     wb = Workbook()
-    ws = wb.active
-    # Excel rejects sheet names over 31 chars or containing []:*?/\
-    safe = "".join(c for c in sheet_name if c not in "[]:*?/\\")[:31] or "Export"
-    ws.title = safe
-
-    header_font = Font(bold=True, color="FFFFFF")
-    header_fill = PatternFill("solid", fgColor="7C3AED")
-    for ci, (_key, header) in enumerate(output_columns, start=1):
-        cell = ws.cell(row=1, column=ci, value=header)
-        cell.font = header_font
-        cell.fill = header_fill
-        cell.alignment = Alignment(vertical="center", wrap_text=True)
-
-    for ri, r in enumerate(rows, start=2):
-        for ci, (key, _header) in enumerate(output_columns, start=1):
-            ws.cell(row=ri, column=ci, value=_xlsx_value(r.get(key, "")))
-
-    ws.freeze_panes = "A2"
-    for ci, (key, header) in enumerate(output_columns, start=1):
-        widest = len(str(header))
-        for r in rows[:200]:
-            widest = max(widest, len(str(r.get(key, ""))))
-        ws.column_dimensions[get_column_letter(ci)].width = min(max(widest + 2, 10), 45)
-
+    for i, plan in enumerate(plans):
+        ws = wb.active if i == 0 else wb.create_sheet()
+        ws.title = plan.title
+        _write_sheet(ws, plan)
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
 
 
-def _xlsx_value(value: Any) -> Any:
-    """Type a cell so Excel treats it as a number or date, not text."""
-    if value is None or value == "":
-        return None
-    if isinstance(value, (int, float)):
-        return value
-    s = str(value)
-    # A leading apostrophe is our CSV-injection guard; Excel does not need it
-    # because openpyxl writes values, not formulas.
-    if s and s[0] in _FORMULA_TRIGGERS and not _looks_numeric(s):
-        return s
-    n = _as_number(s)
-    if n is not None and _looks_numeric(s):
-        return int(n) if float(n).is_integer() and "." not in s else n
-    d = _parse_date(s) if len(s) >= 8 and s[:4].isdigit() else None
-    if d:
-        return d
-    return s
+def _write_sheet(ws, plan: SheetSpec) -> None:
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+    from openpyxl.utils import get_column_letter
+
+    purple_font = Font(bold=True, color="FFFFFF")
+    purple_fill = PatternFill("solid", fgColor="7C3AED")
+    thin = Side(style="thin", color="BFBFBF")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    grey_fill = PatternFill("solid", fgColor="D9D9D9")
+    banded = plan.style == "banded"
+
+    for c in plan.cells:
+        cell = ws.cell(row=c.row, column=c.col)
+        cell.value = c.value
+        if isinstance(c.value, str):
+            # openpyxl reads a string starting with "=" as a formula. Cell text
+            # comes from employee data, so it must always stay text.
+            cell.data_type = "s"
+        if c.number_format:
+            cell.number_format = c.number_format
+        if c.role in ("header", "band"):
+            if banded:
+                cell.font = Font(bold=True, size=9)
+                cell.fill = grey_fill
+                cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            else:
+                cell.font = purple_font
+                cell.fill = purple_fill
+                cell.alignment = Alignment(
+                    horizontal="center" if plan.style != "flat" else None,
+                    vertical="center", wrap_text=True,
+                )
+        elif c.role == "heading":
+            cell.font = Font(bold=c.bold, size=12)
+            cell.alignment = Alignment(horizontal=c.align or "left", vertical="center")
+        elif banded:
+            cell.font = Font(size=9)
+            cell.alignment = Alignment(horizontal="left" if c.col == 1 else "center", vertical="center")
+
+    if banded:
+        header_rows = {c.row for c in plan.cells if c.role in ("header", "band")}
+        body_rows = {c.row for c in plan.cells if c.role == "body"}
+        for row in header_rows:
+            for col in range(1, plan.ncols + 1):
+                cell = ws.cell(row=row, column=col)
+                cell.border = border
+                cell.fill = grey_fill
+        for row in body_rows:
+            for col in range(1, plan.ncols + 1):
+                ws.cell(row=row, column=col).border = border
+
+    for r1, c1, r2, c2 in plan.merges:
+        ws.merge_cells(start_row=r1, start_column=c1, end_row=r2, end_column=c2)
+    if plan.freeze:
+        ws.freeze_panes = plan.freeze
+    for ci, w in plan.widths.items():
+        ws.column_dimensions[get_column_letter(ci)].width = w
+    for row, h in plan.heights.items():
+        ws.row_dimensions[row].height = h
 
 
 def _looks_numeric(s: str) -> bool:

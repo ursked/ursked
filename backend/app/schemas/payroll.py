@@ -246,4 +246,8 @@ class MyPayslipDetail(BaseModel):
     total_deductions: float
     total_contributions: float
     net_pay: float
+    # What was taken from the employee's pay (adds up to total_deductions)
+    # and, separately, what the employer paid on top. [{name, amount, ...}]
+    employee_deductions: List[Dict[str, Any]] = []
+    employer_contributions: List[Dict[str, Any]] = []
     breakdown: Dict[str, Any] = {}

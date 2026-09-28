@@ -100,6 +100,12 @@ import type {
 // Area S: live holiday feed types.
 import type { HolidaySourceConfig, HolidayRegion, HolidaySyncResult } from '@/types';
 
+// Area R: report templates and scheduled-export run history.
+import type { ReportTemplate, ScheduledExportRun } from '@/types';
+
+// Area F: payroll, finance, attendance, time clock.
+import type { ConversionLeaveType, DeductionBracket, SuggestedDeduction } from '@/types';
+
 const CSRF_COOKIE = 'csrf_token';
 const CSRF_HEADER = 'X-CSRF-Token';
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -546,8 +552,18 @@ class ApiClient {
     return response.blob();
   }
 
-  async exportScheduleXlsx(params: Record<string, string>): Promise<Blob> {
-    const query = '?' + new URLSearchParams(params).toString();
+  // employee_ids is repeated (?employee_ids=1&employee_ids=2) because the
+  // backend reads it as a list; a Record cannot carry repeated keys.
+  async exportScheduleXlsx(params: {
+    start_date: string;
+    end_date: string;
+    employee_ids?: number[];
+    include_drafts?: boolean;
+  }): Promise<Blob> {
+    const qs = new URLSearchParams({ start_date: params.start_date, end_date: params.end_date });
+    for (const id of params.employee_ids ?? []) qs.append('employee_ids', String(id));
+    if (params.include_drafts) qs.set('include_drafts', 'true');
+    const query = '?' + qs.toString();
     const response = await fetch(`${this.baseUrl}/api/v1/schedules/export.xlsx${query}`, {
       credentials: 'include',
       headers: this.getHeaders('GET'),
@@ -1745,6 +1761,41 @@ class ApiClient {
 
   async syncHolidays(dryRun: boolean): Promise<HolidaySyncResult> {
     return this.post(`/api/v1/schedules/holidays/sync${dryRun ? '?dry_run=true' : ''}`, {}) as Promise<HolidaySyncResult>;
+  }
+
+  // ── Area P: the home dashboard answers every signed-in user ──
+  async getHomeDashboard(): Promise<import('@/types').HomeDashboard> {
+    return this.get('/api/v1/analytics/dashboard') as Promise<import('@/types').HomeDashboard>;
+  }
+
+  // ── Area R: report templates and scheduled-export run history ─────
+  async getReportTemplates(): Promise<ReportTemplate[]> {
+    return this.get('/api/v1/data-export/templates') as Promise<ReportTemplate[]>;
+  }
+
+  async getScheduledExportRuns(id: number): Promise<ScheduledExportRun[]> {
+    return this.get(`/api/v1/data-export/schedules/${id}/runs`) as Promise<ScheduledExportRun[]>;
+  }
+
+  // ── Area F: payroll, finance, attendance, time clock ────────────────
+  async getPayrollPeriod(periodId: number): Promise<PayrollPeriod> {
+    return this.get(`/api/v1/payroll/periods/${periodId}`) as Promise<PayrollPeriod>;
+  }
+
+  async getDeductionBrackets(deductionTypeId: number): Promise<DeductionBracket[]> {
+    return this.get(`/api/v1/payroll/deduction-types/${deductionTypeId}/brackets`) as Promise<DeductionBracket[]>;
+  }
+
+  async replaceDeductionBrackets(deductionTypeId: number, brackets: DeductionBracket[]): Promise<DeductionBracket[]> {
+    return this.put(`/api/v1/payroll/deduction-types/${deductionTypeId}/brackets`, { brackets }) as Promise<DeductionBracket[]>;
+  }
+
+  async getSuggestedTardinessDeduction(recordId: number): Promise<SuggestedDeduction> {
+    return this.get(`/api/v1/attendance/tardiness/${recordId}/suggested-deduction`) as Promise<SuggestedDeduction>;
+  }
+
+  async getConversionLeaveTypes(): Promise<ConversionLeaveType[]> {
+    return this.get('/api/v1/attendance/overtime/conversion-leave-types') as Promise<ConversionLeaveType[]>;
   }
 }
 

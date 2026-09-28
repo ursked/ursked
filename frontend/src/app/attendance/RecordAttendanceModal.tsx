@@ -1,9 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { api } from '@/lib/api'
-import { User } from '@/types'
+import { UserPicker } from '@/components/ui'
 
 interface RecordAttendanceModalProps {
   onClose: () => void
@@ -18,19 +16,11 @@ interface RecordAttendanceModalProps {
 }
 
 export default function RecordAttendanceModal({ onClose, onSubmit, isPending }: RecordAttendanceModalProps) {
-  const [employeeId, setEmployeeId] = useState<number | ''>('')
+  const [employeeId, setEmployeeId] = useState<number | null>(null)
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
   const [startTime, setStartTime] = useState('')
   const [endTime, setEndTime] = useState('')
   const [notes, setNotes] = useState('')
-
-  const { data: employees } = useQuery<User[]>({
-    queryKey: ['employees-list'],
-    queryFn: async () => {
-      const res = await api.getUsers({ per_page: '100' })
-      return res.items
-    },
-  })
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -56,20 +46,14 @@ export default function RecordAttendanceModal({ onClose, onSubmit, isPending }: 
 
         <form onSubmit={handleSubmit} className="px-6 py-4 space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Employee</label>
-            <select
+            {/* Search instead of a 100-person drop-down: the list was capped at
+                100, so in a larger company some people could not be chosen.
+                The server still refuses anyone outside the teams you manage. */}
+            <UserPicker
+              label="Employee"
               value={employeeId}
-              onChange={(e) => setEmployeeId(e.target.value ? Number(e.target.value) : '')}
-              required
-              className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-purple-500 focus:ring-purple-500 focus:outline-none"
-            >
-              <option value="">Select employee...</option>
-              {employees?.map((emp) => (
-                <option key={emp.id} value={emp.id}>
-                  {emp.first_name} {emp.last_name} ({emp.email})
-                </option>
-              ))}
-            </select>
+              onChange={(id) => setEmployeeId(id)}
+            />
           </div>
 
           <div>

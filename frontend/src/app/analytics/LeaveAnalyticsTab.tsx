@@ -21,6 +21,7 @@ export default function LeaveAnalyticsTab({ year, startDate, endDate }: Props) {
 
   const { data: trends, isLoading, isError, refetch } = useQuery<LeaveTrendsResponse>({
     queryKey: ['analytics', 'leave', 'trends', year, statusFilter, startDate, endDate],
+    meta: { handlesErrors: true },
     queryFn: () => api.getLeaveTrends({
       year,
       status: statusFilter || undefined,
@@ -54,7 +55,9 @@ export default function LeaveAnalyticsTab({ year, startDate, endDate }: Props) {
 
   const statusOptions = [
     { value: 'approved', label: 'Approved Only' },
-    { value: '', label: 'All Statuses' },
+    // Sent explicitly: an empty value used to be dropped from the request and
+    // the server's default (approved) applied, so "All" showed approved only.
+    { value: 'all', label: 'All Statuses' },
   ];
 
   return (

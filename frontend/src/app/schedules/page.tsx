@@ -12,6 +12,7 @@ import { ScheduleGrid, Shift, AppSettings, ShiftStatusType, UserPreferences, Org
 import { buildStatusMaps, requestableStatuses, toLocalDateStr } from './scheduleHelpers';
 import { useToast } from '@/components/ui/Toast';
 import { ErrorMessage } from '@/components/ui/ErrorBoundary';
+import { Modal, Button } from '@/components/ui';
 
 export interface ClipboardShift {
   status: string;
@@ -761,11 +762,19 @@ function SchedulesPageInner() {
     }
   };
 
-  const handleExportXlsx = async () => {
+  // The work-schedule workbook covers exactly the rows on screen. Drafts are
+  // left out unless asked for: it is usually sent to a client or payroll, and
+  // a draft is a plan nobody has agreed yet. When drafts are in view the
+  // editor chooses, rather than getting a silently empty file.
+  const [exportAsk, setExportAsk] = useState(false);
+  const runExportXlsx = async (includeDrafts: boolean) => {
+    setExportAsk(false);
     try {
       const blob = await api.exportScheduleXlsx({
         start_date: formatDate(start),
         end_date: formatDate(end),
+        employee_ids: shownIds,
+        include_drafts: includeDrafts,
       });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -778,6 +787,10 @@ function SchedulesPageInner() {
     } catch {
       showToast('Export failed', 'error');
     }
+  };
+  const handleExportXlsx = () => {
+    if (canEditShifts && draftCount > 0) setExportAsk(true);
+    else void runExportXlsx(false);
   };
 
   const handleCustomRangeChange = useCallback((s: string, e: string) => {
@@ -815,7 +828,7 @@ function SchedulesPageInner() {
           onAddShift={handleAddShift}
           onExport={handleExport}
           // The workbook covers the whole company, so only for people who see everyone.
-          onExportXlsx={canView && accessible?.can_see_all ? handleExportXlsx : undefined}
+          onExportXlsx={canView ? handleExportXlsx : undefined}
           canEdit={canEdit}
           canAddShift={canCreate && manageableIds.length > 0}
           canExport={canView}
@@ -1145,6 +1158,25 @@ function SchedulesPageInner() {
 
       {/* Copy week → next. Always the rows shown (it used to send nothing when
           only the search box was used, which copied the whole company). */}
+      <Modal
+        open={exportAsk}
+        onOpenChange={setExportAsk}
+        title="Include draft shifts?"
+        description={`${draftCount} shift${draftCount !== 1 ? 's' : ''} in this view ${draftCount !== 1 ? 'are drafts' : 'is a draft'}, not yet published to the employees.`}
+        size="sm"
+        footer={
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button variant="secondary" onClick={() => void runExportXlsx(false)}>
+              Published shifts only
+            </Button>
+            <Button onClick={() => void runExportXlsx(true)}>Include drafts</Button>
+          </div>
+        }
+      >
+        <p className="text-sm text-gray-600">
+          The workbook covers the {shownIds.length} employee{shownIds.length !== 1 ? 's' : ''} shown. Leave drafts out if this file is going to a client or payroll.
+        </p>
+      </Modal>
       <CopyWeekModal
         isOpen={copyWeekOpen}
         onClose={() => setCopyWeekOpen(false)}

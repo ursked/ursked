@@ -17,6 +17,7 @@ interface Props {
 export default function AttendanceAnalyticsTab({ year, startDate, endDate }: Props) {
   const { data: summary, isLoading, isError, refetch } = useQuery<AttendanceSummaryResponse>({
     queryKey: ['analytics', 'attendance', 'summary', year, startDate, endDate],
+    meta: { handlesErrors: true },
     queryFn: () => api.getAttendanceSummary({
       year,
       start_date: startDate || undefined,

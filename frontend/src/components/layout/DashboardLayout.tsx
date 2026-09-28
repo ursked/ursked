@@ -11,8 +11,13 @@ import { ForcePasswordChange } from '@/components/auth/ForcePasswordChange';
 function DashboardContent({ children }: { children: React.ReactNode }) {
   const { isOpen, close, isCollapsed } = useSidebar();
 
+  // h-app is 100dvh with a 100vh fallback (globals.css): 100vh is the height
+  // with the mobile browser's toolbars hidden, so the bottom of every page sat
+  // under the toolbar until the user scrolled. The right inset keeps content
+  // clear of a landscape notch; on desktop the sidebar takes the left one, on
+  // a phone (sidebar off-canvas) <main> does.
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex h-app bg-gray-50 pr-[env(safe-area-inset-right)]">
       {/* Mobile sidebar overlay */}
       {isOpen && (
         <div
@@ -36,7 +41,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
         {/* overflow-x-hidden + min-w-0 stop any wide child (tables, tab bars)
             from expanding the page and causing horizontal scroll on mobile.
             Inner containers with their own overflow-x-auto still scroll. */}
-        <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-6">
+        <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] pl-[calc(1.5rem+env(safe-area-inset-left))] lg:pl-6">
           {children}
         </main>
       </div>
@@ -56,7 +61,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="min-h-app flex items-center justify-center bg-gray-50">
         <div className="text-center">
           <div className="w-12 h-12 border-4 border-purple-200 border-t-purple-600 rounded-full animate-spin mx-auto mb-4" />
           <p className="text-gray-500">Loading...</p>

@@ -135,6 +135,19 @@ class AppSettings(Base):
     # Hand a step to the approver's fallback after this many days. 0 = never.
     leave_escalate_after_days = Column(Integer, nullable=False, default=5, server_default="5")
 
+    # ── Area F: attendance automation (migration 064) ──
+    # An open clock-in is closed, at the scheduled end of its shift, once this
+    # many hours have passed since that end. A forgotten clock-out used to block
+    # the next day's clock-in and then close yesterday with a 24-hour day.
+    auto_clockout_after_hours = Column(Float, nullable=False, default=4, server_default="4")
+    # Same, for a clock-in with no published shift to end it: closed this many
+    # hours after the clock-in.
+    auto_clockout_unscheduled_hours = Column(Float, nullable=False, default=16, server_default="16")
+    # Mark a published work shift that passed with no clock-in and no approved
+    # leave or holiday as absent, this many minutes after it was due to start.
+    auto_mark_absent = Column(Boolean, nullable=False, default=True, server_default="true")
+    auto_absent_after_minutes = Column(Integer, nullable=False, default=120, server_default="120")
+
 
 class ShiftStatusType(Base):
     __tablename__ = "shift_status_types"

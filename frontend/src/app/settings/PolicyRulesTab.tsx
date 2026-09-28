@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { PolicyRule, PolicyCondition, PolicyAction, OvertimeCategory, EmployeeTypeConfig } from '@/types'
 import { useToast } from '@/components/ui/Toast'
+import { usePermissions } from '@/contexts/PermissionsContext'
 import PolicySimulator from './PolicySimulator'
 
 const RULE_TYPES = [
@@ -179,6 +180,11 @@ function summarizeRule(rule: PolicyRule, otCategories: OvertimeCategory[]): stri
 export default function PolicyRulesTab() {
   const queryClient = useQueryClient()
   const { showToast } = useToast()
+  // settings:create / edit / delete, as the policy-rules API checks them.
+  const { hasPermission } = usePermissions()
+  const canCreate = hasPermission('settings', 'create')
+  const canEdit = hasPermission('settings', 'edit')
+  const canDelete = hasPermission('settings', 'delete')
 
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -656,7 +662,7 @@ export default function PolicyRulesTab() {
                 className="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500" />
               Show inactive
             </label>
-            {!showForm && editingId === null && (
+            {canCreate && !showForm && editingId === null && (
               <button type="button" onClick={() => { setShowForm(true); setEditingId(null); setFormData(EMPTY_FORM) }}
                 className="inline-flex items-center gap-1.5 rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-700 transition-colors">
                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
@@ -703,13 +709,13 @@ export default function PolicyRulesTab() {
                       </p>
                     </div>
                     <div className="flex-shrink-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity ml-3">
-                      <button type="button" onClick={() => handleEdit(rule)}
+                      {canEdit && <button type="button" onClick={() => handleEdit(rule)}
                         className="inline-flex items-center rounded-md p-1.5 text-gray-400 hover:text-purple-600 hover:bg-purple-50 transition-colors" title="Edit">
                         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
                         </svg>
-                      </button>
-                      {deleteConfirmId === rule.id ? (
+                      </button>}
+                      {!canDelete ? null : deleteConfirmId === rule.id ? (
                         <div className="flex items-center gap-1">
                           <button type="button" onClick={() => deleteMutation.mutate(rule.id)} disabled={deleteMutation.isPending}
                             className="inline-flex items-center rounded-md bg-red-600 px-2 py-1 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50 transition-colors">Confirm</button>

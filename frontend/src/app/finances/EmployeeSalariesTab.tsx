@@ -5,6 +5,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { CurrentSalaryRow, SalaryGrade } from '@/types'
 import { useToast } from '@/components/ui/Toast'
+import { usePermissions } from '@/contexts/PermissionsContext'
+import { LoadProblem } from './financeUi'
 
 function today(): string {
   return new Date().toISOString().slice(0, 10)
@@ -13,6 +15,8 @@ function today(): string {
 export default function EmployeeSalariesTab() {
   const queryClient = useQueryClient()
   const { showToast } = useToast()
+  const { hasPermission } = usePermissions()
+  const canEdit = hasPermission('finances', 'edit')
 
   const [assignFor, setAssignFor] = useState<CurrentSalaryRow | null>(null)
   const [raiseFor, setRaiseFor] = useState<CurrentSalaryRow | null>(null)
@@ -26,7 +30,7 @@ export default function EmployeeSalariesTab() {
   })
   const isViewer = salaryStatus?.is_viewer ?? false
 
-  const { data: rows, isLoading } = useQuery<CurrentSalaryRow[]>({
+  const { data: rows, isLoading, error } = useQuery<CurrentSalaryRow[]>({
     queryKey: ['current-salaries'],
     queryFn: () => api.getCurrentSalaries(),
     enabled: isViewer,
@@ -38,7 +42,7 @@ export default function EmployeeSalariesTab() {
   })
 
   if (!statusLoading && !isViewer) {
-    return <SalaryAccessGate hasPending={(salaryStatus?.pending_kinds ?? []).includes('viewer')} />
+    return <SalaryAccessGate pendingId={(salaryStatus?.pending_requests ?? []).find((r) => r.kind === 'viewer')?.id ?? null} />
   }
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['current-salaries'] })
@@ -65,6 +69,8 @@ export default function EmployeeSalariesTab() {
 
       {isLoading ? (
         <p className="text-sm text-gray-500">Loading…</p>
+      ) : error ? (
+        <LoadProblem error={error} what="employee salaries" />
       ) : (
         <div className="overflow-x-auto rounded-lg border border-gray-200">
           <table className="min-w-full divide-y divide-gray-200 text-sm">
@@ -94,13 +100,13 @@ export default function EmployeeSalariesTab() {
                   </td>
                   <td className="px-4 py-2 text-gray-500">{r.effective_date ?? '—'}</td>
                   <td className="px-4 py-2 text-right space-x-2">
-                    <button
+                    {canEdit && <button
                       onClick={() => setAssignFor(r)}
                       className="rounded-md bg-purple-600 px-3 py-1 text-xs font-semibold text-white hover:bg-purple-700"
                     >
                       {r.salary_grade_id ? 'Change' : 'Assign'}
-                    </button>
-                    {r.salary_grade_id ? (
+                    </button>}
+                    {canEdit && r.salary_grade_id ? (
                       <button
                         onClick={() => setRaiseFor(r)}
                         className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50"
@@ -176,6 +182,11 @@ function AssignModal({ row, grades, onClose, onDone }: {
       <Field label="Effective date">
         <input type="date" className="input" value={effective} onChange={(e) => setEffective(e.target.value)} />
       </Field>
+      {row.effective_date === effective && (
+        <p className="text-xs text-amber-700">
+          This replaces the assignment already starting on {effective}. The change is recorded in the audit log.
+        </p>
+      )}
       <Field label="Monthly override (optional)">
         <input type="number" className="input" placeholder="Leave blank to use grade rate" value={override} onChange={(e) => setOverride(e.target.value)} />
       </Field>
@@ -283,10 +294,20 @@ function Actions({ onClose, onSubmit, disabled, label }: { onClose: () => void; 
 
 /** Shown when the current user is not an enrolled salary viewer. Lets them file
  *  a request, which an approver must approve before salary figures appear. */
-function SalaryAccessGate({ hasPending }: { hasPending: boolean }) {
+function SalaryAccessGate({ pendingId }: { pendingId: number | null }) {
   const { showToast } = useToast()
   const queryClient = useQueryClient()
   const [reason, setReason] = useState('')
+  const hasPending = pendingId != null
+
+  const cancelMut = useMutation({
+    mutationFn: () => api.cancelSalaryRequest(pendingId as number),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['my-salary-status'] })
+      showToast('Request withdrawn', 'success')
+    },
+    onError: (e: Error) => showToast(e.message, 'error'),
+  })
 
   const requestMut = useMutation({
     mutationFn: () => api.createSalaryRequest({ kind: 'viewer', reason: reason || undefined }),
@@ -310,7 +331,16 @@ function SalaryAccessGate({ hasPending }: { hasPending: boolean }) {
         being an admin, HR or Finance is not enough.
       </p>
       {hasPending ? (
-        <p className="mt-4 text-sm font-medium text-amber-600">Your request is pending approval…</p>
+        <div className="mt-4 space-y-2">
+          <p className="text-sm font-medium text-amber-600">Your request is pending approval…</p>
+          <button
+            onClick={() => cancelMut.mutate()}
+            disabled={cancelMut.isPending}
+            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+          >
+            Withdraw request
+          </button>
+        </div>
       ) : (
         <div className="mt-4 space-y-2">
           <input

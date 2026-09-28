@@ -6,6 +6,8 @@ import { api } from '@/lib/api'
 import { SalaryGrade } from '@/types'
 import { useToast } from '@/components/ui/Toast'
 import { useCurrency } from '@/lib/currency'
+import { usePermissions } from '@/contexts/PermissionsContext'
+import { LoadProblem } from './financeUi'
 
 interface FormData {
   code: string
@@ -30,13 +32,17 @@ const EMPTY_FORM: FormData = {
 export default function SalaryGradesTab() {
   const queryClient = useQueryClient()
   const { showToast } = useToast()
+  const { hasPermission } = usePermissions()
+  const canCreate = hasPermission('finances', 'create')
+  const canEdit = hasPermission('finances', 'edit')
+  const canDelete = hasPermission('finances', 'delete')
 
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [formData, setFormData] = useState<FormData>(EMPTY_FORM)
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null)
 
-  const { data: grades, isLoading } = useQuery<SalaryGrade[]>({
+  const { data: grades, isLoading, error } = useQuery<SalaryGrade[]>({
     queryKey: ['salary-grades-all'],
     queryFn: () => api.getAllSalaryGrades(),
   })
@@ -116,7 +122,7 @@ export default function SalaryGradesTab() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold text-gray-900">Salary Grades</h2>
-        {!showForm && (
+        {!showForm && canCreate && !error && (
           <button
             onClick={() => { resetForm(); setShowForm(true) }}
             className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700"
@@ -218,6 +224,8 @@ export default function SalaryGradesTab() {
 
       {isLoading ? (
         <div className="text-center py-8 text-gray-500">Loading...</div>
+      ) : error ? (
+        <LoadProblem error={error} what="salary grades" />
       ) : !grades?.length ? (
         <div className="text-center py-8 text-gray-500">No salary grades defined yet.</div>
       ) : (
@@ -248,8 +256,8 @@ export default function SalaryGradesTab() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-right space-x-2">
-                    <button onClick={() => startEdit(g)} className="text-sm text-purple-600 hover:text-purple-800">Edit</button>
-                    {deleteConfirmId === g.id ? (
+                    {canEdit && <button onClick={() => startEdit(g)} className="text-sm text-purple-600 hover:text-purple-800">Edit</button>}
+                    {!canDelete ? null : deleteConfirmId === g.id ? (
                       <>
                         <button onClick={() => deleteMutation.mutate(g.id)} disabled={deleteMutation.isPending} className="text-sm text-red-600 hover:text-red-800 disabled:opacity-50 disabled:cursor-not-allowed">{deleteMutation.isPending ? 'Deleting…' : 'Confirm'}</button>
                         <button onClick={() => setDeleteConfirmId(null)} className="text-sm text-gray-500 hover:text-gray-700">Cancel</button>

@@ -300,6 +300,11 @@ export default function TimeclockPage() {
                     <span className="text-gray-600 w-14">{hhmm(p.local_time)}</span>
                     <LocationBadge punch={p} />
                     <GeofenceBadge punch={p} />
+                    {p.auto_closed && (
+                      // Nobody clocked out, so the system closed the day at the
+                      // scheduled end. Say so rather than pass it off as a punch.
+                      <Badge tone="yellow">Closed automatically</Badge>
+                    )}
                   </div>
                 ))}
               </div>

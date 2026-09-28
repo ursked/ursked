@@ -61,6 +61,12 @@ class AppSettingsResponse(BaseModel):
     min_rest_hours_between_shifts: float = 0
     check_overlapping_shifts: bool = False
 
+    # ── Area F: attendance automation
+    auto_clockout_after_hours: float = 4
+    auto_clockout_unscheduled_hours: float = 16
+    auto_mark_absent: bool = True
+    auto_absent_after_minutes: int = 120
+
 
 class AppSettingsUpdate(BaseModel):
     timezone: Optional[str] = None
@@ -126,6 +132,13 @@ class AppSettingsUpdate(BaseModel):
     max_work_hours_per_week: Optional[float] = Field(None, ge=0, le=168)
     min_rest_hours_between_shifts: Optional[float] = Field(None, ge=0, le=48)
     check_overlapping_shifts: Optional[bool] = None
+
+    # ── Area F: attendance automation. An open clock-in closes this long after
+    # its shift's scheduled end (or after the clock-in, with no shift).
+    auto_clockout_after_hours: Optional[float] = Field(None, ge=0.5, le=24)
+    auto_clockout_unscheduled_hours: Optional[float] = Field(None, ge=1, le=24)
+    auto_mark_absent: Optional[bool] = None
+    auto_absent_after_minutes: Optional[int] = Field(None, ge=15, le=1440)
 
 
 # ── Shift Status Types ───────────────────────────────────────────────

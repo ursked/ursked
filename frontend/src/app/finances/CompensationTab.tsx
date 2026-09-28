@@ -6,13 +6,28 @@ import { api } from '@/lib/api'
 import { CompensationItem, CompensationKind, CurrentSalaryRow } from '@/types'
 import { useToast } from '@/components/ui/Toast'
 import { useCurrency } from '@/lib/currency'
+import { usePermissions } from '@/contexts/PermissionsContext'
+import { LoadProblem } from './financeUi'
 
+// What can be added by hand. "Salary adjustment" used to be offered here, but
+// payroll never pays those (they are the audit line a raise writes, and the
+// raise is already in base pay), so a hand-made one silently came to nothing.
+// A correction is paid, and can be negative to take money back.
 const KINDS: { value: CompensationKind; label: string }[] = [
   { value: 'bonus', label: 'Bonus' },
   { value: 'incentive', label: 'Incentive' },
   { value: 'allowance', label: 'Allowance' },
-  { value: 'salary_adjustment', label: 'Salary adjustment' },
+  { value: 'correction', label: 'Correction (+/-)' },
 ]
+
+const KIND_LABEL: Record<string, string> = {
+  bonus: 'Bonus',
+  incentive: 'Incentive',
+  allowance: 'Allowance',
+  correction: 'Correction',
+  leave_cash: 'Leave cash',
+  salary_adjustment: 'Raise (record only)',
+}
 
 function today(): string {
   return new Date().toISOString().slice(0, 10)
@@ -22,11 +37,14 @@ export default function CompensationTab() {
   const queryClient = useQueryClient()
   const { showToast } = useToast()
   const { format: formatCurrency } = useCurrency()
+  const { hasPermission } = usePermissions()
+  const canCreate = hasPermission('finances', 'create')
+  const canVoid = hasPermission('finances', 'delete')
   const [showForm, setShowForm] = useState(false)
   const [kindFilter, setKindFilter] = useState<string>('')
   const [statusFilter, setStatusFilter] = useState<string>('')
 
-  const { data: items, isLoading } = useQuery<CompensationItem[]>({
+  const { data: items, isLoading, error } = useQuery<CompensationItem[]>({
     queryKey: ['compensation-items', kindFilter, statusFilter],
     queryFn: () => api.getCompensationItems({ kind: kindFilter || undefined, status: statusFilter || undefined }),
   })
@@ -57,15 +75,19 @@ export default function CompensationTab() {
           <h2 className="text-lg font-semibold text-gray-900">Bonuses, Incentives &amp; Allowances</h2>
           <p className="text-sm text-gray-500">
             Add variable pay. Each line is scheduled to a payout date based on your payout
-            schedule, then included automatically when that payroll run is computed.
+            schedule, then included automatically when that payroll run is computed. Lines that
+            repeat every month or every cutoff are added to each run as it is computed. To fix a
+            line that has already been paid, add a Correction.
           </p>
         </div>
-        <button
-          onClick={() => setShowForm(true)}
-          className="rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-700"
-        >
-          Add compensation
-        </button>
+        {canCreate && !error && (
+          <button
+            onClick={() => setShowForm(true)}
+            className="rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-700"
+          >
+            Add compensation
+          </button>
+        )}
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -73,6 +95,7 @@ export default function CompensationTab() {
           <option value="">All kinds</option>
           {KINDS.map((k) => <option key={k.value} value={k.value}>{k.label}</option>)}
           <option value="leave_cash">Leave cash</option>
+          <option value="salary_adjustment">Raise (record only)</option>
         </select>
         <select className="input max-w-[10rem]" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="">All statuses</option>
@@ -84,6 +107,8 @@ export default function CompensationTab() {
 
       {isLoading ? (
         <p className="text-sm text-gray-500">Loading…</p>
+      ) : error ? (
+        <LoadProblem error={error} what="bonuses and allowances" />
       ) : (items ?? []).length === 0 ? (
         <div className="rounded-lg border border-dashed border-gray-300 p-8 text-center text-sm text-gray-500">
           No compensation lines yet. Add a bonus, incentive or allowance.
@@ -108,17 +133,19 @@ export default function CompensationTab() {
               {(items ?? []).map((it) => (
                 <tr key={it.id}>
                   <td className="px-4 py-2 text-gray-900">{nameById.get(it.employee_id) ?? `#${it.employee_id}`}</td>
-                  <td className="px-4 py-2 capitalize text-gray-600">{it.kind.replace('_', ' ')}</td>
+                  <td className="px-4 py-2 text-gray-600">{KIND_LABEL[it.kind] ?? it.kind}</td>
                   <td className="px-4 py-2 text-right font-medium text-gray-900">{formatCurrency(it.amount)}</td>
                   <td className="px-4 py-2 text-gray-500">{it.earned_on}</td>
                   <td className="px-4 py-2 font-medium text-purple-700">{it.payout_date}</td>
-                  <td className="px-4 py-2 text-gray-500">{it.recurrence === 'once' ? '—' : it.recurrence}</td>
+                  <td className="px-4 py-2 text-gray-500">
+                    {it.recurrence === 'monthly' ? 'Every month' : it.recurrence === 'per_cutoff' ? 'Every cutoff' : it.template_id ? 'Repeat' : '—'}
+                  </td>
                   <td className="px-4 py-2">
                     <StatusBadge status={it.status} />
                   </td>
                   <td className="px-4 py-2 max-w-[16rem] truncate text-gray-500" title={it.reason}>{it.reason}</td>
                   <td className="px-4 py-2 text-right">
-                    {it.status === 'scheduled' && (
+                    {canVoid && it.status === 'scheduled' && (
                       <button
                         onClick={() => voidMut.mutate(it.id)}
                         disabled={voidMut.isPending}
@@ -192,7 +219,15 @@ function AddModal({ employees, onClose, onDone }: {
     onError: (e: Error) => showToast(e.message, 'error'),
   })
 
-  const canSave = amount && reason && (applyAll || employeeId)
+  const amountNumber = Number(amount)
+  const amountProblem = amount === ''
+    ? null
+    : !Number.isFinite(amountNumber)
+      ? 'Enter a number.'
+      : kind === 'correction'
+        ? (amountNumber === 0 ? 'A correction needs an amount: positive to pay more, negative to take back.' : null)
+        : (amountNumber <= 0 ? 'The amount must be more than zero. To take money back, choose Correction.' : null)
+  const canSave = amount && !amountProblem && reason && (applyAll || employeeId)
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
@@ -214,13 +249,18 @@ function AddModal({ employees, onClose, onDone }: {
           )}
           <label className="block">
             <span className="mb-1 block text-sm font-medium text-gray-700">Kind</span>
-            <select className="input" value={kind} onChange={(e) => setKind(e.target.value as CompensationKind)}>
+            <select className="input" value={kind} onChange={(e) => {
+              const k = e.target.value as CompensationKind
+              setKind(k)
+              if (k === 'correction') setRecurrence('once')
+            }}>
               {KINDS.map((k) => <option key={k.value} value={k.value}>{k.label}</option>)}
             </select>
           </label>
           <label className="block">
             <span className="mb-1 block text-sm font-medium text-gray-700">Amount ({currencyCode})</span>
-            <input type="number" className="input" value={amount} onChange={(e) => setAmount(e.target.value)} />
+            <input type="number" className="input" value={amount} onChange={(e) => setAmount(e.target.value)} aria-invalid={!!amountProblem} />
+            {amountProblem && <span className="mt-1 block text-xs text-red-700">{amountProblem}</span>}
           </label>
           <label className="block">
             <span className="mb-1 block text-sm font-medium text-gray-700">Earned on</span>
@@ -234,7 +274,7 @@ function AddModal({ employees, onClose, onDone }: {
           </label>
           <label className="block">
             <span className="mb-1 block text-sm font-medium text-gray-700">Recurrence</span>
-            <select className="input" value={recurrence} onChange={(e) => setRecurrence(e.target.value as typeof recurrence)}>
+            <select className="input" value={recurrence} disabled={kind === 'correction'} onChange={(e) => setRecurrence(e.target.value as typeof recurrence)}>
               <option value="once">One-time</option>
               <option value="monthly">Every month</option>
               <option value="per_cutoff">Every cutoff</option>

@@ -264,29 +264,44 @@ async def get_schedule_grid(
 async def export_schedule_xlsx(
     start_date: date = Query(...),
     end_date: date = Query(...),
+    employee_ids: Optional[List[int]] = Query(
+        None, description="Only these employees. Default: everyone you manage."
+    ),
+    include_drafts: bool = Query(
+        False, description="Include shifts that have not been published yet."
+    ),
     current_user: User = Depends(require_permission("schedules", "view")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Formatted 'Regular Work Schedule' XLSX for the cutoff, matching the
-    formal client layout (merged headers, Excel dates/times, remark codes)."""
-    from app.services.schedule_export_service import ScheduleExportService
+    """The formal 'Regular Work Schedule' workbook for a cutoff (merged
+    headings, Excel dates and times, REMARKS codes), built from the report
+    builder's built-in template (area R, report_templates).
 
-    # The workbook always covers every employee (the builder takes no
-    # employee filter), so it is only for people who can see everyone.
-    if await _visible_ids(db, current_user) is not None:
-        raise HTTPException(
-            status_code=403,
-            detail=(
-                "The work-schedule workbook covers the whole company. Use Export "
-                "CSV for the employees you can see."
-            ),
-        )
+    It used to be a separate hard-coded exporter that could not filter by
+    employee, so it was limited to people who schedule everyone. It now covers
+    the employees the caller manages (all of them for full-scope roles), and
+    only published shifts unless drafts are asked for; seeing drafts is what
+    schedules:view already allows on the grid.
+    """
+    from app.services.report_templates import build_work_schedule_xlsx
+
     if end_date < start_date:
         raise HTTPException(status_code=400, detail="end_date must be on or after start_date")
+    if (end_date - start_date).days > 366:
+        raise HTTPException(status_code=400, detail="Export at most a year at a time.")
 
-    content = await ScheduleExportService.build_workbook(
-        db, current_user.tenant_id, start_date, end_date
-    )
+    scope = await access_scope.managed_employee_ids(db, current_user, "schedules")
+    if employee_ids:
+        await access_scope.assert_manages(db, current_user, employee_ids, "schedules")
+        scope = set(employee_ids)
+
+    try:
+        content = await build_work_schedule_xlsx(
+            db, current_user.tenant_id, start_date, end_date,
+            employee_scope=scope, viewer=current_user, include_drafts=include_drafts,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     fname = f"work-schedule-{start_date:%Y%m%d}-{end_date:%Y%m%d}.xlsx"
     return StreamingResponse(
         iter([content]),

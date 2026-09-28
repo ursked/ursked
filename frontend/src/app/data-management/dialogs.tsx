@@ -1,11 +1,18 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
+import { fieldOf } from './reportLayout';
 import type {
   AggregateFunc,
   AggregationSpec,
+  BlockSpec,
   ColumnFormat,
+  DataSourceOption,
   FilterCondition,
+  HeaderBand,
+  HeadingRow,
+  LayoutSpec,
+  ReportTemplate,
 } from '@/types';
 
 /** A column the user can pick, already carrying its plain-English name. */
@@ -724,6 +731,521 @@ export function CalculatedColumnDialog({
           and + − × ÷.
         </span>
       </label>
+    </Dialog>
+  );
+}
+
+// ── Page layout ──────────────────────────────────────────────────────
+
+/** An output column as the layout dialogs see it: its instance id and the
+ * heading it currently has in the file. */
+export interface OutputOption {
+  key: string;
+  label: string;
+}
+
+const TIER_NAMES = ['Top row of headings', 'Second row', 'Third row'];
+
+/**
+ * A heading over several columns ("WORK SCHEDULE (Dates)" over FROM and TO).
+ *
+ * Opened from a column's menu with that column prefilled, because dragging
+ * across header cells to select a range is unusable on a phone. Choices that
+ * would make an impossible band (ending before it starts, overlapping another
+ * heading on the same row) are disabled rather than refused after the fact.
+ */
+export function HeaderBandDialog({
+  columns,
+  tiers,
+  initial,
+  editing,
+  onSave,
+  onRemove,
+  onClose,
+}: {
+  columns: OutputOption[];
+  tiers: HeaderBand[][];
+  initial: { from: string; to: string; label?: string; tier?: number };
+  editing?: { tier: number; index: number };
+  onSave: (tier: number, band: HeaderBand) => void;
+  onRemove?: () => void;
+  onClose: () => void;
+}) {
+  const [label, setLabel] = useState(initial.label || '');
+  const [from, setFrom] = useState(initial.from);
+  const [to, setTo] = useState(initial.to);
+  const pos = useMemo(() => new Map(columns.map((c, i) => [c.key, i] as const)), [columns]);
+
+  const firstFreeTier = () => {
+    for (let t = 0; t < Math.min(tiers.length + 1, 3); t++) {
+      const others = tiers[t] || [];
+      const a = pos.get(initial.from) ?? 0;
+      const z = pos.get(initial.to) ?? a;
+      if (!others.some((b) => (pos.get(b.from) ?? -1) <= z && a <= (pos.get(b.to) ?? -1))) return t;
+    }
+    return Math.min(tiers.length, 2);
+  };
+  const [tier, setTier] = useState<number>(editing ? editing.tier : initial.tier ?? firstFreeTier());
+
+  const others = (tiers[tier] || []).filter((_, i) => !(editing && editing.tier === tier && editing.index === i));
+  const covered = (i: number) =>
+    others.some((b) => (pos.get(b.from) ?? -1) <= i && i <= (pos.get(b.to) ?? -1));
+  const a = pos.get(from) ?? 0;
+  const z = pos.get(to) ?? 0;
+  const clash = others.find((b) => (pos.get(b.from) ?? -1) <= z && a <= (pos.get(b.to) ?? -1));
+  const valid = label.trim().length > 0 && a <= z && !clash;
+  const tierCount = Math.min(tiers.length + (editing ? 0 : 1), 3);
+
+  return (
+    <Dialog
+      title={editing ? 'Change this heading' : 'Put a heading over columns'}
+      subtitle="One label over several columns, like WORK SCHEDULE over FROM and TO."
+      onClose={onClose}
+      footer={
+        <>
+          {onRemove && (
+            <button
+              type="button"
+              onClick={onRemove}
+              className="min-h-[44px] rounded-lg border border-gray-300 px-4 text-sm font-medium text-red-700 hover:bg-red-50"
+            >
+              Remove heading
+            </button>
+          )}
+          <button
+            type="button"
+            disabled={!valid}
+            onClick={() => onSave(tier, { label: label.trim(), from, to })}
+            className="min-h-[44px] rounded-lg bg-purple-600 px-4 text-sm font-medium text-white hover:bg-purple-700 disabled:opacity-50"
+          >
+            {editing ? 'Save heading' : 'Add heading'}
+          </button>
+        </>
+      }
+    >
+      <label className="block">
+        <Label>Heading text</Label>
+        <input
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          className={inputClass}
+          placeholder="e.g. WORK SCHEDULE (Dates)"
+          maxLength={120}
+          autoFocus
+        />
+      </label>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <label className="block">
+          <Label>From column</Label>
+          <select value={from} onChange={(e) => { setFrom(e.target.value); if ((pos.get(e.target.value) ?? 0) > z) setTo(e.target.value); }} className={inputClass}>
+            {columns.map((c, i) => (
+              <option key={c.key} value={c.key} disabled={covered(i)}>
+                {c.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block">
+          <Label>To column</Label>
+          <select value={to} onChange={(e) => setTo(e.target.value)} className={inputClass}>
+            {columns.map((c, i) => (
+              <option
+                key={c.key}
+                value={c.key}
+                disabled={i < a || others.some((b) => (pos.get(b.from) ?? -1) <= i && a <= (pos.get(b.to) ?? -1))}
+              >
+                {c.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      {tierCount > 1 && (
+        <label className="block">
+          <Label>Which row of headings</Label>
+          <select value={tier} onChange={(e) => setTier(Number(e.target.value))} className={inputClass}>
+            {Array.from({ length: tierCount }, (_, t) => (
+              <option key={t} value={t}>
+                {TIER_NAMES[t]}
+                {t >= tiers.length ? ' (new)' : ''}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {clash && (
+        <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          That overlaps “{clash.label}” on the same row. Choose other columns or another row of headings.
+        </p>
+      )}
+    </Dialog>
+  );
+}
+
+/**
+ * Start a new block whenever a column's value changes — one block per
+ * employee, with blank rows between. Blocks never reorder rows, so the
+ * dialog offers (ticked) to sort by that column first, which is what makes
+ * "one block per employee" come out as one block per employee.
+ */
+export function BlockDialog({
+  columns,
+  existing,
+  sortedBy,
+  onSave,
+  onClose,
+}: {
+  columns: OutputOption[];
+  existing?: BlockSpec | null;
+  /** The field the report is currently ordered by first, if any. */
+  sortedBy?: string | null;
+  onSave: (blocks: BlockSpec | null, orderFirst: boolean) => void;
+  onClose: () => void;
+}) {
+  const [by, setBy] = useState(existing?.by || columns[0]?.key || '');
+  const [gap, setGap] = useState(existing?.blank_rows_between ?? 1);
+  const [repeat, setRepeat] = useState<BlockSpec['repeat_value']>(existing?.repeat_value || 'every_row');
+  const [tabs, setTabs] = useState(existing?.sheet_per_group ?? false);
+  const [orderFirst, setOrderFirst] = useState(true);
+  const label = columns.find((c) => c.key === by)?.label || by;
+  const alreadyOrdered = sortedBy != null && sortedBy === fieldOf(by);
+
+  return (
+    <Dialog
+      title="Split the report into blocks"
+      subtitle="A new block starts whenever the chosen column changes, e.g. one block per employee."
+      onClose={onClose}
+      footer={
+        <>
+          {existing && (
+            <button
+              type="button"
+              onClick={() => onSave(null, false)}
+              className="min-h-[44px] rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              Stop making blocks
+            </button>
+          )}
+          <button
+            type="button"
+            disabled={!by}
+            onClick={() =>
+              onSave(
+                { by, blank_rows_between: gap, repeat_value: repeat, sheet_per_group: tabs },
+                orderFirst && !alreadyOrdered
+              )
+            }
+            className="min-h-[44px] rounded-lg bg-purple-600 px-4 text-sm font-medium text-white hover:bg-purple-700 disabled:opacity-50"
+          >
+            Apply
+          </button>
+        </>
+      }
+    >
+      <label className="block">
+        <Label>New block for each…</Label>
+        <select value={by} onChange={(e) => setBy(e.target.value)} className={inputClass}>
+          {columns.map((c) => (
+            <option key={c.key} value={c.key}>
+              {c.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      {!alreadyOrdered && (
+        <label className="flex min-h-[44px] cursor-pointer items-center gap-2 text-sm text-gray-800">
+          <input type="checkbox" checked={orderFirst} onChange={(e) => setOrderFirst(e.target.checked)} className="h-4 w-4" />
+          Order the report by {label} first, so each one comes out as a single block
+        </label>
+      )}
+      <label className="block">
+        <Label>Blank rows between blocks</Label>
+        <select value={gap} onChange={(e) => setGap(Number(e.target.value))} className={inputClass}>
+          {[0, 1, 2, 3, 4, 5].map((n) => (
+            <option key={n} value={n}>
+              {n === 0 ? 'None' : n}
+            </option>
+          ))}
+        </select>
+      </label>
+      <fieldset>
+        <Label>Show {label}…</Label>
+        <label className="flex min-h-[40px] cursor-pointer items-center gap-2 text-sm text-gray-800">
+          <input type="radio" checked={repeat === 'every_row'} onChange={() => setRepeat('every_row')} className="h-4 w-4" />
+          On every row
+        </label>
+        <label className="flex min-h-[40px] cursor-pointer items-center gap-2 text-sm text-gray-800">
+          <input type="radio" checked={repeat === 'first_row'} onChange={() => setRepeat('first_row')} className="h-4 w-4" />
+          Only on the first row of each block
+        </label>
+      </fieldset>
+      <label className="flex min-h-[44px] cursor-pointer items-center gap-2 text-sm text-gray-800">
+        <input type="checkbox" checked={tabs} onChange={(e) => setTabs(e.target.checked)} className="h-4 w-4" />
+        Put each block on its own tab in Excel
+      </label>
+      {tabs && (
+        <p className="rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-900">
+          A CSV file has no tabs, so a CSV download keeps every block in one file.
+        </p>
+      )}
+    </Dialog>
+  );
+}
+
+/** Lines above the table, the sheet name and the overall look. */
+export function PageSetupDialog({
+  layout,
+  columnCount,
+  onSave,
+  onClose,
+}: {
+  layout: LayoutSpec;
+  columnCount: number;
+  onSave: (l: Pick<LayoutSpec, 'heading_rows' | 'sheet_name' | 'style' | 'freeze_header'>) => void;
+  onClose: () => void;
+}) {
+  const [rows, setRows] = useState<HeadingRow[]>(
+    layout.heading_rows.length ? layout.heading_rows : [{ text: '', span: null, align: 'left', bold: true }]
+  );
+  const [sheet, setSheet] = useState(layout.sheet_name || '');
+  const [style, setStyle] = useState<LayoutSpec['style']>(layout.style);
+  const [freeze, setFreeze] = useState(layout.freeze_header);
+  const setRow = (i: number, p: Partial<HeadingRow>) =>
+    setRows((r) => r.map((x, ix) => (ix === i ? { ...x, ...p } : x)));
+
+  return (
+    <Dialog
+      title="Page setup"
+      subtitle="Lines above the table, the sheet name, and how the file looks."
+      onClose={onClose}
+      footer={
+        <button
+          type="button"
+          onClick={() =>
+            onSave({
+              heading_rows: rows.filter((r) => r.text.trim()).map((r) => ({ ...r, text: r.text.trim() })),
+              sheet_name: sheet.trim() || null,
+              style,
+              freeze_header: freeze,
+            })
+          }
+          className="min-h-[44px] rounded-lg bg-purple-600 px-4 text-sm font-medium text-white hover:bg-purple-700"
+        >
+          Apply
+        </button>
+      }
+    >
+      <div className="space-y-3">
+        <Label>Lines across the top</Label>
+        {rows.map((r, i) => (
+          <div key={i} className="space-y-2 rounded-lg border border-gray-200 p-3">
+            <input
+              value={r.text}
+              onChange={(e) => setRow(i, { text: e.target.value })}
+              className={inputClass}
+              placeholder="e.g. Regular Work Schedule"
+              maxLength={200}
+              aria-label={`Line ${i + 1}`}
+            />
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={r.span ?? ''}
+                onChange={(e) => setRow(i, { span: e.target.value ? Number(e.target.value) : null })}
+                className="min-h-[44px] rounded-lg border border-gray-300 px-2 text-sm"
+                aria-label="How many columns it spans"
+              >
+                <option value="">Across all columns</option>
+                {Array.from({ length: Math.max(columnCount - 1, 0) }, (_, n) => n + 1).map((n) => (
+                  <option key={n} value={n}>
+                    Across the first {n === 1 ? 'column' : `${n} columns`}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={r.align || 'left'}
+                onChange={(e) => setRow(i, { align: e.target.value as HeadingRow['align'] })}
+                className="min-h-[44px] rounded-lg border border-gray-300 px-2 text-sm"
+                aria-label="Alignment"
+              >
+                <option value="left">Left</option>
+                <option value="center">Centred</option>
+                <option value="right">Right</option>
+              </select>
+              <label className="flex min-h-[44px] items-center gap-2 text-sm text-gray-800">
+                <input type="checkbox" checked={r.bold ?? true} onChange={(e) => setRow(i, { bold: e.target.checked })} className="h-4 w-4" />
+                Bold
+              </label>
+              <button
+                type="button"
+                onClick={() => setRows((x) => x.filter((_, ix) => ix !== i))}
+                className="min-h-[44px] px-2 text-sm text-red-700 hover:underline"
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+        ))}
+        {rows.length < 5 && (
+          <button
+            type="button"
+            onClick={() => setRows((x) => [...x, { text: '', span: null, align: 'left', bold: true }])}
+            className="min-h-[44px] text-sm font-medium text-purple-700 hover:underline"
+          >
+            + Add a line
+          </button>
+        )}
+        <p className="text-xs text-gray-600">
+          These fill themselves in: {'{report_name}'}, {'{date_from}'} and {'{date_to}'}. A date can be
+          shaped too: {'{date_from:%b %d}'} gives “Jun 01”.
+        </p>
+      </div>
+
+      <label className="block">
+        <Label>Sheet name in Excel</Label>
+        <input
+          value={sheet}
+          onChange={(e) => setSheet(e.target.value)}
+          className={inputClass}
+          placeholder="e.g. {date_from:%b %d} - {date_to:%d}"
+          maxLength={100}
+        />
+        <span className="mt-1 block text-xs text-gray-600">Excel keeps the first 31 characters.</span>
+      </label>
+
+      <fieldset>
+        <Label>Look</Label>
+        <label className="flex min-h-[40px] cursor-pointer items-center gap-2 text-sm text-gray-800">
+          <input type="radio" checked={style === 'plain'} onChange={() => setStyle('plain')} className="h-4 w-4" />
+          Plain: coloured column headings
+        </label>
+        <label className="flex min-h-[40px] cursor-pointer items-center gap-2 text-sm text-gray-800">
+          <input type="radio" checked={style === 'banded'} onChange={() => setStyle('banded')} className="h-4 w-4" />
+          Printed form: grey headings and a border round every cell
+        </label>
+      </fieldset>
+      <label className="flex min-h-[44px] cursor-pointer items-center gap-2 text-sm text-gray-800">
+        <input type="checkbox" checked={freeze} onChange={(e) => setFreeze(e.target.checked)} className="h-4 w-4" />
+        Keep the headings in view while scrolling in Excel
+      </label>
+    </Dialog>
+  );
+}
+
+/** Built-in reports to start from. Nothing is saved until you save it. */
+export function TemplatePickerDialog({
+  templates,
+  onPick,
+  onClose,
+}: {
+  templates: ReportTemplate[];
+  onPick: (t: ReportTemplate) => void;
+  onClose: () => void;
+}) {
+  return (
+    <Dialog
+      title="Start from a template"
+      subtitle="Opens a ready-made report in the builder. Change anything, then save it as your own."
+      onClose={onClose}
+    >
+      {templates.length === 0 && <p className="text-sm text-gray-600">No templates are available.</p>}
+      <div className="space-y-2">
+        {templates.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            onClick={() => onPick(t)}
+            className="flex w-full flex-col items-start rounded-lg border border-gray-200 px-3 py-3 text-left hover:bg-gray-50"
+          >
+            <span className="text-sm font-medium text-gray-900">{t.name}</span>
+            <span className="mt-0.5 text-xs text-gray-600">{t.description}</span>
+          </button>
+        ))}
+      </div>
+    </Dialog>
+  );
+}
+
+/** Switches that change which rows the data produces, e.g. drafts. */
+export function DataOptionsDialog({
+  options,
+  values,
+  onSave,
+  onClose,
+}: {
+  options: DataSourceOption[];
+  values: Record<string, unknown>;
+  onSave: (v: Record<string, unknown>) => void;
+  onClose: () => void;
+}) {
+  const [v, setV] = useState<Record<string, unknown>>(() => {
+    const init: Record<string, unknown> = {};
+    for (const o of options) init[o.key] = o.key in values ? values[o.key] : o.default;
+    return init;
+  });
+  return (
+    <Dialog
+      title="Which rows to include"
+      subtitle="These change the data itself, not just how it looks."
+      onClose={onClose}
+      footer={
+        <button
+          type="button"
+          onClick={() => {
+            // Only what differs from the default is kept with the report.
+            const out: Record<string, unknown> = {};
+            for (const o of options) {
+              const val = v[o.key];
+              if (val !== o.default && !(o.type === 'string' && (val === '' || val == null))) out[o.key] = val;
+            }
+            onSave(out);
+          }}
+          className="min-h-[44px] rounded-lg bg-purple-600 px-4 text-sm font-medium text-white hover:bg-purple-700"
+        >
+          Apply
+        </button>
+      }
+    >
+      {options.map((o) => (
+        <div key={o.key}>
+          {o.type === 'boolean' ? (
+            <label className="flex min-h-[44px] cursor-pointer items-center gap-2 text-sm font-medium text-gray-800">
+              <input
+                type="checkbox"
+                checked={Boolean(v[o.key])}
+                onChange={(e) => setV((x) => ({ ...x, [o.key]: e.target.checked }))}
+                className="h-4 w-4"
+              />
+              {o.label}
+            </label>
+          ) : o.type === 'choice' ? (
+            <label className="block">
+              <Label>{o.label}</Label>
+              <select
+                value={String(v[o.key] ?? '')}
+                onChange={(e) => setV((x) => ({ ...x, [o.key]: e.target.value }))}
+                className={inputClass}
+              >
+                {(o.choices || []).map((c) => (
+                  <option key={c.value} value={c.value}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <label className="block">
+              <Label>{o.label}</Label>
+              <input
+                value={String(v[o.key] ?? '')}
+                onChange={(e) => setV((x) => ({ ...x, [o.key]: e.target.value }))}
+                className={inputClass}
+                maxLength={30}
+              />
+            </label>
+          )}
+          {o.help && <p className="mt-1 text-xs text-gray-600">{o.help}</p>}
+        </div>
+      ))}
     </Dialog>
   );
 }

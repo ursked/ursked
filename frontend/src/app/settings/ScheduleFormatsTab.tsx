@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { ScheduleFormatConfig } from '@/types'
 import { useToast } from '@/components/ui/Toast'
+import { usePermissions } from '@/contexts/PermissionsContext'
 
 interface FormData {
   code: string
@@ -37,6 +38,10 @@ const EMPTY_FORM: FormData = {
 export default function ScheduleFormatsTab() {
   const queryClient = useQueryClient()
   const { showToast } = useToast()
+  // Every write here is settings:edit on the API; offer none of them to a
+  // role (HR by default) that can only look.
+  const { hasPermission } = usePermissions()
+  const canEdit = hasPermission('settings', 'edit')
 
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -222,7 +227,7 @@ export default function ScheduleFormatsTab() {
             <h2 className="text-lg font-semibold text-gray-900">Schedule Formats</h2>
             <p className="mt-1 text-sm text-gray-500">Define shift formats and working hour configurations for your organization.</p>
           </div>
-          {!showForm && editingId === null && (
+          {canEdit && !showForm && editingId === null && (
             <button type="button" onClick={() => { setShowForm(true); setEditingId(null); setFormData(EMPTY_FORM) }}
               className="inline-flex items-center gap-1.5 rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-700 transition-colors">
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
@@ -287,13 +292,13 @@ export default function ScheduleFormatsTab() {
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-2">
-                          <button type="button" onClick={() => handleEdit(item)}
+                          {canEdit && <button type="button" onClick={() => handleEdit(item)}
                             className="inline-flex items-center rounded-md p-1.5 text-gray-400 hover:text-purple-600 hover:bg-purple-50 transition-colors" title="Edit">
                             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
                             </svg>
-                          </button>
-                          {deleteConfirmId === item.id ? (
+                          </button>}
+                          {!canEdit ? null : deleteConfirmId === item.id ? (
                             <div className="flex items-center gap-1">
                               <button type="button" onClick={() => deleteMutation.mutate(item.id)} disabled={deleteMutation.isPending}
                                 className="inline-flex items-center rounded-md bg-red-600 px-2 py-1 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50 transition-colors">Confirm</button>
@@ -322,7 +327,7 @@ export default function ScheduleFormatsTab() {
               </svg>
               <h3 className="mt-2 text-sm font-semibold text-gray-900">No schedule formats</h3>
               <p className="mt-1 text-sm text-gray-500">Define schedule formats to manage shift configurations.</p>
-              <div className="mt-6">
+              <div className="mt-6" hidden={!canEdit}>
                 <button type="button" onClick={() => { setShowForm(true); setEditingId(null); setFormData(EMPTY_FORM) }}
                   className="inline-flex items-center gap-1.5 rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-700 transition-colors">
                   <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">

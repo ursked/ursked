@@ -4,8 +4,8 @@ Kept free of DB/session so they can be unit-tested with plain values. The
 service layer loads rows and calls these.
 """
 import calendar
-from datetime import date, time, timedelta
-from typing import Optional
+from datetime import date, datetime, time, timedelta
+from typing import Iterable, Optional, Tuple
 
 
 def bracket_amount(brackets: list, basis: float) -> tuple[float, Optional[dict]]:
@@ -52,12 +52,28 @@ def deduction_amount(ded, gross_pay: float, base_pay: float, brackets: list) -> 
     basis = base_pay if basis_kind == "base" else gross_pay
 
     matched = None
+    warning = None
     if calc == "fixed":
         amount = ded.default_amount or 0.0
     elif calc == "percentage":
         amount = round(basis * (ded.default_rate or 0.0), 2)
     elif calc == "tiered":
-        amount, matched = bracket_amount(brackets, basis)
+        # A tiered deduction with no table used to come out as 0 on every
+        # payslip with nothing to say so, which is how statutory contributions
+        # went unpaid. Say it, on the payslip line and in the run's warnings.
+        if not brackets:
+            amount = 0.0
+            warning = (
+                f"{ded.name} is a tiered deduction with no brackets, so nothing was "
+                "deducted. Add its brackets under Finances, Deductions, then compute again."
+            )
+        else:
+            amount, matched = bracket_amount(brackets, basis)
+            if matched is None:
+                warning = (
+                    f"{ded.name}: no bracket covers {basis:,.2f}, so nothing was deducted. "
+                    "Check its brackets under Finances, Deductions."
+                )
     else:
         amount = ded.default_amount or 0.0
 
@@ -71,7 +87,44 @@ def deduction_amount(ded, gross_pay: float, base_pay: float, brackets: list) -> 
     }
     if matched is not None:
         entry["bracket"] = matched
+    if warning:
+        entry["warning"] = warning
     return round(amount, 2), entry
+
+
+def validate_brackets(brackets: list) -> list:
+    """Sort a tiered table and reject one that cannot be applied.
+
+    Bands must run upwards without gaps or overlaps, and only the last may be
+    open-ended: a basis falling in a gap matched nothing and deducted 0.
+    Returns the sorted list; raises ValueError with a readable sentence.
+    """
+    def g(b, k, default=None):
+        return b.get(k, default) if isinstance(b, dict) else getattr(b, k, default)
+
+    ordered = sorted(brackets, key=lambda b: g(b, "over_amount", 0) or 0)
+    for i, b in enumerate(ordered):
+        over = g(b, "over_amount", 0) or 0
+        up_to = g(b, "up_to_amount")
+        row = i + 1
+        if over < 0:
+            raise ValueError(f"Row {row}: 'From' cannot be negative.")
+        if (g(b, "rate", 0) or 0) < 0 or (g(b, "base_amount", 0) or 0) < 0:
+            raise ValueError(f"Row {row}: amounts and rates cannot be negative.")
+        if up_to is not None and up_to <= over:
+            raise ValueError(f"Row {row}: 'To' must be more than 'From'.")
+        if up_to is None and i != len(ordered) - 1:
+            raise ValueError(f"Row {row}: only the last row can have no upper limit.")
+        if i > 0:
+            prev_up = g(ordered[i - 1], "up_to_amount")
+            if over < prev_up:
+                raise ValueError(f"Rows {row - 1} and {row} overlap: row {row} starts before row {row - 1} ends.")
+            if over > prev_up:
+                raise ValueError(
+                    f"There is a gap between rows {row - 1} and {row}: nothing covers "
+                    f"{prev_up:,.2f} to {over:,.2f}. Start row {row} where row {row - 1} ends."
+                )
+    return ordered
 
 
 def period_fraction(period_type: str) -> float:
@@ -134,6 +187,90 @@ def night_diff_minutes(start: time, end: time, night_start: time, night_end: tim
     total = 0
     for ws, we in windows:
         total += _overlap(s, e, ws, we)
+    return total
+
+
+# ── Worked time ──────────────────────────────────────────────────────────
+#
+# Premiums and attendance metrics work on real datetimes, never on times of
+# day subtracted on one date: `end - start` for a 22:00-06:00 shift is -16
+# hours, and until 2026-09 that is exactly why every overnight shift earned no
+# holiday or night premium at all.
+
+Interval = Tuple[datetime, datetime]
+
+
+def span(d: date, start: time, end: time) -> Interval:
+    """(start, end) of a shift or worked stretch that begins on `d`. An end at
+    or before the start is on the following day."""
+    s = datetime.combine(d, start)
+    e = datetime.combine(d, end)
+    if e <= s:
+        e += timedelta(days=1)
+    return s, e
+
+
+def interval_minutes(intervals: Iterable[Interval]) -> int:
+    return int(sum(max(0.0, (e - s).total_seconds()) for s, e in intervals) // 60)
+
+
+def paid_minutes(
+    total_minutes: int, pieces: int, unpaid_break_minutes: int = 0,
+    unpaid_break_after_hours: Optional[float] = None,
+) -> int:
+    """Minutes that count as work once the unpaid break is taken off.
+
+    The schedule format's unpaid break applies to a day worked in ONE stretch
+    that is long enough to need a break. On a split day the gap between the
+    stretches is the break, so taking the format's break off again would
+    count it twice.
+    """
+    if total_minutes <= 0:
+        return 0
+    brk = unpaid_break_minutes or 0
+    if brk <= 0 or pieces != 1:
+        return total_minutes
+    if unpaid_break_after_hours and total_minutes <= unpaid_break_after_hours * 60:
+        return total_minutes
+    return max(0, total_minutes - brk)
+
+
+def minutes_on_dates(intervals: Iterable[Interval], dates) -> dict:
+    """{date: minutes of `intervals` that fall on that calendar date}, for the
+    dates in `dates` only. An overnight stretch into a holiday counts only the
+    part after midnight."""
+    wanted = set(dates or ())
+    out: dict = {}
+    if not wanted:
+        return out
+    for s, e in intervals:
+        cur = s.date()
+        while cur <= e.date():
+            if cur in wanted:
+                day_start = datetime.combine(cur, time(0, 0))
+                day_end = day_start + timedelta(days=1)
+                lo, hi = max(s, day_start), min(e, day_end)
+                if hi > lo:
+                    out[cur] = out.get(cur, 0) + int((hi - lo).total_seconds() // 60)
+            cur += timedelta(days=1)
+    return out
+
+
+def night_minutes_in(intervals: Iterable[Interval], night_start: Optional[time],
+                     night_end: Optional[time]) -> int:
+    """Minutes of `intervals` inside the nightly window, which may wrap
+    midnight (22:00-06:00). Every night window touching an interval counts."""
+    if not (night_start and night_end) or night_start == night_end:
+        return 0
+    total = 0
+    for s, e in intervals:
+        cur = s.date() - timedelta(days=1)
+        while cur <= e.date():
+            ws, we = span(cur, night_start, night_end)
+            lo, hi = max(s, ws), min(e, we)
+            if hi > lo:
+                total += int((hi - lo).total_seconds() // 60)
+            cur += timedelta(days=1)
     return total
 
 

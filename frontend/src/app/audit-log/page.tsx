@@ -173,7 +173,10 @@ export default function AuditLogPage() {
 
         {/* Entries */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-          <div className="overflow-x-auto">
+          {/* relative: the sr-only header label is absolutely positioned; without a
+              positioned ancestor inside the scroll box it escapes the clip and
+              widens the whole page on a phone. */}
+          <div className="relative overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100 text-left">

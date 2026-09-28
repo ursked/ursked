@@ -81,7 +81,7 @@ function ActivateAccountContent() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-50 via-white to-purple-50 flex items-center justify-center p-4">
+    <div className="min-h-app bg-gradient-to-br from-purple-50 via-white to-purple-50 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         {/* Logo / Branding */}
         <div className="text-center mb-8">
@@ -262,7 +262,7 @@ function ActivateAccountContent() {
 export default function ActivateAccountPage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen bg-gradient-to-br from-purple-50 via-white to-purple-50 flex items-center justify-center">
+      <div className="min-h-app bg-gradient-to-br from-purple-50 via-white to-purple-50 flex items-center justify-center">
         <div className="w-8 h-8 border-4 border-purple-600 border-t-transparent rounded-full animate-spin" />
       </div>
     }>

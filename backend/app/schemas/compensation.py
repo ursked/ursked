@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 # ── Payout schedule ──────────────────────────────────────────────────
@@ -55,17 +55,36 @@ class PayoutPreviewResponse(BaseModel):
 # ── Compensation items ───────────────────────────────────────────────
 
 KIND_PATTERN = r"^(bonus|incentive|allowance|salary_adjustment|leave_cash|correction)$"
+# What can be added by hand. salary_adjustment is the audit line a raise writes
+# and is never paid (the raise is in base pay); a hand-made one looked like
+# pay and silently was not. A correction is paid, and may be negative.
+MANUAL_KIND_PATTERN = r"^(bonus|incentive|allowance|correction)$"
+
+
+def _check_amount(kind: str, amount: float, recurrence: str) -> None:
+    if kind == "correction":
+        if amount == 0:
+            raise ValueError("A correction needs an amount: positive to pay more, negative to take back.")
+        if recurrence != "once":
+            raise ValueError("A correction is paid once; it cannot repeat.")
+    elif amount <= 0:
+        raise ValueError("The amount must be more than zero. To take money back, add a Correction with a negative amount.")
 
 
 class CompensationItemCreate(BaseModel):
     employee_id: int
-    kind: str = Field(pattern=KIND_PATTERN)
+    kind: str = Field(pattern=MANUAL_KIND_PATTERN)
     amount: float
     earned_on: date
     recurrence: str = Field(default="once", pattern=r"^(once|monthly|per_cutoff)$")
     reason: str = Field(min_length=1)
     payout_date: Optional[date] = None  # override; else resolved from schedule
     meta: Optional[dict] = None
+
+    @model_validator(mode="after")
+    def _amount_fits_kind(self):
+        _check_amount(self.kind, self.amount, self.recurrence)
+        return self
 
 
 class CompensationItemVoid(BaseModel):
@@ -138,13 +157,18 @@ class RaiseResultRow(BaseModel):
 class BulkCompensationCreate(BaseModel):
     """Grant the same compensation line to many employees at once."""
     employee_ids: List[int] = Field(min_length=1)
-    kind: str = Field(pattern=KIND_PATTERN)
+    kind: str = Field(pattern=MANUAL_KIND_PATTERN)
     amount: float
     earned_on: date
     recurrence: str = Field(default="once", pattern=r"^(once|monthly|per_cutoff)$")
     reason: str = Field(min_length=1)
     payout_date: Optional[date] = None
     meta: Optional[dict] = None
+
+    @model_validator(mode="after")
+    def _amount_fits_kind(self):
+        _check_amount(self.kind, self.amount, self.recurrence)
+        return self
 
 
 class ExpandRecurringRequest(BaseModel):

@@ -228,6 +228,8 @@ TLS-terminating reverse proxy in front of the frontend's published port
 (`APP_PORT`, default `3000`). The browser only ever talks to the frontend origin;
 it proxies `/api/*` to the backend internally, so no CORS setup is needed.
 
+**Installing the app on a phone or desktop needs HTTPS** (or `http://localhost`): over plain HTTP on a LAN address the site works in the browser, but "Install the app" / "Add to Home Screen" and the offline copy of My Schedule are unavailable.
+
 ### Plain-HTTP trial (no proxy)
 
 Secure cookies require HTTPS, so production refuses to start without them. To try

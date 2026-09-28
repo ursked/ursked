@@ -1,15 +1,18 @@
-from datetime import date as date_type, timedelta
-from typing import List, Optional
+import logging
+from datetime import date as date_type, datetime, timedelta, timezone
+from typing import Iterable, List, Optional, Set
 from uuid import UUID
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from sqlalchemy import and_, case, func, or_, select
+from sqlalchemy import and_, case, func, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
-from app.models.attendance import AttendanceRecord, OvertimeLog
+from app.models.attendance import AttendanceRecord, OvertimeLog, TimePunch
 from app.models.leave import LeaveApplication, LeaveType, OvertimeCategory
 from app.models.org_hierarchy import OrgNode
-from app.models.settings import AppSettings
+from app.models.schedule import ScheduleChangeRequest, Shift
+from app.models.settings import AppSettings, ShiftStatusType
 from app.models.user import User
 from app.schemas.analytics import (
     MONTH_LABELS,
@@ -18,8 +21,8 @@ from app.schemas.analytics import (
     AnalyticsOverviewResponse,
     CategoryInfo,
     DashboardLeaveItem,
+    DashboardMetrics,
     DashboardOvertimeItem,
-    DashboardResponse,
     LeaveMonthBreakdown,
     LeaveTypeInfo,
     LeaveTrendsResponse,
@@ -27,7 +30,14 @@ from app.schemas.analytics import (
     OvertimePaidUnpaidResponse,
     OvertimeTrendsResponse,
     PaidUnpaidMonth,
+    PersonalClockStatus,
+    PersonalDashboard,
+    PersonalLeaveBalance,
+    PersonalLeaveRequest,
+    PersonalShift,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _empty_months_ot() -> dict:
@@ -62,9 +72,16 @@ def _empty_months_att() -> dict:
     }
 
 
+# The status filter's "no filter" value. The Analytics screen's "All Statuses"
+# used to send nothing at all, which the endpoints read as "use the default",
+# and the default is approved — so "All" showed approved only. It now sends
+# this explicitly.
+ALL_STATUSES = "all"
+
+
 def _ot_statuses(status_filter: Optional[str]) -> Optional[List[str]]:
     """Resolve OT status filter. 'approved' includes 'converted' too."""
-    if not status_filter:
+    if not status_filter or status_filter == ALL_STATUSES:
         return None
     if status_filter == "approved":
         return ["approved", "converted"]
@@ -73,9 +90,21 @@ def _ot_statuses(status_filter: Optional[str]) -> Optional[List[str]]:
 
 def _leave_statuses(status_filter: Optional[str]) -> Optional[List[str]]:
     """Resolve leave status filter."""
-    if not status_filter:
+    if not status_filter or status_filter == ALL_STATUSES:
         return None
     return [status_filter]
+
+
+def _in_scope(column, employee_ids: Optional[Iterable[int]]):
+    """WHERE clause limiting `column` to `employee_ids`; None means everyone.
+
+    Managers hold reports:view by default but only for their own teams
+    (access_scope.managed_employee_ids); before 2026-09 they saw company-wide
+    figures, including every employee's leave and overtime on the dashboard.
+    """
+    if employee_ids is None:
+        return true()
+    return column.in_(list(employee_ids))
 
 
 class AnalyticsService:
@@ -88,6 +117,7 @@ class AnalyticsService:
         status_filter: Optional[str] = "approved",
         start_date: Optional[date_type] = None,
         end_date: Optional[date_type] = None,
+        employee_ids: Optional[Set[int]] = None,
     ) -> OvertimeTrendsResponse:
         # 1. Fetch tenant's overtime categories
         cat_stmt = (
@@ -122,6 +152,8 @@ class AnalyticsService:
         ot_stats = _ot_statuses(status_filter)
         if ot_stats:
             stmt = stmt.where(OvertimeLog.status.in_(ot_stats))
+        if employee_ids is not None:
+            stmt = stmt.where(OvertimeLog.employee_id.in_(employee_ids))
 
         stmt = stmt.group_by(month_col, OvertimeCategory.code).order_by(month_col)
         result = await db.execute(stmt)
@@ -163,6 +195,7 @@ class AnalyticsService:
         status_filter: Optional[str] = "approved",
         start_date: Optional[date_type] = None,
         end_date: Optional[date_type] = None,
+        employee_ids: Optional[Set[int]] = None,
     ) -> OvertimePaidUnpaidResponse:
         month_col = func.extract("month", OvertimeLog.date).label("month")
 
@@ -200,6 +233,8 @@ class AnalyticsService:
         ot_stats = _ot_statuses(status_filter)
         if ot_stats:
             stmt = stmt.where(OvertimeLog.status.in_(ot_stats))
+        if employee_ids is not None:
+            stmt = stmt.where(OvertimeLog.employee_id.in_(employee_ids))
 
         stmt = stmt.group_by(month_col).order_by(month_col)
         result = await db.execute(stmt)
@@ -237,6 +272,7 @@ class AnalyticsService:
         status_filter: Optional[str] = "approved",
         start_date: Optional[date_type] = None,
         end_date: Optional[date_type] = None,
+        employee_ids: Optional[Set[int]] = None,
     ) -> LeaveTrendsResponse:
         # 1. Fetch tenant's leave types
         lt_stmt = (
@@ -276,6 +312,8 @@ class AnalyticsService:
         lv_stats = _leave_statuses(status_filter)
         if lv_stats:
             stmt = stmt.where(LeaveApplication.status.in_(lv_stats))
+        if employee_ids is not None:
+            stmt = stmt.where(LeaveApplication.employee_id.in_(employee_ids))
 
         stmt = stmt.group_by(month_col, LeaveApplication.leave_type, LeaveType.name).order_by(month_col)
         result = await db.execute(stmt)
@@ -315,6 +353,7 @@ class AnalyticsService:
         year: int,
         start_date: Optional[date_type] = None,
         end_date: Optional[date_type] = None,
+        employee_ids: Optional[Set[int]] = None,
     ) -> AttendanceSummaryResponse:
         month_col = func.extract("month", AttendanceRecord.date).label("month")
         stmt = (
@@ -336,6 +375,8 @@ class AnalyticsService:
             stmt = stmt.where(AttendanceRecord.date >= start_date)
         if end_date:
             stmt = stmt.where(AttendanceRecord.date <= end_date)
+        if employee_ids is not None:
+            stmt = stmt.where(AttendanceRecord.employee_id.in_(employee_ids))
         stmt = stmt.group_by(month_col, AttendanceRecord.status).order_by(month_col)
         result = await db.execute(stmt)
         rows = result.all()
@@ -404,15 +445,19 @@ class AnalyticsService:
     async def get_headcount_summary(
         db: AsyncSession,
         tenant_id: UUID,
+        employee_ids: Optional[Set[int]] = None,
     ) -> AnalyticsOverviewResponse:
         not_excluded = await AnalyticsService._analytics_user_filter(db, tenant_id)
+        in_scope = _in_scope(User.id, employee_ids)
 
         total = (await db.execute(
-            select(func.count(User.id)).where(User.tenant_id == tenant_id, not_excluded)
+            select(func.count(User.id)).where(User.tenant_id == tenant_id, not_excluded, in_scope)
         )).scalar() or 0
 
         active = (await db.execute(
-            select(func.count(User.id)).where(User.tenant_id == tenant_id, User.is_active.is_(True))
+            select(func.count(User.id)).where(
+                User.tenant_id == tenant_id, User.is_active.is_(True), in_scope
+            )
         )).scalar() or 0
 
         return AnalyticsOverviewResponse(
@@ -422,33 +467,90 @@ class AnalyticsService:
         )
 
     @staticmethod
+    async def tenant_today(db: AsyncSession, tenant_id: UUID) -> date_type:
+        """Today in the company's timezone (AppSettings.timezone).
+
+        The server runs in UTC; in Manila the first eight hours of every day
+        would otherwise still count as yesterday on the dashboard.
+        """
+        tz_name = (await db.execute(
+            select(AppSettings.timezone).where(AppSettings.tenant_id == tenant_id)
+        )).scalar()
+        try:
+            tz = ZoneInfo(tz_name or "UTC")
+        except (ZoneInfoNotFoundError, ValueError):
+            tz = timezone.utc
+        return datetime.now(timezone.utc).astimezone(tz).date()
+
+    @staticmethod
+    async def _scoped_department_count(
+        db: AsyncSession, tenant_id: UUID, user_id: int
+    ) -> int:
+        """Units a team-scoped viewer covers: those they head or deputise and
+        every unit below them — the same subtree access_scope grants."""
+        frontier = set((await db.execute(
+            select(OrgNode.id).where(
+                OrgNode.tenant_id == tenant_id,
+                OrgNode.is_active.is_(True),
+                or_(OrgNode.head_user_id == user_id, OrgNode.deputy_head_user_id == user_id),
+            )
+        )).scalars().all())
+        seen: Set[int] = set()
+        while frontier:
+            seen |= frontier
+            frontier = set((await db.execute(
+                select(OrgNode.id).where(
+                    OrgNode.tenant_id == tenant_id,
+                    OrgNode.is_active.is_(True),
+                    OrgNode.parent_id.in_(frontier),
+                )
+            )).scalars().all()) - seen
+        return len(seen)
+
+    @staticmethod
     async def get_dashboard_data(
         db: AsyncSession,
         tenant_id: UUID,
-    ) -> DashboardResponse:
-        today = date_type.today()
+        employee_ids: Optional[Set[int]] = None,
+        viewer_id: Optional[int] = None,
+    ) -> DashboardMetrics:
+        """Company metrics, or a team's when `employee_ids` is given (the
+        viewer's managed employees; `viewer_id` then scopes the unit count)."""
+        today = await AnalyticsService.tenant_today(db, tenant_id)
         month_start = today.replace(day=1)
+        in_scope_user = _in_scope(User.id, employee_ids)
+        in_scope_leave = _in_scope(LeaveApplication.employee_id, employee_ids)
+        in_scope_ot = _in_scope(OvertimeLog.employee_id, employee_ids)
+        in_scope_att = _in_scope(AttendanceRecord.employee_id, employee_ids)
 
         # Employee counts
         not_excluded = await AnalyticsService._analytics_user_filter(db, tenant_id)
         total_employees = (await db.execute(
-            select(func.count(User.id)).where(User.tenant_id == tenant_id, not_excluded)
+            select(func.count(User.id)).where(User.tenant_id == tenant_id, not_excluded, in_scope_user)
         )).scalar() or 0
 
         active_employees = (await db.execute(
-            select(func.count(User.id)).where(User.tenant_id == tenant_id, User.is_active.is_(True))
+            select(func.count(User.id)).where(
+                User.tenant_id == tenant_id, User.is_active.is_(True), in_scope_user
+            )
         )).scalar() or 0
 
         # Department count
-        departments = (await db.execute(
-            select(func.count(OrgNode.id)).where(OrgNode.tenant_id == tenant_id)
-        )).scalar() or 0
+        if employee_ids is None:
+            departments = (await db.execute(
+                select(func.count(OrgNode.id)).where(OrgNode.tenant_id == tenant_id)
+            )).scalar() or 0
+        elif viewer_id is not None:
+            departments = await AnalyticsService._scoped_department_count(db, tenant_id, viewer_id)
+        else:
+            departments = 0
 
         # Pending leaves
         pending_leaves = (await db.execute(
             select(func.count(LeaveApplication.id)).where(
                 LeaveApplication.tenant_id == tenant_id,
                 LeaveApplication.status == "pending",
+                in_scope_leave,
             )
         )).scalar() or 0
 
@@ -457,6 +559,7 @@ class AnalyticsService:
             select(func.count(OvertimeLog.id)).where(
                 OvertimeLog.tenant_id == tenant_id,
                 OvertimeLog.status == "pending",
+                in_scope_ot,
             )
         )).scalar() or 0
 
@@ -469,6 +572,7 @@ class AnalyticsService:
             .where(
                 AttendanceRecord.tenant_id == tenant_id,
                 AttendanceRecord.date == today,
+                in_scope_att,
             )
             .group_by(AttendanceRecord.status)
         )
@@ -496,6 +600,7 @@ class AnalyticsService:
                 AttendanceRecord.tenant_id == tenant_id,
                 AttendanceRecord.date >= month_start,
                 AttendanceRecord.date <= today,
+                in_scope_att,
             )
             .group_by(AttendanceRecord.status)
         )
@@ -521,6 +626,7 @@ class AnalyticsService:
                 OvertimeLog.date >= month_start,
                 OvertimeLog.date <= today,
                 OvertimeLog.status.in_(["approved", "converted"]),
+                in_scope_ot,
             )
         )).scalar() or 0
         month_ot_hours = round(float(month_ot) / 60, 1)
@@ -532,6 +638,7 @@ class AnalyticsService:
                 LeaveApplication.start_date >= month_start,
                 LeaveApplication.start_date <= today,
                 LeaveApplication.status == "approved",
+                in_scope_leave,
             )
         )).scalar() or 0
 
@@ -539,7 +646,7 @@ class AnalyticsService:
         recent_leaves_stmt = (
             select(LeaveApplication)
             .options(joinedload(LeaveApplication.employee))
-            .where(LeaveApplication.tenant_id == tenant_id)
+            .where(LeaveApplication.tenant_id == tenant_id, in_scope_leave)
             .order_by(LeaveApplication.created_at.desc())
             .limit(5)
         )
@@ -566,7 +673,7 @@ class AnalyticsService:
                 joinedload(OvertimeLog.employee),
                 joinedload(OvertimeLog.overtime_category),
             )
-            .where(OvertimeLog.tenant_id == tenant_id)
+            .where(OvertimeLog.tenant_id == tenant_id, in_scope_ot)
             .order_by(OvertimeLog.created_at.desc())
             .limit(5)
         )
@@ -585,7 +692,7 @@ class AnalyticsService:
             for ot in recent_ots
         ]
 
-        return DashboardResponse(
+        return DashboardMetrics(
             total_employees=total_employees,
             active_employees=active_employees,
             departments=departments,
@@ -600,4 +707,130 @@ class AnalyticsService:
             month_leave_days=float(month_leave_days),
             recent_leave_applications=recent_leave_items,
             recent_overtime_logs=recent_ot_items,
+        )
+
+    @staticmethod
+    async def get_personal_summary(db: AsyncSession, user: User) -> PersonalDashboard:
+        """What the signed-in person needs from their own home screen: their
+        next published shifts, leave left, requests still waiting and whether
+        they are clocked in. Self-service, so never gated by the matrix."""
+        tenant_id = user.tenant_id
+        today = await AnalyticsService.tenant_today(db, tenant_id)
+
+        # Next shifts: published only, the same rule My Schedule follows.
+        shifts = (await db.execute(
+            select(Shift)
+            .where(
+                Shift.tenant_id == tenant_id,
+                Shift.employee_id == user.id,
+                Shift.date >= today,
+                Shift.is_published.is_(True),
+            )
+            .order_by(Shift.date, Shift.sequence_number, Shift.start_time)
+            .limit(5)
+        )).scalars().all()
+        types = {
+            t.code: t
+            for t in (await db.execute(
+                select(ShiftStatusType).where(ShiftStatusType.tenant_id == tenant_id)
+            )).scalars().all()
+        }
+
+        def _hhmm(t) -> Optional[str]:
+            return t.strftime("%H:%M") if t else None
+
+        next_shifts = [
+            PersonalShift(
+                date=str(s.date),
+                start_time=_hhmm(s.start_time),
+                end_time=_hhmm(s.end_time),
+                status=s.status,
+                status_label=(types[s.status].label if s.status in types
+                              else s.status.replace("_", " ").capitalize()),
+                category=types[s.status].category if s.status in types else None,
+            )
+            for s in shifts
+        ]
+
+        # Leave balance: the same computation the Leave screen shows. A failure
+        # here must not blank the whole dashboard, so it is reported as "could
+        # not load" (None) rather than as zero days left.
+        leave_balances: Optional[List[PersonalLeaveBalance]]
+        try:
+            from app.services.leave_service import LeaveService
+
+            default_days = (await db.execute(
+                select(AppSettings.default_leave_days).where(AppSettings.tenant_id == tenant_id)
+            )).scalar()
+            balance_set = await LeaveService.compute_balances(
+                db, tenant_id, user, as_of=today,
+                default_days=float(default_days) if default_days is not None else 15.0,
+            )
+            leave_balances = [
+                PersonalLeaveBalance(
+                    leave_type=b.leave_type,
+                    name=b.leave_type_name,
+                    available_days=round(float(b.available_days), 2),
+                    total_days=round(float(b.total_days), 2),
+                )
+                for b in balance_set.balances
+            ]
+        except Exception:  # noqa: BLE001 - see comment above
+            logger.exception("dashboard: leave balance failed for user %s", user.id)
+            leave_balances = None
+
+        pending = (await db.execute(
+            select(LeaveApplication)
+            .where(
+                LeaveApplication.tenant_id == tenant_id,
+                LeaveApplication.employee_id == user.id,
+                LeaveApplication.status == "pending",
+            )
+            .order_by(LeaveApplication.start_date)
+            .limit(5)
+        )).scalars().all()
+
+        pending_schedule = (await db.execute(
+            select(func.count(ScheduleChangeRequest.id)).where(
+                ScheduleChangeRequest.tenant_id == tenant_id,
+                ScheduleChangeRequest.requester_id == user.id,
+                ScheduleChangeRequest.status == "pending",
+            )
+        )).scalar() or 0
+
+        clock_enabled = bool((await db.execute(
+            select(AppSettings.timeclock_enabled).where(AppSettings.tenant_id == tenant_id)
+        )).scalar())
+        open_punch = (await db.execute(
+            select(TimePunch)
+            .where(
+                TimePunch.tenant_id == tenant_id,
+                TimePunch.employee_id == user.id,
+                TimePunch.punch_type == "in",
+                TimePunch.paired_punch_id.is_(None),
+            )
+            .order_by(TimePunch.punched_at.desc())
+            .limit(1)
+        )).scalar_one_or_none()
+
+        return PersonalDashboard(
+            today=str(today),
+            next_shifts=next_shifts,
+            leave_balances=leave_balances,
+            pending_leave_requests=[
+                PersonalLeaveRequest(
+                    id=la.id,
+                    leave_type=la.leave_type,
+                    start_date=str(la.start_date),
+                    end_date=str(la.end_date),
+                    days=float(la.days_requested),
+                )
+                for la in pending
+            ],
+            pending_schedule_requests=int(pending_schedule),
+            clock=PersonalClockStatus(
+                enabled=clock_enabled,
+                clocked_in=open_punch is not None,
+                since=open_punch.punched_at.isoformat() if open_punch and open_punch.punched_at else None,
+            ),
         )

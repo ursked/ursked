@@ -10,6 +10,9 @@ export const PUBLIC_PATHS = [
   '/auth/activate',
   '/auth/forgot-password',
   '/auth/reset-password',
+  // The service worker's offline page: fetched without a session when the
+  // worker installs, and shown to whoever is using the device.
+  '/offline',
 ];
 
 export function isPublicPath(pathname: string): boolean {

@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import type { PreviewColumn } from '@/types';
+import type { LayoutSpec, PreviewColumn } from '@/types';
+import { bandStarts } from './reportLayout';
 
 export interface ColumnAction {
   key: string;
@@ -25,6 +26,14 @@ interface PreviewGridProps {
   /** Marks which columns currently carry a filter/sort/rename, for the badges. */
   markersFor: (columnKey: string) => string[];
   emptyHint?: string;
+  /** The page layout, drawn in the table: headings, header bands, blocks. */
+  layout?: LayoutSpec | null;
+  /** Headings with their {tokens} filled in by the server. */
+  headings?: string[];
+  /** Worksheet names, shown as tabs when each block gets its own tab. */
+  sheetNames?: string[];
+  /** Clicking a header band opens it for renaming, re-ranging or removal. */
+  onBandClick?: (tier: number, index: number) => void;
 }
 
 /**
@@ -48,7 +57,18 @@ export default function PreviewGrid({
   actionsFor,
   markersFor,
   emptyHint,
+  layout,
+  headings,
+  sheetNames,
+  onBandClick,
 }: PreviewGridProps) {
+  const keys = columns.map((c) => c.key);
+  const tiers = (layout?.header_tiers || []).filter((t) => t.length > 0);
+  const blockBy = layout?.blocks?.by;
+  const gap = layout?.blocks ? Math.max(0, Math.min(layout.blocks.blank_rows_between, 5)) : 0;
+  const firstOnly = layout?.blocks?.repeat_value === 'first_row';
+  const tabs = layout?.blocks?.sheet_per_group ? sheetNames || [] : [];
+  const headingText = headings && headings.length ? headings : (layout?.heading_rows || []).map((h) => h.text);
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
@@ -125,6 +145,22 @@ export default function PreviewGrid({
         <p className="text-xs text-gray-600">Click any column heading for options</p>
       </div>
 
+      {tabs.length > 0 && (
+        <div className="flex gap-1 overflow-x-auto border-b border-gray-200 px-4 py-2" aria-label="Tabs in the Excel file">
+          {tabs.slice(0, 30).map((t, i) => (
+            <span
+              key={`${t}-${i}`}
+              className={`flex-shrink-0 rounded-full px-2.5 py-1 text-xs ${i === 0 ? 'bg-purple-100 font-medium text-purple-800' : 'bg-gray-100 text-gray-700'}`}
+            >
+              {t}
+            </span>
+          ))}
+          {tabs.length > 30 && (
+            <span className="flex-shrink-0 px-2 py-1 text-xs text-gray-600">and {tabs.length - 30} more tabs</span>
+          )}
+        </div>
+      )}
+
       {/* Own scrollport so a wide report scrolls sideways without moving the
           page. overscroll-none stops iOS rubber-banding the whole table away
           from its pinned header, and pinch-zoom stays available. */}
@@ -134,6 +170,51 @@ export default function PreviewGrid({
             Preview of the report: {returned} of {total} rows, {columns.length} columns.
           </caption>
           <thead>
+            {/* Heading lines wrap inside the visible width rather than stretching
+                the table, so a long title can never push a phone sideways. Only
+                the leaf heading row is sticky: several sticky rows drift apart on
+                iOS, which is the bug 5.13 and 5.15 fixed. */}
+            {headingText.map((text, i) => (
+              <tr key={`heading-${i}`}>
+                <th colSpan={columns.length} scope="colgroup" className="border-b border-gray-200 bg-white p-0 text-left">
+                  <div
+                    className={`sticky left-0 max-w-[calc(100vw-3rem)] whitespace-normal break-words px-3 py-2 text-sm text-gray-900 sm:max-w-2xl ${
+                      layout?.heading_rows[i]?.bold === false ? 'font-normal' : 'font-semibold'
+                    }`}
+                  >
+                    {text}
+                  </div>
+                </th>
+              </tr>
+            ))}
+            {tiers.map((tier, t) => {
+              const starts = bandStarts(tier, keys);
+              const cells: React.ReactNode[] = [];
+              for (let i = 0; i < columns.length; ) {
+                const b = starts.get(i);
+                if (b) {
+                  const tierIndex = (layout?.header_tiers || []).indexOf(tier);
+                  cells.push(
+                    <th key={`band-${t}-${i}`} colSpan={b.span} scope="colgroup" className="border-b border-r border-gray-200 bg-purple-50 p-0">
+                      <button
+                        type="button"
+                        onClick={() => onBandClick?.(tierIndex, b.index)}
+                        disabled={!onBandClick}
+                        className="flex w-full min-h-[40px] items-center justify-center whitespace-pre-line px-3 py-1.5 text-center text-xs font-semibold uppercase tracking-wide text-purple-900 hover:bg-purple-100"
+                        aria-label={`Heading ${b.band.label}: change or remove`}
+                      >
+                        {b.band.label}
+                      </button>
+                    </th>
+                  );
+                  i += b.span;
+                } else {
+                  cells.push(<th key={`gap-${t}-${i}`} className="border-b border-r border-gray-100 bg-gray-50" aria-hidden="true" />);
+                  i += 1;
+                }
+              }
+              return <tr key={`tier-${t}`}>{cells}</tr>;
+            })}
             <tr>
               {columns.map((c) => {
                 const marks = markersFor(c.key);
@@ -143,6 +224,7 @@ export default function PreviewGrid({
                   <th
                     key={c.key}
                     scope="col"
+                    data-leaf="true"
                     className="sticky top-0 z-20 whitespace-nowrap border-b border-r border-gray-200 bg-gray-50 p-0 text-left"
                   >
                     <div className="relative">
@@ -209,10 +291,20 @@ export default function PreviewGrid({
                 </td>
               </tr>
             )}
-            {rows.map((r, i) => (
-              <tr key={i} className={i % 2 ? 'bg-gray-50/60' : 'bg-white'}>
+            {rows.map((r, i) => {
+              const prev = i > 0 ? rows[i - 1] : null;
+              const newBlock = !!blockBy && (!prev || String(prev[blockBy] ?? '') !== String(r[blockBy] ?? ''));
+              return (
+              <React.Fragment key={i}>
+              {newBlock && prev && gap > 0 && (
+                <tr aria-hidden="true">
+                  <td colSpan={columns.length} className="border-b border-gray-100 bg-white" style={{ height: `${gap * 1.25}rem` }} />
+                </tr>
+              )}
+              <tr className={i % 2 ? 'bg-gray-50/60' : 'bg-white'}>
                 {columns.map((c) => {
-                  const v = r[c.key];
+                  const hidden = firstOnly && c.key === blockBy && !newBlock;
+                  const v = hidden ? '' : r[c.key];
                   const text = v === null || v === undefined ? '' : String(v);
                   return (
                     <td
@@ -220,12 +312,14 @@ export default function PreviewGrid({
                       className="max-w-[260px] truncate border-b border-r border-gray-100 px-3 py-2 text-gray-800"
                       title={text}
                     >
-                      {text === '' ? <span className="text-gray-400">—</span> : text}
+                      {hidden ? null : text === '' ? <span className="text-gray-400">—</span> : text}
                     </td>
                   );
                 })}
               </tr>
-            ))}
+              </React.Fragment>
+              );
+            })}
           </tbody>
         </table>
       </div>

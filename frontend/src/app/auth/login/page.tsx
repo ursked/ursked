@@ -100,7 +100,7 @@ function LoginPageInner() {
   if (authLoading) return null;
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-white to-blue-50 px-4">
+    <div className="min-h-app flex items-center justify-center bg-gradient-to-br from-purple-50 via-white to-purple-50 px-4">
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
@@ -154,7 +154,7 @@ function LoginPageInner() {
                       value={username}
                       onChange={(e) => setUsername(e.target.value)}
                       required
-                      className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
+                      className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition-all"
                       placeholder="Enter your email or username"
                     />
                   </div>
@@ -173,7 +173,7 @@ function LoginPageInner() {
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       required
-                      className="w-full pl-10 pr-12 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
+                      className="w-full pl-10 pr-12 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition-all"
                       placeholder="Enter your password"
                     />
                     <button
@@ -197,16 +197,16 @@ function LoginPageInner() {
 
                 <div className="flex items-center justify-between">
                   <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                    <input type="checkbox" className="w-4 h-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500" />
                     <span className="text-sm text-gray-600">Remember me</span>
                   </label>
-                  <Link href="/auth/forgot-password" className="text-sm text-blue-600 hover:text-blue-700 cursor-pointer">Forgot password?</Link>
+                  <Link href="/auth/forgot-password" className="text-sm text-purple-600 hover:text-purple-700 cursor-pointer">Forgot password?</Link>
                 </div>
 
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  className="w-full bg-purple-600 text-white py-3 rounded-lg font-medium hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
                   {loading ? (
                     <>
@@ -241,7 +241,7 @@ function LoginPageInner() {
                     onChange={(e) => setTwoFactorCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                     required
                     maxLength={6}
-                    className="w-full text-center text-2xl tracking-[0.5em] py-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none font-mono"
+                    className="w-full text-center text-2xl tracking-[0.5em] py-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none font-mono"
                     placeholder="000000"
                     autoFocus
                   />
@@ -250,7 +250,7 @@ function LoginPageInner() {
                 <button
                   type="submit"
                   disabled={loading || twoFactorCode.length !== 6}
-                  className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  className="w-full bg-purple-600 text-white py-3 rounded-lg font-medium hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
                   {loading ? (
                     <>
@@ -284,7 +284,7 @@ function LoginPageInner() {
         {registrationEnabled && (
           <p className="text-center mt-6 text-gray-600 text-sm">
             Don&apos;t have an account?{' '}
-            <Link href="/auth/signup" className="text-blue-600 hover:text-blue-700 font-medium">
+            <Link href="/auth/signup" className="text-purple-600 hover:text-purple-700 font-medium">
               Sign up
             </Link>
           </p>

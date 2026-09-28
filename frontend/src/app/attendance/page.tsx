@@ -6,11 +6,13 @@ import { usePermissions } from '@/contexts/PermissionsContext'
 import AttendanceTab from './AttendanceTab'
 import OvertimeTab from './OvertimeTab'
 import TardinessTab from './TardinessTab'
+import PunchesTab from './PunchesTab'
 
 const TABS = [
   { key: 'attendance', label: 'Attendance' },
   { key: 'overtime', label: 'Overtime' },
   { key: 'tardiness', label: 'Tardiness' },
+  { key: 'punches', label: 'Punches' },
 ] as const
 
 type TabKey = (typeof TABS)[number]['key']
@@ -83,6 +85,7 @@ export default function AttendancePage() {
         {activeTab === 'attendance' && <AttendanceTab />}
         {activeTab === 'overtime' && <OvertimeTab />}
         {activeTab === 'tardiness' && <TardinessTab />}
+        {activeTab === 'punches' && <PunchesTab />}
       </div>
     </DashboardLayout>
   )

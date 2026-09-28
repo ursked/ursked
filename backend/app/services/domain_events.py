@@ -48,6 +48,7 @@ EVENTS = {
 # Every module that registers a handler. Add yours here.
 HANDLER_MODULES: List[str] = [
     "app.services.leave_events",  # area L: leave, approvals, organization
+    "app.services.payroll_events",  # area F: payroll lock, attendance re-derivation
 ]
 
 _handlers: Dict[str, List[Handler]] = defaultdict(list)

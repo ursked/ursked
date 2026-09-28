@@ -5,11 +5,18 @@ import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSidebar } from '@/contexts/SidebarContext';
 import { hasAnyRole } from '@/lib/roles';
+import { useInstallPrompt } from '@/hooks/useInstallPrompt';
+import { useToast } from '@/components/ui/Toast';
 import { NotificationsBell } from './NotificationsBell';
 
 export function Header() {
   const { user, logout } = useAuth();
   const { toggle } = useSidebar();
+  const { showToast } = useToast();
+  const { canInstall, installed, isIOS, promptInstall } = useInstallPrompt();
+  // Chrome/Edge/Android hand over a prompt; Safari on iPhone never does, so
+  // there the entry explains the two taps instead.
+  const showInstall = canInstall || (isIOS && !installed);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -24,7 +31,10 @@ export function Header() {
   }, []);
 
   return (
-    <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6">
+    // viewport-fit=cover lets the page run under a notch / status bar; the
+    // header grows by the top inset (0 where there is none) so the menu and
+    // account buttons stay tappable.
+    <header className="h-[calc(4rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] flex-shrink-0 bg-white border-b border-gray-200 flex items-center justify-between px-6 pl-[calc(1.5rem+env(safe-area-inset-left))] lg:pl-6">
       {/* Left: mobile menu button */}
       <button
         onClick={toggle}
@@ -90,6 +100,25 @@ export function Header() {
                   </svg>
                   Settings
                 </Link>
+              )}
+              {showInstall && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setDropdownOpen(false);
+                    if (canInstall) {
+                      await promptInstall();
+                    } else {
+                      showToast('On iPhone or iPad: tap Share, then "Add to Home Screen".', 'info', 8000);
+                    }
+                  }}
+                  className="flex items-center gap-2 w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v12m0 0l-4-4m4 4l4-4M5 20h14" />
+                  </svg>
+                  Install the app
+                </button>
               )}
               <div className="border-t border-gray-100 mt-1">
                 <button

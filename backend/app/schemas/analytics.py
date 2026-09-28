@@ -104,8 +104,14 @@ class AnalyticsOverviewResponse(BaseModel):
 
 
 # ── Dashboard ──────────────────────────────────────────────────
+#
+# The dashboard is everyone's home screen, so it always answers. Holders of
+# reports:view get the metrics block (company-wide for full-scope roles, their
+# own teams otherwise); everyone gets the personal block. It used to be three
+# role codes or nothing, so an employee's dashboard 403'd on load and again on
+# every 60-second refresh, and rendered as a page of dashes.
 
-class DashboardResponse(BaseModel):
+class DashboardMetrics(BaseModel):
     total_employees: int
     active_employees: int
     departments: int
@@ -139,3 +145,52 @@ class DashboardOvertimeItem(BaseModel):
     date: str
     hours: float
     status: str
+
+
+class PersonalShift(BaseModel):
+    date: str
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    status: str
+    status_label: str
+    category: Optional[str] = None
+
+
+class PersonalLeaveBalance(BaseModel):
+    leave_type: str
+    name: str
+    available_days: float
+    total_days: float
+
+
+class PersonalLeaveRequest(BaseModel):
+    id: int
+    leave_type: str
+    start_date: str
+    end_date: str
+    days: float
+
+
+class PersonalClockStatus(BaseModel):
+    enabled: bool
+    clocked_in: bool
+    since: Optional[str] = None
+
+
+class PersonalDashboard(BaseModel):
+    today: str
+    next_shifts: List[PersonalShift]
+    # None when the balance could not be computed, so the screen can say so
+    # instead of showing "0 days left".
+    leave_balances: Optional[List[PersonalLeaveBalance]] = None
+    pending_leave_requests: List[PersonalLeaveRequest]
+    pending_schedule_requests: int
+    clock: PersonalClockStatus
+
+
+class DashboardResponse(BaseModel):
+    # "company": metrics cover everyone; "team": only the employees the caller
+    # manages; "personal": no reports:view, metrics is None.
+    view: str
+    metrics: Optional[DashboardMetrics] = None
+    personal: PersonalDashboard

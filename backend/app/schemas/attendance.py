@@ -24,10 +24,14 @@ class SelfTimeEntry(BaseModel):
     notes: Optional[str] = None
 
 class AttendanceRecordUpdate(BaseModel):
+    """A correction. `status` pins a status by hand (it survives later
+    re-derivation); an empty string hands it back to the times. The reason is
+    required: the change is audit-logged and changes what payroll pays."""
     actual_start_time: Optional[time] = None
     actual_end_time: Optional[time] = None
-    status: Optional[str] = None
+    status: Optional[str] = Field(default=None, pattern="^(|present|late|absent|half_day|excused)$")
     notes: Optional[str] = None
+    reason: str = Field(..., min_length=3, max_length=500)
 
 class AttendanceRecordResponse(BaseModel):
     id: int
@@ -44,9 +48,13 @@ class AttendanceRecordResponse(BaseModel):
     overtime_minutes: int = 0
     undertime_minutes: int = 0
     status: str
+    status_override: Optional[str] = None
     notes: Optional[str] = None
     recorded_by: Optional[int] = None
     self_reported: bool = False
+    is_rest_day_work: bool = False
+    auto_marked: bool = False
+    excused_by_leave_id: Optional[int] = None
     employee_name: Optional[str] = None
     recorder_name: Optional[str] = None
     created_at: Optional[datetime] = None
@@ -67,12 +75,18 @@ class OvertimeLogResponse(BaseModel):
     overtime_minutes: int
     overtime_category_id: Optional[int] = None
     overtime_category_name: Optional[str] = None
+    log_type: str = "overtime"
     pay_multiplier: Optional[float] = None
     pay_amount: Optional[float] = None
     leave_credits_earned: Optional[float] = None
     status: str
     approved_by: Optional[int] = None
     approved_at: Optional[datetime] = None
+    # Set once a finalized payroll run has paid it.
+    payroll_period_id: Optional[int] = None
+    paid_at: Optional[datetime] = None
+    # The leave type its category converts into, preselected in the dialog.
+    default_leave_type: Optional[str] = None
     notes: Optional[str] = None
     employee_name: Optional[str] = None
     created_at: Optional[datetime] = None
@@ -85,8 +99,15 @@ class OvertimeApproveRequest(BaseModel):
     notes: Optional[str] = None
 
 class OvertimeConvertRequest(BaseModel):
+    # Leave type code the credit goes to. Optional only when the overtime's
+    # category names one; otherwise the request is refused.
     leave_type: Optional[str] = None
     notes: Optional[str] = None
+
+
+class ConversionLeaveType(BaseModel):
+    code: str
+    name: str
 
 
 # ── Tardiness Records ─────────────────────────────────────────────
@@ -100,6 +121,8 @@ class TardinessRecordResponse(BaseModel):
     tardiness_minutes: int
     resolution_type: Optional[str] = None
     deduction_amount: Optional[float] = None
+    # True when there is an amount the caller may not see (not a salary viewer).
+    amount_hidden: bool = False
     leave_credits_deducted: Optional[float] = None
     policy_rule_id: Optional[int] = None
     recorded_by: Optional[int] = None
@@ -113,9 +136,17 @@ class TardinessRecordResponse(BaseModel):
 
 class TardinessResolveRequest(BaseModel):
     resolution_type: str = Field(..., pattern="^(salary_deduction|leave_deduction|excused|warning)$")
-    deduction_amount: Optional[float] = None
+    # Blank = the employee's per-minute rate x minutes late.
+    deduction_amount: Optional[float] = Field(default=None, ge=0)
     leave_type: Optional[str] = None
     notes: Optional[str] = None
+
+
+class SuggestedDeduction(BaseModel):
+    minutes: int
+    amount: Optional[float] = None
+    amount_hidden: bool = False
+    has_salary: bool = True
 
 
 # ── Leave Credit Adjustments ──────────────────────────────────────
@@ -193,7 +224,12 @@ class TimePunchResponse(BaseModel):
     geofence_status: str
     work_site_id: Optional[int] = None
     distance_m: Optional[float] = None
+    source: Optional[str] = None
+    auto_closed: bool = False
     notes: Optional[str] = None
+    # Filled by the admin punches list.
+    employee_name: Optional[str] = None
+    work_site_name: Optional[str] = None
 
 
 class TimeclockShiftInfo(BaseModel):

@@ -7,7 +7,7 @@ export interface Step {
   /** Plain English, e.g. "Only rows where Status is rest_day". */
   text: string;
   /** What kind of thing this is, shown as a small tag. */
-  kind: 'source' | 'period' | 'filter' | 'group' | 'sort' | 'column' | 'format' | 'rename';
+  kind: 'source' | 'period' | 'filter' | 'group' | 'sort' | 'column' | 'format' | 'rename' | 'layout';
   onEdit?: () => void;
   onRemove?: () => void;
 }
@@ -21,6 +21,7 @@ const KIND_LABEL: Record<Step['kind'], string> = {
   column: 'Column',
   format: 'Format',
   rename: 'Renamed',
+  layout: 'Layout',
 };
 
 const KIND_TONE: Record<Step['kind'], string> = {
@@ -32,6 +33,7 @@ const KIND_TONE: Record<Step['kind'], string> = {
   column: 'bg-gray-100 text-gray-700',
   format: 'bg-gray-100 text-gray-700',
   rename: 'bg-gray-100 text-gray-700',
+  layout: 'bg-indigo-100 text-indigo-800',
 };
 
 /**

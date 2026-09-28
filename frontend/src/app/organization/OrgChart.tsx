@@ -371,7 +371,7 @@ export default function OrgChart({ nodes, levels, selectedNodeId, onSelectNode, 
         ref={containerRef}
         onWheel={handleWheel}
         className="overflow-auto py-6 px-4"
-        style={{ maxHeight: 'calc(100vh - 260px)' }}
+        style={{ maxHeight: 'calc(var(--app-vh) * 100 - 260px)' }}
       >
         <div
           ref={contentRef}

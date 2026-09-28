@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.middleware.auth import get_current_user, require_role, require_salary_access
+from app.middleware.auth import require_permission, require_salary_access
 from app.models.user import User
 from app.schemas.compensation import (
     BulkCompensationCreate,
@@ -29,25 +29,28 @@ from app.services.payroll_service import PayrollService
 
 router = APIRouter(prefix="/compensation", tags=["compensation"])
 
-ROLES = ["tenant_admin", "finance"]
+# Governed by the permission matrix (finances module) plus, for anything that
+# shows or changes pay, the salary-viewer enrollment.
+_view = require_permission("finances", "view")
+_create = require_permission("finances", "create")
+_edit = require_permission("finances", "edit")
+_delete = require_permission("finances", "delete")
 
 
 # ── Payout schedules ─────────────────────────────────────────────────
 
 @router.get("/payout-schedules", response_model=List[PayoutScheduleResponse])
 async def list_payout_schedules(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(_view),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_role(ROLES)),
 ):
     return await PayoutScheduleService.list_schedules(db, current_user.tenant_id)
 
 
 @router.get("/payout-schedules/active", response_model=Optional[PayoutScheduleResponse])
 async def get_active_payout_schedule(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(_view),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_role(ROLES)),
 ):
     return await PayoutScheduleService.get_active(db, current_user.tenant_id)
 
@@ -55,9 +58,8 @@ async def get_active_payout_schedule(
 @router.post("/payout-schedules", response_model=PayoutScheduleResponse, status_code=201)
 async def create_payout_schedule(
     data: PayoutScheduleCreate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(_create),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_role(ROLES)),
 ):
     payload = data.model_dump()
     payload["cutoffs"] = [c if isinstance(c, dict) else c.model_dump() for c in data.cutoffs]
@@ -71,9 +73,8 @@ async def create_payout_schedule(
 async def update_payout_schedule(
     schedule_id: int,
     data: PayoutScheduleUpdate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(_edit),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_role(ROLES)),
 ):
     payload = data.model_dump(exclude_unset=True)
     if "cutoffs" in payload and payload["cutoffs"] is not None:
@@ -89,11 +90,13 @@ async def update_payout_schedule(
 @router.delete("/payout-schedules/{schedule_id}", status_code=204)
 async def delete_payout_schedule(
     schedule_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(_delete),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_role(ROLES)),
 ):
-    ok = await PayoutScheduleService.delete(db, current_user.tenant_id, schedule_id)
+    try:
+        ok = await PayoutScheduleService.delete(db, current_user.tenant_id, schedule_id)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
     if not ok:
         raise HTTPException(status_code=404, detail="Payout schedule not found")
     await db.commit()
@@ -102,9 +105,8 @@ async def delete_payout_schedule(
 @router.post("/payout-schedules/preview", response_model=PayoutPreviewResponse)
 async def preview_payout_date(
     data: PayoutPreviewRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(_view),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_role(ROLES)),
 ):
     payout = await PayoutScheduleService.resolve(db, current_user.tenant_id, data.earned_on)
     return PayoutPreviewResponse(earned_on=data.earned_on, payout_date=payout)
@@ -119,9 +121,8 @@ async def list_compensation_items(
     status: Optional[str] = None,
     date_from: Optional[date] = Query(None),
     date_to: Optional[date] = Query(None),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(_view),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_role(ROLES)),
     _sal=Depends(require_salary_access()),
 ):
     return await CompensationService.list_items(
@@ -134,9 +135,8 @@ async def list_compensation_items(
 @router.post("/items", response_model=CompensationItemResponse, status_code=201)
 async def create_compensation_item(
     data: CompensationItemCreate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(_create),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_role(ROLES)),
     _sal=Depends(require_salary_access()),
 ):
     item = await CompensationService.add_item(
@@ -151,14 +151,16 @@ async def create_compensation_item(
 async def void_compensation_item(
     item_id: int,
     data: CompensationItemVoid,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(_delete),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_role(ROLES)),
     _sal=Depends(require_salary_access()),
 ):
-    item = await CompensationService.void_item(db, current_user.tenant_id, item_id, data.reason)
+    try:
+        item = await CompensationService.void_item(db, current_user.tenant_id, item_id, data.reason)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
     if not item:
-        raise HTTPException(status_code=400, detail="Item not found or already paid (post a correction instead)")
+        raise HTTPException(status_code=404, detail="Compensation line not found")
     await db.commit()
     await db.refresh(item)
     return item
@@ -168,9 +170,8 @@ async def void_compensation_item(
 
 @router.get("/salaries", response_model=List[CurrentSalaryRow])
 async def list_current_salaries(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(_view),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_role(ROLES)),
     _sal=Depends(require_salary_access()),
 ):
     return await PayrollService.list_current_salaries(db, current_user.tenant_id)
@@ -179,14 +180,19 @@ async def list_current_salaries(
 @router.post("/salaries", response_model=CurrentSalaryRow, status_code=201)
 async def assign_salary(
     data: SalaryAssign,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(_edit),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_role(ROLES)),
     _sal=Depends(require_salary_access()),
 ):
     """Assign or change an employee's salary grade. A raise is the same call with
-    a later effective_date (salary history is effective-dated)."""
-    await PayrollService.assign_employee_salary(db, current_user.tenant_id, data.model_dump())
+    a later effective_date (salary history is effective-dated). Assigning again
+    on a date that already has an assignment corrects that assignment."""
+    try:
+        await PayrollService.assign_employee_salary(
+            db, current_user.tenant_id, data.model_dump(), actor=current_user
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     rows = await PayrollService.list_current_salaries(db, current_user.tenant_id)
     for r in rows:
         if r["employee_id"] == data.employee_id:
@@ -197,9 +203,8 @@ async def assign_salary(
 @router.post("/salaries/raise", response_model=List[RaiseResultRow])
 async def give_raise(
     data: RaiseRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(_edit),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_role(ROLES)),
     _sal=Depends(require_salary_access()),
 ):
     """Apply a percent/fixed/grade salary increase to one or more employees.
@@ -219,9 +224,8 @@ async def give_raise(
 @router.post("/items/bulk", response_model=List[CompensationItemResponse], status_code=201)
 async def bulk_create_compensation(
     data: BulkCompensationCreate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(_create),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_role(ROLES)),
     _sal=Depends(require_salary_access()),
 ):
     """Grant the same compensation line to many employees at once."""
@@ -243,12 +247,12 @@ async def bulk_create_compensation(
 @router.post("/items/expand-recurring")
 async def expand_recurring(
     data: ExpandRecurringRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(_create),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_role(ROLES)),
 ):
     """Materialize recurring allowance/incentive templates into concrete
-    scheduled rows across the given horizon (idempotent)."""
+    scheduled rows across the given horizon (idempotent). Payroll compute
+    does this for its own period, so this is only for looking ahead."""
     count = await CompensationService.expand_recurring(
         db, current_user.tenant_id, data.horizon_start, data.horizon_end
     )

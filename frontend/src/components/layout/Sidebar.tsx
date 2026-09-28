@@ -6,15 +6,30 @@ import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSidebar } from '@/contexts/SidebarContext';
-import { RoleCode } from '@/types';
-import { hasAnyRole, getPrimaryRole } from '@/lib/roles';
+import { usePermissions } from '@/contexts/PermissionsContext';
+import { User } from '@/types';
+import { hasAnyRole, hasRole, getPrimaryRole } from '@/lib/roles';
+
+// An entry is shown only when the user can open the page behind it, judged the
+// same way that page judges it: the permission matrix where the page checks the
+// matrix, the page's role list where it still checks roles. The menu used to
+// carry its own role lists, so Settings was shown to everyone and bounced them,
+// HR could not find Policies, and My Schedule / My Leave had no entry at all.
+interface NavContext {
+  user: User;
+  can: (module: string, action: string) => boolean;
+}
 
 interface NavItem {
   name: string;
   href: string;
   icon: React.ReactNode;
-  roles: RoleCode[];
+  visible: (ctx: NavContext) => boolean;
 }
+
+// Who has a place to review leave on /leaves (Approvals / Team Overview tabs).
+// Everyone else files and follows their own leave from My Leave.
+const REVIEWER_ROLES = ['tenant_admin', 'hr', 'manager', 'leave_approver'];
 
 const navItems: NavItem[] = [
   {
@@ -25,7 +40,29 @@ const navItems: NavItem[] = [
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
       </svg>
     ),
-    roles: ['employee', 'tenant_admin', 'hr', 'manager', 'leave_approver', 'schedule_editor', 'finance'],
+    visible: () => true,
+  },
+  {
+    // Self-service: everyone's own published shifts. This is also the screen
+    // the app keeps an offline copy of.
+    name: 'My Schedule',
+    href: '/my/schedule',
+    icon: (
+      <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2zm4-5l2 2 4-4" />
+      </svg>
+    ),
+    visible: () => true,
+  },
+  {
+    name: 'My Leave',
+    href: '/my/leave',
+    icon: (
+      <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+      </svg>
+    ),
+    visible: () => true,
   },
   {
     name: 'Employees',
@@ -35,7 +72,7 @@ const navItems: NavItem[] = [
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
       </svg>
     ),
-    roles: ['tenant_admin', 'hr', 'manager'],
+    visible: ({ can }) => can('employees', 'view'),
   },
   {
     name: 'Schedules',
@@ -45,7 +82,7 @@ const navItems: NavItem[] = [
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
       </svg>
     ),
-    roles: ['employee', 'tenant_admin', 'hr', 'manager', 'schedule_editor'],
+    visible: () => true,
   },
   {
     name: 'Leave',
@@ -55,7 +92,8 @@ const navItems: NavItem[] = [
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
       </svg>
     ),
-    roles: ['employee', 'tenant_admin', 'hr', 'manager', 'leave_approver'],
+    visible: ({ user, can }) =>
+      hasAnyRole(user, REVIEWER_ROLES) || can('leave', 'view') || can('leave', 'edit'),
   },
   {
     name: 'My Payslips',
@@ -65,7 +103,7 @@ const navItems: NavItem[] = [
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 14h6m-6-4h6m2 10H7a2 2 0 01-2-2V4a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V18a2 2 0 01-2 2z" />
       </svg>
     ),
-    roles: ['employee', 'tenant_admin', 'hr', 'manager', 'leave_approver', 'schedule_editor', 'finance'],
+    visible: () => true,
   },
   {
     // Every role: clocking yourself in is self-service. The page itself renders
@@ -78,7 +116,7 @@ const navItems: NavItem[] = [
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
       </svg>
     ),
-    roles: ['employee', 'tenant_admin', 'hr', 'manager', 'leave_approver', 'schedule_editor', 'finance'],
+    visible: () => true,
   },
   {
     name: 'Attendance',
@@ -88,7 +126,7 @@ const navItems: NavItem[] = [
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
       </svg>
     ),
-    roles: ['tenant_admin', 'hr', 'manager', 'schedule_editor', 'leave_approver'],
+    visible: ({ can }) => can('schedules', 'view'),
   },
   {
     name: 'Analytics',
@@ -98,7 +136,7 @@ const navItems: NavItem[] = [
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
       </svg>
     ),
-    roles: ['tenant_admin', 'hr', 'manager'],
+    visible: ({ can }) => can('reports', 'view'),
   },
   {
     name: 'Organization',
@@ -108,7 +146,7 @@ const navItems: NavItem[] = [
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
       </svg>
     ),
-    roles: ['tenant_admin', 'hr'],
+    visible: ({ can }) => can('organization', 'view'),
   },
   {
     name: 'Finances',
@@ -118,7 +156,7 @@ const navItems: NavItem[] = [
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
       </svg>
     ),
-    roles: ['tenant_admin', 'finance'],
+    visible: ({ can }) => can('finances', 'view'),
   },
   {
     name: 'Policies',
@@ -128,7 +166,8 @@ const navItems: NavItem[] = [
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25zM6.75 12h.008v.008H6.75V12zm0 3h.008v.008H6.75V15zm0 3h.008v.008H6.75V18z" />
       </svg>
     ),
-    roles: ['tenant_admin'],
+    // Same rule as the page: shown when at least one of its tabs is readable.
+    visible: ({ can }) => can('schedules', 'view') || can('leave', 'view') || can('settings', 'view'),
   },
   {
     name: 'Data Management',
@@ -138,7 +177,17 @@ const navItems: NavItem[] = [
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75m-16.5-3.75v3.75m16.5 0v3.75C20.25 16.153 16.556 18 12 18s-8.25-1.847-8.25-4.125v-3.75m16.5 0c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125" />
       </svg>
     ),
-    roles: ['tenant_admin'],
+    visible: ({ can }) => can('reports', 'create'),
+  },
+  {
+    name: 'Audit Log',
+    href: '/audit-log',
+    icon: (
+      <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+      </svg>
+    ),
+    visible: ({ user }) => hasRole(user, 'tenant_admin'),
   },
   {
     name: 'Settings',
@@ -149,18 +198,19 @@ const navItems: NavItem[] = [
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
       </svg>
     ),
-    roles: ['employee', 'tenant_admin', 'hr', 'manager', 'leave_approver', 'schedule_editor', 'finance'],
+    visible: ({ user }) => hasRole(user, 'tenant_admin'),
   },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
   const { user } = useAuth();
+  const { hasPermission } = usePermissions();
   const { close, isCollapsed, toggleCollapse } = useSidebar();
 
-  const filteredItems = navItems.filter(
-    (item) => user && hasAnyRole(user, item.roles)
-  );
+  const filteredItems = user
+    ? navItems.filter((item) => item.visible({ user, can: hasPermission }))
+    : [];
 
   // `isCollapsed` is a DESKTOP-only preference (persisted). The mobile drawer is
   // always full-width (w-64), so collapse styling must never hide labels there.
@@ -174,9 +224,12 @@ export function Sidebar() {
   const rowJustify = isCollapsed ? 'gap-3 lg:justify-center lg:gap-0' : 'gap-3';
 
   return (
-    <div className="flex flex-col h-full bg-gray-900 text-white overflow-hidden">
+    // Safe areas: the mobile drawer is fixed to the screen edge, so on a phone
+    // with a notch or home indicator its logo row, links and user row would sit
+    // under them. env() is 0 everywhere else.
+    <div className="flex flex-col h-full bg-gray-900 text-white overflow-hidden pl-[env(safe-area-inset-left)]">
       {/* Logo */}
-      <div className={`flex items-center justify-between h-16 border-b border-gray-800 ${isCollapsed ? 'px-6 lg:px-3' : 'px-6'}`}>
+      <div className={`flex items-center justify-between h-[calc(4rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] border-b border-gray-800 ${isCollapsed ? 'px-6 lg:px-3' : 'px-6'}`}>
         <Link href="/dashboard" aria-label="ursked — go to the dashboard" className={`flex items-center ${isCollapsed ? 'lg:justify-center lg:w-full' : ''}`}>
           {/* The wordmark's darker half would disappear on the dark sidebar, so
               it sits on a small white chip. Collapsed rail shows just the icon. */}
@@ -203,7 +256,8 @@ export function Sidebar() {
         {/* Close button for mobile */}
         <button
           onClick={close}
-          className="lg:hidden text-gray-400 hover:text-white"
+          aria-label="Close the navigation menu"
+          className="lg:hidden inline-flex items-center justify-center min-h-[44px] min-w-[44px] -mr-2 text-gray-400 hover:text-white"
         >
           <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -255,7 +309,7 @@ export function Sidebar() {
 
       {/* User info at bottom */}
       {user && (
-        <div className={`p-4 border-t border-gray-800 ${isCollapsed ? 'lg:flex lg:justify-center' : ''}`}>
+        <div className={`p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] border-t border-gray-800 ${isCollapsed ? 'lg:flex lg:justify-center' : ''}`}>
           <div className={`flex items-center ${rowJustify}`}>
             <div className="w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center text-sm font-medium flex-shrink-0">
               {user.first_name[0]}

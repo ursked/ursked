@@ -27,6 +27,8 @@ const PUBLIC_PATHS = [
   '/auth/activate',
   '/auth/forgot-password',
   '/auth/reset-password',
+  // The service worker's offline page, precached without a session.
+  '/offline',
 ];
 
 function isPublic(pathname: string): boolean {

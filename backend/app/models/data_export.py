@@ -44,6 +44,14 @@ class DataExportConfig(Base):
     output_format = Column(String(10), nullable=False, server_default="csv")
     row_limit = Column(Integer, nullable=True)
 
+    # ── Page layout (migration 060) ──────────────────────────────
+    # layout:          headings, header bands, blocks, sheet name, style; see
+    #                  export_pipeline "Layout". NULL = the flat sheet it always was.
+    # source_options:  switches passed to the data source, e.g.
+    #                  {"fill_calendar_days": true, "include_drafts": false}
+    layout = Column(JSONB, nullable=True)
+    source_options = Column(JSONB, nullable=False, server_default="{}", default=dict)
+
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import dynamic from 'next/dynamic';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { useAuth } from '@/contexts/AuthContext';
+import { usePermissions } from '@/contexts/PermissionsContext';
 import { hasAnyRole } from '@/lib/roles';
 import { Skeleton } from '@/components/ui/Skeleton';
 
@@ -34,12 +35,20 @@ const tabs: { key: TabKey; label: string }[] = [
 
 export default function AnalyticsPage() {
   const { user } = useAuth();
+  const { hasPermission, isLoading: permissionsLoading } = usePermissions();
   const [activeTab, setActiveTab] = useState<TabKey>('overtime');
   const [year, setYear] = useState<number>(new Date().getFullYear());
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
 
-  const hasAccess = user && hasAnyRole(user, ['tenant_admin', 'hr', 'manager']);
+  // The API checks reports:view (the Permissions screen), not role codes.
+  const hasAccess = !!user && hasPermission('reports', 'view');
+  // Roles outside FULL_SCOPE_ROLES["reports"] get figures for their own teams.
+  const teamScoped = !!user && !hasAnyRole(user, ['tenant_admin', 'hr', 'finance']);
+
+  if (permissionsLoading) {
+    return <DashboardLayout><div /></DashboardLayout>;
+  }
 
   if (!hasAccess) {
     return (
@@ -121,7 +130,10 @@ export default function AnalyticsPage() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Analytics</h1>
-            <p className="text-gray-500 mt-1">Monthly trends for overtime, leave, and attendance.</p>
+            <p className="text-gray-500 mt-1">
+              Monthly trends for overtime, leave, and attendance.
+              {teamScoped && ' These figures cover only the people in the units you head or deputise.'}
+            </p>
           </div>
         </div>
 
@@ -225,6 +237,9 @@ export default function AnalyticsPage() {
   );
 }
 
+// Local calendar date. toISOString() converts to UTC first, so east of
+// Greenwich "this month" started on the last day of the previous month.
 function fmt(d: Date): string {
-  return d.toISOString().split('T')[0];
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }

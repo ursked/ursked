@@ -12,7 +12,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.attendance import OvertimeLog, LeaveCreditAdjustment
-from app.models.leave import OvertimeCategory
+from app.models.leave import LeaveType, OvertimeCategory
 
 
 class OvertimeService:
@@ -25,11 +25,14 @@ class OvertimeService:
         status: Optional[str] = None,
         skip: int = 0,
         limit: int = 50,
+        employee_ids=None,
     ) -> Tuple[List[OvertimeLog], int]:
         base = select(OvertimeLog).where(OvertimeLog.tenant_id == tenant_id)
 
         if employee_id:
             base = base.where(OvertimeLog.employee_id == employee_id)
+        if employee_ids is not None:
+            base = base.where(OvertimeLog.employee_id.in_(list(employee_ids)))
         if status:
             base = base.where(OvertimeLog.status == status)
 
@@ -96,6 +99,31 @@ class OvertimeService:
         return log
 
     @staticmethod
+    async def conversion_leave_types(db: AsyncSession, tenant_id: UUID) -> List[LeaveType]:
+        """Leave types overtime can be converted into: the ones an active
+        overtime category converts into, or every active type when no
+        category names one."""
+        targets = (await db.execute(
+            select(LeaveType)
+            .join(OvertimeCategory, OvertimeCategory.leave_credit_type_id == LeaveType.id)
+            .where(
+                LeaveType.tenant_id == tenant_id,
+                LeaveType.is_active == True,  # noqa: E712
+                OvertimeCategory.is_active == True,  # noqa: E712
+            )
+            .distinct()
+            .order_by(LeaveType.sort_order, LeaveType.name)
+        )).scalars().all()
+        if targets:
+            return list(targets)
+        return list((await db.execute(
+            select(LeaveType).where(
+                LeaveType.tenant_id == tenant_id,
+                LeaveType.is_active == True,  # noqa: E712
+            ).order_by(LeaveType.sort_order, LeaveType.name)
+        )).scalars().all())
+
+    @staticmethod
     async def convert_to_leave(
         db: AsyncSession,
         tenant_id: UUID,
@@ -113,15 +141,38 @@ class OvertimeService:
         log = await OvertimeService.get_overtime_log(db, tenant_id, log_id)
         if not log or log.status != "approved":
             return None
+        if log.paid_at is not None:
+            raise ValueError(
+                "This overtime has already been paid in a finalized payroll run, "
+                "so it cannot also be converted to leave."
+            )
 
         # Get category's leave credit rate
         leave_credit_rate = 8.0  # default: 8 hours of OT = 1 day credit
+        category = None
         if log.overtime_category_id:
             stmt = select(OvertimeCategory).where(OvertimeCategory.id == log.overtime_category_id)
             result = await db.execute(stmt)
             category = result.scalar_one_or_none()
             if category and category.leave_credit_rate:
                 leave_credit_rate = category.leave_credit_rate
+
+        # The credit must say which leave it is: balances count ot_conversion
+        # credits per leave type, and an untyped one was added to every type.
+        if not leave_type and category is not None and category.leave_credit_type_id:
+            lt = await db.get(LeaveType, category.leave_credit_type_id)
+            leave_type = lt.code if lt else None
+        if not leave_type:
+            raise ValueError("Choose which leave type the overtime becomes.")
+        chosen = (await db.execute(
+            select(LeaveType).where(
+                LeaveType.tenant_id == tenant_id,
+                LeaveType.code == leave_type,
+                LeaveType.is_active == True,  # noqa: E712
+            )
+        )).scalar_one_or_none()
+        if chosen is None:
+            raise ValueError(f"There is no active leave type with the code '{leave_type}'.")
 
         hours_ot = log.overtime_minutes / 60.0
         leave_credits = hours_ot / leave_credit_rate

@@ -13,6 +13,11 @@ from app.services.payout_schedule_service import PayoutScheduleService
 
 VALID_KINDS = {"bonus", "incentive", "allowance", "salary_adjustment", "leave_cash", "correction"}
 
+# What a person may add by hand. salary_adjustment is the audit line a raise
+# writes and payroll deliberately never pays (the raise is in base pay), so a
+# hand-made one was silently never paid; a correction is the kind that is.
+MANUAL_KINDS = {"bonus", "incentive", "allowance", "correction"}
+
 
 class CompensationService:
     @staticmethod
@@ -74,12 +79,20 @@ class CompensationService:
     @staticmethod
     async def void_item(db: AsyncSession, tenant_id: UUID, item_id: int, reason: str) -> Optional[CompensationItem]:
         """Void a not-yet-paid item. Paid items are immutable — a correction row
-        must be added instead (see add_item kind='correction')."""
+        must be added instead (see add_item kind='correction'). Returns None
+        when the item does not exist; raises ValueError with the sentence to
+        show when it cannot be voided."""
         item = await db.get(CompensationItem, item_id)
         if not item or item.tenant_id != tenant_id:
             return None
         if item.status == "paid":
-            return None  # caller should post a correction instead
+            raise ValueError(
+                "This line has already been paid, so it cannot be voided. Add a "
+                "Correction for the same employee instead (use a negative amount "
+                "to take money back); it is paid in the next payroll run."
+            )
+        if item.status == "void":
+            raise ValueError("This line is already void.")
         item.status = "void"
         meta = dict(item.meta or {})
         meta["void_reason"] = reason
@@ -109,16 +122,17 @@ class CompensationService:
         db: AsyncSession, tenant_id: UUID, horizon_start: date, horizon_end: date,
     ) -> int:
         """Materialize recurring allowance/incentive templates into concrete
-        scheduled rows for each payout in [horizon_start, horizon_end].
+        scheduled rows for each occurrence earned in [horizon_start, horizon_end].
 
         A template is a CompensationItem with recurrence in {monthly, per_cutoff}
-        and template_id IS NULL. It spawns recurrence='once' rows (template_id set)
-        so the payout sweep treats them like any other line. Idempotent: skips a
-        payout_date already materialized for that template.
+        and template_id IS NULL. The template row is itself its first
+        occurrence (it is paid like any other line); every later one is a
+        recurrence='once' row with template_id set. Idempotent: an occurrence
+        already made for a template and earned date (or payout date) is never
+        made twice, so this is safe to run on every payroll compute.
         """
         sched = await PayoutScheduleService.get_active(db, tenant_id)
-        if not sched or not sched.cutoffs:
-            return 0
+        cutoffs = (sched.cutoffs if sched else None) or []
 
         res = await db.execute(
             select(CompensationItem).where(
@@ -131,23 +145,32 @@ class CompensationService:
         templates = list(res.scalars().all())
         created = 0
         for tpl in templates:
-            # Candidate earned_on dates within the horizon.
+            if tpl.recurrence == "per_cutoff" and not cutoffs:
+                # "Every cutoff" means nothing without a payout schedule; the
+                # template itself is still paid once.
+                continue
             earned_dates = CompensationService._recurring_earned_dates(
-                tpl, sched.cutoffs, horizon_start, horizon_end,
+                tpl, cutoffs, horizon_start, horizon_end,
             )
-            for ed in earned_dates:
-                payout = await PayoutScheduleService.resolve(db, tenant_id, ed, sched)
-                if payout is None:
-                    continue
-                # idempotency: has this template already produced a row for payout?
-                exists = await db.execute(
-                    select(CompensationItem.id).where(
-                        CompensationItem.tenant_id == tenant_id,
-                        CompensationItem.template_id == tpl.id,
-                        CompensationItem.payout_date == payout,
-                    )
+            existing = (await db.execute(
+                select(CompensationItem.earned_on, CompensationItem.payout_date).where(
+                    CompensationItem.tenant_id == tenant_id,
+                    CompensationItem.template_id == tpl.id,
                 )
-                if exists.first():
+            )).all()
+            seen_earned = {r[0] for r in existing} | {tpl.earned_on}
+            seen_payout = {r[1] for r in existing} | {tpl.payout_date}
+            for ed in earned_dates:
+                # Nothing before the template starts, and never a second copy
+                # of an occurrence that exists (the template counts as one).
+                if ed <= tpl.earned_on or ed in seen_earned:
+                    continue
+                payout = None
+                if sched and cutoffs:
+                    payout = await PayoutScheduleService.resolve(db, tenant_id, ed, sched)
+                if payout is None:
+                    payout = ed
+                if payout in seen_payout:
                     continue
                 db.add(CompensationItem(
                     tenant_id=tenant_id,
@@ -163,9 +186,30 @@ class CompensationService:
                     meta=tpl.meta,
                     created_by=tpl.created_by,
                 ))
+                seen_earned.add(ed)
+                seen_payout.add(payout)
                 created += 1
         await db.flush()
         return created
+
+    @staticmethod
+    async def expand_for_period(db: AsyncSession, tenant_id: UUID, period) -> int:
+        """Make the recurring occurrences a payroll run is due to pay.
+
+        Occurrences are anchored on the date they are earned (the 1st of the
+        month, or each cutoff's first day), so the ones earned inside the
+        period are made; a run with a payout date also gets those earned in
+        the month before, which is where a later payout's work was done. What
+        a run then pays is decided by the usual payout-date / earned-date
+        selection, so an occurrence due in another run waits for it.
+        """
+        from datetime import timedelta
+
+        start = period.start_date
+        if getattr(period, "payout_date", None) is not None:
+            start = min(start, (period.start_date.replace(day=1) - timedelta(days=1)).replace(day=1))
+        end = max(period.end_date, getattr(period, "payout_date", None) or period.end_date)
+        return await CompensationService.expand_recurring(db, tenant_id, start, end)
 
     @staticmethod
     def _recurring_earned_dates(tpl, cutoffs: list, start: date, end: date) -> list:
