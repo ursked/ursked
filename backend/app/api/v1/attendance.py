@@ -36,6 +36,7 @@ from app.services.email_service import EmailService
 from app.services.overtime_service import OvertimeService
 from app.services.tardiness_service import TardinessService
 from app.services.timeclock_service import TimeclockError, TimeclockService, _tenant_now
+from app.utils.client_ip import client_address
 
 router = APIRouter(prefix="/attendance", tags=["attendance"])
 
@@ -607,7 +608,7 @@ async def punch_clock(
             client_time=data.client_time,
             notes=data.notes,
             source="web",
-            ip_address=request.client.host if request.client else None,
+            ip_address=client_address(request),
             user_agent=request.headers.get("user-agent"),
             recorded_by=current_user.id,
         )

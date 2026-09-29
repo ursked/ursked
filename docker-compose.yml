@@ -82,6 +82,10 @@ services:
       # guards to warnings so the app runs as production over plain HTTP on a
       # trusted network. Never enable this internet-facing. See .env.example.
       ALLOW_INSECURE_TRANSPORT: "${ALLOW_INSECURE_TRANSPORT:-false}"
+      # Reverse proxies in front of ursked that append the visitor's address to
+      # X-Forwarded-For (nginx, Caddy, Cloudflare Tunnel). Leave 0 without one:
+      # the header is then ignored, because a browser can forge it.
+      FORWARDED_FOR_TRUSTED_HOPS: "${FORWARDED_FOR_TRUSTED_HOPS:-0}"
       EXPOSE_API_DOCS: "${EXPOSE_API_DOCS:-false}"
       # Optional SMTP bootstrap (self-host email). If SMTP_HOST is set, seeds the
       # mail config while it is empty (or still exactly what these values set);

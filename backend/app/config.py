@@ -66,6 +66,16 @@ class Settings(BaseSettings):
     # --- Brute-force protection ---
     LOGIN_RATE_LIMIT_ATTEMPTS: int = 10
     LOGIN_RATE_LIMIT_WINDOW_SECONDS: int = 300
+    # Company-wide backstop used instead of the per-address limit when the
+    # caller's address is not known (see app/utils/client_ip.py). Sized so a
+    # whole shift signing in at once is fine; the per-account lockout below is
+    # what stops password guessing.
+    LOGIN_RATE_LIMIT_GLOBAL_ATTEMPTS: int = 300
+    PASSWORD_RESET_RATE_LIMIT_GLOBAL_ATTEMPTS: int = 60
+    # Reverse proxies in front of the app that append the caller's address to
+    # X-Forwarded-For (nginx $proxy_add_x_forwarded_for, Caddy, Cloudflare
+    # Tunnel). 0 = none: the header is ignored, because a browser can set it.
+    FORWARDED_FOR_TRUSTED_HOPS: int = 0
     ACCOUNT_LOCKOUT_ATTEMPTS: int = 5
     ACCOUNT_LOCKOUT_MINUTES: int = 15
     TWO_FACTOR_RATE_LIMIT_ATTEMPTS: int = 5

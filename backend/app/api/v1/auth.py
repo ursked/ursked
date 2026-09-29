@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime, timezone
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy import func, select
@@ -23,6 +24,7 @@ from app.middleware.security import (
     set_two_factor_cookie,
 )
 from app.services.token_store import AccountLockout, RateLimiter, TokenDenylist
+from app.utils.client_ip import client_address, rate_limit_key
 from app.models.role import UserRole
 from app.models.tenant import Tenant
 from app.models.user import User
@@ -62,13 +64,10 @@ def _user_with_roles_options():
     ]
 
 
-def _client_ip(request: Request) -> str:
-    # X-Forwarded-For is only meaningful behind a trusted proxy; the deployment
-    # terminates TLS at nginx which sets it. Fall back to the socket peer.
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
+def _client_ip(request: Optional[Request]) -> Optional[str]:
+    # Only an address a trusted proxy vouches for; see app/utils/client_ip.py
+    # for why X-Forwarded-For can no longer be taken from anyone.
+    return client_address(request)
 
 
 async def _frontend_base(db: AsyncSession, http_request: Request) -> str:
@@ -174,9 +173,12 @@ async def _password_sign_in(
     is_privileged_door = portal in session_portal.PRIVILEGED
     audit_extra = {"portal": portal} if is_privileged_door else {}
 
+    limit_key, per_address = rate_limit_key(
+        f"{portal + '-login' if is_privileged_door else 'login'}", http_request
+    )
     if await RateLimiter.hit(
-        f"{portal + '-login' if is_privileged_door else 'login'}:ip:{ip}",
-        settings.LOGIN_RATE_LIMIT_ATTEMPTS,
+        limit_key,
+        settings.LOGIN_RATE_LIMIT_ATTEMPTS if per_address else settings.LOGIN_RATE_LIMIT_GLOBAL_ATTEMPTS,
         settings.LOGIN_RATE_LIMIT_WINDOW_SECONDS,
     ):
         logger.warning("Login rate limit exceeded for ip=%s portal=%s", ip, portal)
@@ -504,13 +506,14 @@ async def forgot_password(
     """Begin a password reset. Always returns the same message and status so it
     cannot be used to enumerate accounts."""
     email = (data.email or "").strip().lower()
-    ip = _client_ip(http_request)
 
     # Rate-limit per address AND per IP so this can't be used to mailbomb someone
     # or to brute the address space. Over-limit still returns the neutral message.
+    reset_key, per_address = rate_limit_key("pwreset", http_request)
     over_ip = await RateLimiter.hit(
-        f"pwreset:ip:{ip}",
-        settings.PASSWORD_RESET_RATE_LIMIT_ATTEMPTS,
+        reset_key,
+        settings.PASSWORD_RESET_RATE_LIMIT_ATTEMPTS if per_address
+        else settings.PASSWORD_RESET_RATE_LIMIT_GLOBAL_ATTEMPTS,
         settings.PASSWORD_RESET_RATE_LIMIT_WINDOW_SECONDS,
     )
     over_email = await RateLimiter.hit(
@@ -546,10 +549,10 @@ async def reset_password(
 ):
     """Complete a password reset with a valid token. Cap attempts to keep the
     token space from being brute-forced."""
-    ip = _client_ip(http_request)
+    verify_key, per_address = rate_limit_key("pwreset-verify", http_request)
     if await RateLimiter.hit(
-        f"pwreset-verify:ip:{ip}",
-        settings.LOGIN_RATE_LIMIT_ATTEMPTS,
+        verify_key,
+        settings.LOGIN_RATE_LIMIT_ATTEMPTS if per_address else settings.LOGIN_RATE_LIMIT_GLOBAL_ATTEMPTS,
         settings.LOGIN_RATE_LIMIT_WINDOW_SECONDS,
     ):
         raise HTTPException(

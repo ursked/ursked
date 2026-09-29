@@ -55,6 +55,7 @@ from typing import Optional, Tuple
 from fastapi import HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.utils.client_ip import client_address
 
 EMPLOYEE = "employee"
 ADMIN = "admin"
@@ -390,12 +391,8 @@ async def _refuse_ended(db: AsyncSession, row, user, reason: str, request: Reque
 
 
 def _ip(request: Optional[Request]) -> Optional[str]:
-    if request is None:
-        return None
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else None
+    # Trusted proxies only; see app/utils/client_ip.py.
+    return client_address(request)
 
 
 def describe(user, request: Request) -> dict:

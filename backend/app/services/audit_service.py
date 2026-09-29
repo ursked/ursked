@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.site_settings import AuditLog
 from app.models.user import User
+from app.utils.client_ip import client_address
 
 # The employee fields whose changes are recorded, in display order.
 USER_FIELDS = (
@@ -68,12 +69,11 @@ def diff(before: Dict[str, Any], after: Dict[str, Any]) -> Dict[str, Dict[str, A
 
 
 def _client_ip(request: Optional[Request]) -> Optional[str]:
-    if request is None:
-        return None
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()[:50]
-    return request.client.host[:50] if request.client else None
+    # A browser can set X-Forwarded-For, so an audit trail that believed it
+    # recorded whatever address the actor chose. Only a trusted proxy's word
+    # counts now (app/utils/client_ip.py); otherwise the entry has no address.
+    addr = client_address(request)
+    return addr[:50] if addr else None
 
 
 def record(

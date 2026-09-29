@@ -238,6 +238,8 @@ TLS-terminating reverse proxy in front of the frontend's published port
 (`APP_PORT`, default `3000`). The browser only ever talks to the frontend origin;
 it proxies `/api/*` to the backend internally, so no CORS setup is needed.
 
+Tell ursked about the proxy with `FORWARDED_FOR_TRUSTED_HOPS=1` in `.env` (the number of proxies that append the visitor's address to `X-Forwarded-For`; nginx needs `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`, Caddy and Cloudflare Tunnel do it by default). Sign-in limits and the audit log then see each person's real address. With the default `0` the header is ignored, because a browser can forge it: sign-in is still protected per account, and a company-wide backstop replaces the per-address limit.
+
 **Installing the app on a phone or desktop needs HTTPS** (or `http://localhost`): over plain HTTP on a LAN address the site works in the browser, but "Install the app" / "Add to Home Screen" and the offline copy of My Schedule are unavailable.
 
 ### Plain-HTTP trial (no proxy)
