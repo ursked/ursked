@@ -209,7 +209,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <SidebarProvider>
       <DashboardContent workspace={workspace}>
-        {pureAdminInEmployeeSession ? <NoEmployeeWorkspace /> : redirectTo ? null : children}
+        {pureAdminInEmployeeSession ? (
+          <NoEmployeeWorkspace />
+        ) : redirectTo || permissionsLoading ? (
+          // Hold the screen back until we know whether it belongs to this
+          // session. Rendering it while permissions load let a page run its
+          // own effects first: the schedule grid writes its date and view
+          // into the address, and that navigation landed after the redirect,
+          // leaving an admin session on the grid instead of the dashboard.
+          null
+        ) : (
+          children
+        )}
       </DashboardContent>
     </SidebarProvider>
   );
