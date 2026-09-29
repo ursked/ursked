@@ -44,7 +44,7 @@ _ACTION_WORDS = {
 async def has_permission(db: AsyncSession, user: User, module: str, action: str) -> bool:
     if user.has_role("tenant_admin"):
         return True
-    role_ids = [ur.role_id for ur in user.user_roles]
+    role_ids = user.role_ids
     return await PermissionService.check_permission(db, user.tenant_id, role_ids, module, action)
 
 
@@ -124,7 +124,7 @@ def assert_may_change_sign_in(actor: User, target: User, fields: Iterable[str]) 
     touched = SIGN_IN_FIELDS & set(fields)
     if not touched:
         return
-    if target.has_role("tenant_admin") and not actor.has_role("tenant_admin"):
+    if target.holds_role("tenant_admin") and not actor.has_role("tenant_admin"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=(
@@ -140,7 +140,7 @@ async def assert_may_change_active_status(db: AsyncSession, actor: User, target:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="You cannot change the active status of your own account.",
         )
-    if target.has_role("tenant_admin"):
+    if target.holds_role("tenant_admin"):
         if not actor.has_role("tenant_admin"):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

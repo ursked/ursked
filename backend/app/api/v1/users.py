@@ -82,7 +82,7 @@ async def lookup_users(
     from app.services.permission_service import PermissionService
 
     if not current_user.has_role("tenant_admin"):
-        role_ids = [ur.role_id for ur in current_user.user_roles]
+        role_ids = current_user.role_ids
         allowed = False
         for module, action in _LOOKUP_PERMISSIONS:
             if await PermissionService.check_permission(
@@ -295,7 +295,7 @@ async def create_user(
         details={
             "target_name": audit_service.user_label(user),
             "after": audit_service.snapshot_user(user),
-            "roles": sorted(user.role_codes),
+            "roles": sorted(user.stored_role_codes),
             "custom_fields": cf_changes,
             "invited": bool(send_invite),
         },
@@ -555,7 +555,7 @@ async def update_user(
     await records.validate_fields(db, tenant_id, update_data, target=user)
 
     before = audit_service.snapshot_user(user)
-    roles_before = roles_after = sorted(user.role_codes)
+    roles_before = roles_after = sorted(user.stored_role_codes)
     cf_changes: Dict[str, Any] = {}
     # All or nothing: roles, custom fields and columns in one savepoint.
     try:
@@ -589,7 +589,7 @@ async def update_user(
     # Notify the user their roles changed (fire-and-forget). Only when the set
     # actually differs and it isn't the admin editing their own account.
     if roles_changed and user.email and user.id != current_user.id:
-        role_labels = ", ".join(sorted(user.role_codes)) or "employee"
+        role_labels = ", ".join(sorted(user.stored_role_codes)) or "employee"
         EmailService.fire_and_forget(
             lambda db, email=user.email, first_name=user.first_name, labels=role_labels:
                 EmailService.send_roles_changed_email(

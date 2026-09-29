@@ -60,13 +60,27 @@ VALID_MODULES = [
 #                 delete delete policies, types and approver rules
 #                 Approving a request is governed by the approver chain, not
 #                 the matrix: the resolved approver may always act on their step.
-#   finances      view   payroll periods, compensation, deductions (salary
-#                        figures additionally require salary-access enrollment)
-#                 create create periods and compensation items
-#                 edit   compute payroll, edit items, deduction types
+#   finances      view   the STRUCTURE: deduction types and their bracket
+#                        tables, payout schedules, salary grade names, the
+#                        payroll period calendar (names, dates, status)
+#                 create create periods, deduction types, payout schedules
+#                 edit   edit that structure; compute payroll
 #                 delete void and delete
-#                 Approve/finalize stays tenant_admin only: the person who
-#                 computes a payroll should not also be the one who locks it.
+#                 FIGURES are not the matrix's to give. Grade rates, salaries,
+#                 raises, bonuses and allowances, payroll results and totals,
+#                 other people's payslips, overtime pay and lateness
+#                 deductions need an active salary-VIEWER enrollment, which
+#                 another person must approve (salary_enrollment_service).
+#                 Nobody bypasses it, tenant_admin included: the owner's rule
+#                 is that an administrator sets payroll up but does not see
+#                 what anyone earns unless someone else agrees. So anything
+#                 that shows, produces or changes a figure (a grade's rate, a
+#                 salary, a bonus, computing a run) needs the matrix action
+#                 AND viewer.
+#                 Approve and finalize a run: finances:edit plus viewer, and
+#                 never by the person who computed that run (maker-checker),
+#                 whatever their role. Recomputing makes the recomputer the
+#                 preparer and clears any approval.
 #   settings      view   read company settings, policies, work sites
 #                 edit   change them (create/delete for the list-type ones)
 #   reports       view   analytics dashboards
@@ -91,9 +105,14 @@ FULL_SCOPE_ROLES = {
 # enforced, so enforcing it changes nothing until an admin edits a box. Where
 # the old hard-coded behaviour was itself a defect (e.g. any reviewer approving
 # any request), the fix lives in the router, not in these defaults.
+#
+# `extra` used to carry {"view_salary": True} for admin, HR and Finance. Nothing
+# ever enforced it, yet screens showed it as though it decided who sees pay;
+# salary-viewer enrollment decides that. It is no longer seeded or shown.
+# Rows that already hold the key keep it (the column is left alone); it is inert.
 DEFAULT_PERMISSIONS = {
     "tenant_admin": {
-        "employees": (True, True, True, True, {"view_salary": True}),
+        "employees": (True, True, True, True, {}),
         "organization": (True, True, True, True, {}),
         "schedules": (True, True, True, True, {}),
         "leave": (True, True, True, True, {}),
@@ -102,7 +121,7 @@ DEFAULT_PERMISSIONS = {
         "reports": (True, True, True, True, {}),
     },
     "hr": {
-        "employees": (True, True, True, False, {"view_salary": True}),
+        "employees": (True, True, True, False, {}),
         "organization": (True, True, True, False, {}),
         "schedules": (True, True, True, True, {}),
         "leave": (True, True, True, True, {}),
@@ -111,7 +130,7 @@ DEFAULT_PERMISSIONS = {
         "reports": (True, True, True, False, {}),
     },
     "finance": {
-        "employees": (True, False, False, False, {"view_salary": True}),
+        "employees": (True, False, False, False, {}),
         "organization": (True, False, False, False, {}),
         "schedules": (False, False, False, False, {}),
         "leave": (True, False, False, False, {}),
@@ -276,7 +295,7 @@ class PermissionService:
     async def get_user_permissions(db: AsyncSession, tenant_id: UUID, role_ids: List[int]) -> Dict[str, Any]:
         """
         Get merged permissions across all of a user's roles.
-        Returns {permissions: {module: {view: bool, ...}}, extra: {view_salary: bool, ...}}
+        Returns {permissions: {module: {view: bool, ...}}, extra: {key: bool, ...}}
         """
         if not role_ids:
             return {"permissions": {}, "extra": {}}

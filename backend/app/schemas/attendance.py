@@ -78,6 +78,8 @@ class OvertimeLogResponse(BaseModel):
     log_type: str = "overtime"
     pay_multiplier: Optional[float] = None
     pay_amount: Optional[float] = None
+    # True when there is an amount the caller may not see (not a salary viewer).
+    amount_hidden: bool = False
     leave_credits_earned: Optional[float] = None
     status: str
     approved_by: Optional[int] = None

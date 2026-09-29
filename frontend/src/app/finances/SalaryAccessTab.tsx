@@ -5,20 +5,29 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/components/ui/Toast'
-import type { SalaryEnrollmentRow, SalaryRequestRow } from '@/types'
+import { hasRole } from '@/lib/roles'
+import type { SalaryEnrollmentRow, SalaryGrantHistoryRow, SalaryRequestRow } from '@/types'
 
 /** Salary Access enrollment console. Salary visibility is a per-user enrollment
  *  (viewer / approver), independent of role — even a tenant_admin must be an
- *  approved viewer to see salary. A viewer request is approved by a DIFFERENT
- *  approver (no self-approval), and the last approver cannot be removed. */
+ *  approved viewer to see salary. A request is approved by a DIFFERENT
+ *  approver: never yourself, and never someone you made an approver. The last
+ *  approver cannot be removed. Every change is announced to the other
+ *  approvers and administrators, and listed in the history below. */
 export default function SalaryAccessTab() {
   const { user } = useAuth()
   const { showToast } = useToast()
   const qc = useQueryClient()
   const myId = user?.id
+  const isAdmin = !!user && hasRole(user, 'tenant_admin')
 
   const statusQ = useQuery({ queryKey: ['my-salary-status'], queryFn: () => api.getMySalaryStatus() })
   const isApprover = statusQ.data?.is_approver ?? false
+  const historyQ = useQuery({
+    queryKey: ['salary-grant-history'],
+    queryFn: () => api.getSalaryGrantHistory(),
+    enabled: isApprover || isAdmin,
+  })
 
   const enrollmentsQ = useQuery({
     queryKey: ['salary-enrollments'],
@@ -36,6 +45,7 @@ export default function SalaryAccessTab() {
     qc.invalidateQueries({ queryKey: ['salary-requests', 'pending'] })
     qc.invalidateQueries({ queryKey: ['my-salary-status'] })
     qc.invalidateQueries({ queryKey: ['notifications'] })
+    qc.invalidateQueries({ queryKey: ['salary-grant-history'] })
   }
 
   const approveMut = useMutation({
@@ -63,7 +73,9 @@ export default function SalaryAccessTab() {
         <h3 className="text-sm font-semibold text-gray-900">Salary Access</h3>
         <p className="mt-0.5 text-xs text-gray-500">
           Salary visibility is granted per user — being an admin, HR or Finance is not enough.
-          A request must be approved by a different approver, and the last approver can&apos;t be removed.
+          A request must be approved by another approver: never yourself, and never someone you made an
+          approver. Every grant, decline and revoke is recorded and announced to the other approvers and
+          administrators. The last approver can&apos;t be removed.
         </p>
         <MyStatus />
       </div>
@@ -97,6 +109,58 @@ export default function SalaryAccessTab() {
             busy={revokeMut.isPending}
           />
         </>
+      )}
+
+      {(isApprover || isAdmin) && (
+        <HistoryCard rows={historyQ.data ?? []} loading={historyQ.isLoading} failed={!!historyQ.error} />
+      )}
+    </div>
+  )
+}
+
+/** Who granted, declined or revoked what to whom, and when. Names and access
+ *  kinds only; never a salary figure. */
+function HistoryCard({ rows, loading, failed }: { rows: SalaryGrantHistoryRow[]; loading: boolean; failed: boolean }) {
+  const when = (at?: string | null) => (at ? new Date(at).toLocaleString() : '—')
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white">
+      <div className="border-b border-gray-100 px-4 py-3">
+        <h3 className="text-sm font-semibold text-gray-900">Access history</h3>
+        <p className="mt-0.5 text-xs text-gray-500">
+          Every request, grant, decline and revoke, newest first. &ldquo;System&rdquo; means first-run setup or an update.
+        </p>
+      </div>
+      {loading ? (
+        <p className="px-4 py-3 text-xs text-gray-400">Loading…</p>
+      ) : failed ? (
+        <p className="px-4 py-3 text-xs text-red-600">Could not load the history. Try again in a moment.</p>
+      ) : rows.length === 0 ? (
+        <p className="px-4 py-3 text-xs text-gray-400">Nothing recorded yet.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead className="bg-gray-50 text-gray-500">
+              <tr>
+                <th className="px-4 py-2 text-left font-medium">When</th>
+                <th className="px-4 py-2 text-left font-medium">Who</th>
+                <th className="px-4 py-2 text-left font-medium">Did</th>
+                <th className="px-4 py-2 text-left font-medium">For</th>
+                <th className="px-4 py-2 text-left font-medium">Access</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {rows.map((r) => (
+                <tr key={r.id}>
+                  <td className="px-4 py-2 whitespace-nowrap text-gray-500">{when(r.at)}</td>
+                  <td className="px-4 py-2 text-gray-800">{r.actor_name ?? 'System'}</td>
+                  <td className="px-4 py-2 text-gray-600">{r.label}</td>
+                  <td className="px-4 py-2 text-gray-800">{r.subject_name ?? '—'}</td>
+                  <td className="px-4 py-2 capitalize text-gray-600">{r.kind ?? '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   )
@@ -197,7 +261,9 @@ function RequestsCard({
     <div className="rounded-lg border border-gray-200 bg-white">
       <div className="border-b border-gray-100 px-4 py-3">
         <h3 className="text-sm font-semibold text-gray-900">Pending Requests</h3>
-        <p className="mt-0.5 text-xs text-gray-500">Approve or decline access requests. You cannot approve your own.</p>
+        <p className="mt-0.5 text-xs text-gray-500">
+          Approve or decline access requests. You cannot approve your own, or one from someone who made you an approver.
+        </p>
       </div>
       {loading ? (
         <p className="px-4 py-3 text-xs text-gray-400">Loading…</p>
@@ -216,14 +282,19 @@ function RequestsCard({
           <tbody className="divide-y divide-gray-50">
             {requests.map((r) => {
               const own = r.user_id === myId
+              // The API says why this approver may not approve (their own
+              // request, or its subject made them an approver).
+              const blocked = own || !!r.approval_block
               return (
                 <tr key={r.id}>
                   <td className="px-4 py-2 text-gray-800">{r.user_name}</td>
                   <td className="px-4 py-2 capitalize text-gray-600">{r.kind}</td>
                   <td className="px-4 py-2 text-gray-500">{r.reason || '—'}</td>
                   <td className="px-4 py-2 text-right">
-                    {own ? (
-                      <span className="text-gray-400">awaiting another approver</span>
+                    {blocked ? (
+                      <span className="text-gray-500">
+                        {own ? 'Awaiting another approver' : r.approval_block}
+                      </span>
                     ) : (
                       <div className="inline-flex gap-2">
                         <button
@@ -279,6 +350,7 @@ function EnrollmentCard({
           <thead className="bg-gray-50 text-gray-500">
             <tr>
               <th className="px-4 py-2 text-left font-medium">User</th>
+              <th className="px-4 py-2 text-left font-medium">Granted by</th>
               <th className="px-4 py-2 text-right font-medium">Action</th>
             </tr>
           </thead>
@@ -288,6 +360,10 @@ function EnrollmentCard({
               return (
                 <tr key={r.id}>
                   <td className="px-4 py-2 text-gray-800">{r.user_name}</td>
+                  <td className="px-4 py-2 text-gray-500">
+                    {r.granted_by_name ?? 'Setup'}
+                    {r.granted_at ? `, ${new Date(r.granted_at).toLocaleDateString()}` : ''}
+                  </td>
                   <td className="px-4 py-2 text-right">
                     <button
                       onClick={() => onRevoke(r.user_id, r.kind)}

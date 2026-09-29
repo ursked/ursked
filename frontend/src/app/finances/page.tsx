@@ -9,8 +9,10 @@ import EmployeeSalariesTab from './EmployeeSalariesTab'
 import DeductionsTab from './DeductionsTab'
 import CompensationTab from './CompensationTab'
 import PayoutScheduleTab from './PayoutScheduleTab'
+import PayRulesTab from './PayRulesTab'
 import PayrollTab from './PayrollTab'
 import SalaryAccessTab from './SalaryAccessTab'
+import { FiguresOnly } from './financeUi'
 
 const TABS = [
   { key: 'salary-grades', label: 'Salary Grades' },
@@ -18,6 +20,7 @@ const TABS = [
   { key: 'compensation', label: 'Bonuses & Allowances' },
   { key: 'deductions', label: 'Deductions' },
   { key: 'payout-schedule', label: 'Payout Schedule' },
+  { key: 'pay-rules', label: 'Pay rules' },
   { key: 'payroll', label: 'Payroll' },
   { key: 'salary-access', label: 'Salary Access' },
 ] as const
@@ -73,7 +76,8 @@ function FinancesContent() {
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Finances</h1>
         <p className="mt-1 text-sm text-gray-500">
-          Manage salary grades, deductions, and payroll processing.
+          Manage salary grades, deductions, and payroll processing. Salary figures are shown only
+          to people another person has approved for salary access.
         </p>
       </div>
 
@@ -97,11 +101,19 @@ function FinancesContent() {
         </nav>
       </div>
 
+      {/* Structure tabs (grades, deductions, payout schedule, pay rules, the
+          payroll calendar) are for anyone with finances:view; the two tabs
+          that are nothing but figures are for salary viewers only. */}
       {activeTab === 'salary-grades' && <SalaryGradesTab />}
-      {activeTab === 'employee-salaries' && <EmployeeSalariesTab />}
-      {activeTab === 'compensation' && <CompensationTab />}
+      {activeTab === 'employee-salaries' && (
+        <FiguresOnly what="employee salaries"><EmployeeSalariesTab /></FiguresOnly>
+      )}
+      {activeTab === 'compensation' && (
+        <FiguresOnly what="bonuses and allowances"><CompensationTab /></FiguresOnly>
+      )}
       {activeTab === 'deductions' && <DeductionsTab />}
       {activeTab === 'payout-schedule' && <PayoutScheduleTab />}
+      {activeTab === 'pay-rules' && <PayRulesTab />}
       {activeTab === 'payroll' && <PayrollTab />}
       {activeTab === 'salary-access' && <SalaryAccessTab />}
     </div>

@@ -11,6 +11,8 @@ class EnrollmentRow(BaseModel):
     kind: str
     status: str
     granted_by: Optional[int] = None
+    # None when granted_by is None: granted at setup, not by a person.
+    granted_by_name: Optional[str] = None
     granted_at: Optional[datetime] = None
 
 
@@ -25,6 +27,22 @@ class RequestRow(BaseModel):
     decided_by: Optional[int] = None
     decided_at: Optional[datetime] = None
     decision_note: Optional[str] = None
+    # Why the CALLER may not approve this request (their own, or its subject
+    # made them an approver), so the screen can say so instead of offering a
+    # button the API refuses. None = they may.
+    approval_block: Optional[str] = None
+
+
+class GrantHistoryRow(BaseModel):
+    id: int
+    at: Optional[datetime] = None
+    action: str
+    label: str
+    actor_id: Optional[int] = None
+    actor_name: Optional[str] = None
+    subject_id: Optional[int] = None
+    subject_name: Optional[str] = None
+    kind: Optional[str] = None
 
 
 class PendingRequestRef(BaseModel):

@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.middleware.auth import get_current_user, require_permission
+from app.middleware.auth import get_current_user, require_permission, salary_visibility
 from app.models.user import User
 from app.schemas.analytics import (
     AnalyticsOverviewResponse,
@@ -58,7 +58,7 @@ async def _scope(db: AsyncSession, user: User) -> Optional[Set[int]]:
 async def _can_view_reports(db: AsyncSession, user: User) -> bool:
     if user.has_role("tenant_admin"):
         return True
-    role_ids = [ur.role_id for ur in user.user_roles]
+    role_ids = user.role_ids
     return await PermissionService.check_permission(
         db, user.tenant_id, role_ids, "reports", "view"
     )
@@ -72,17 +72,25 @@ async def get_overtime_trends(
     end_date: Optional[date] = Query(default=None),
     current_user: User = Depends(require_permission("reports", "view")),
     db: AsyncSession = Depends(get_db),
+    can_see_pay: bool = Depends(salary_visibility()),
 ):
-    """Monthly overtime trends grouped by overtime category."""
+    """Monthly overtime trends grouped by overtime category. Hours for anyone
+    with reports:view; the overtime PAY total is a salary figure, so it is
+    left out (total_pay None, pay_hidden) unless the caller is a salary viewer."""
     if year is None:
         year = (await company_today(db, current_user.tenant_id)).year
-    return await AnalyticsService.get_overtime_monthly_trends(
+    result = await AnalyticsService.get_overtime_monthly_trends(
         db, current_user.tenant_id, year,
         status_filter=status or None,
         start_date=start_date,
         end_date=end_date,
         employee_ids=await _scope(db, current_user),
     )
+    if not can_see_pay:
+        for m in result.months:
+            m.total_pay = None
+        result.pay_hidden = True
+    return result
 
 
 @router.get("/overtime/paid-vs-unpaid", response_model=OvertimePaidUnpaidResponse)

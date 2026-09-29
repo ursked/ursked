@@ -9,31 +9,73 @@ import { useSidebar } from '@/contexts/SidebarContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import { User } from '@/types';
 import { hasAnyRole, hasRole, getPrimaryRole } from '@/lib/roles';
+import { Workspace, isAdminEligible, workspaceOf } from '@/lib/workspace';
 
 // An entry is shown only when the user can open the page behind it, judged the
 // same way that page judges it: the permission matrix where the page checks the
 // matrix, the page's role list where it still checks roles. The menu used to
 // carry its own role lists, so Settings was shown to everyone and bounced them,
 // HR could not find Policies, and My Schedule / My Leave had no entry at all.
-interface NavContext {
+//
+// Admin mode: the employee and admin workspaces are separate dashboards. An
+// entry names the workspaces it belongs to (both when omitted). The employee
+// workspace is the person's own things plus whatever their other roles (HR,
+// manager...) allow; the admin workspace is running the company, without the
+// admin's own schedule, leave and payslips, which live in their employee one.
+export interface NavContext {
   user: User;
   can: (module: string, action: string) => boolean;
 }
 
-interface NavItem {
+export interface NavItem {
   name: string;
+  /** Label in the admin workspace, when it differs. */
+  adminName?: string;
+  /** Label in an administrator's employee workspace, when it differs. Only
+   * administrators have two dashboards to tell apart; everyone else keeps
+   * the labels they know. */
+  employeeName?: string;
   href: string;
   icon: React.ReactNode;
   visible: (ctx: NavContext) => boolean;
+  workspaces?: Workspace[];
 }
+
+export function labelFor(item: NavItem, user: User): string {
+  if (workspaceOf(user) === 'admin') return item.adminName ?? item.name;
+  return isAdminEligible(user) ? item.employeeName ?? item.name : item.name;
+}
+
+export function inWorkspace(item: NavItem, workspace: Workspace): boolean {
+  return !item.workspaces || item.workspaces.includes(workspace);
+}
+
+/** The entry a path belongs to (longest matching href), if any. */
+export function navItemFor(pathname: string): NavItem | undefined {
+  let best: NavItem | undefined;
+  for (const item of navItems) {
+    if (pathname === item.href || pathname.startsWith(`${item.href}/`)) {
+      if (!best || item.href.length > best.href.length) best = item;
+    }
+  }
+  return best;
+}
+
+// Admin workspace order: what an administrator runs, most-used first.
+const ADMIN_ORDER = [
+  '/dashboard', '/employees', '/schedules', '/leaves', '/attendance', '/organization',
+  '/policies', '/finances', '/data-management', '/analytics', '/settings', '/audit-log',
+];
 
 // Who has a place to review leave on /leaves (Approvals / Team Overview tabs).
 // Everyone else files and follows their own leave from My Leave.
 const REVIEWER_ROLES = ['tenant_admin', 'hr', 'manager', 'leave_approver'];
 
-const navItems: NavItem[] = [
+export const navItems: NavItem[] = [
   {
     name: 'Dashboard',
+    employeeName: 'My Dashboard',
+    adminName: 'Admin Dashboard',
     href: '/dashboard',
     icon: (
       <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -47,6 +89,7 @@ const navItems: NavItem[] = [
     // the app keeps an offline copy of.
     name: 'My Schedule',
     href: '/my/schedule',
+    workspaces: ['employee'],
     icon: (
       <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2zm4-5l2 2 4-4" />
@@ -57,6 +100,7 @@ const navItems: NavItem[] = [
   {
     name: 'My Leave',
     href: '/my/leave',
+    workspaces: ['employee'],
     icon: (
       <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
@@ -86,6 +130,7 @@ const navItems: NavItem[] = [
   },
   {
     name: 'Leave',
+    adminName: 'Leave & Approvals',
     href: '/leaves',
     icon: (
       <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -98,6 +143,7 @@ const navItems: NavItem[] = [
   {
     name: 'My Payslips',
     href: '/my/payslips',
+    workspaces: ['employee'],
     icon: (
       <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 14h6m-6-4h6m2 10H7a2 2 0 01-2-2V4a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V18a2 2 0 01-2 2z" />
@@ -111,12 +157,26 @@ const navItems: NavItem[] = [
     // so the link is harmless on installs that do not use it.
     name: 'Time Clock',
     href: '/my/timeclock',
+    workspaces: ['employee'],
     icon: (
       <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
       </svg>
     ),
     visible: () => true,
+  },
+  {
+    // In the account menu too. Listed here for administrators, so their
+    // employee workspace shows everything that is their own in one place.
+    name: 'Profile',
+    href: '/profile',
+    workspaces: ['employee'],
+    icon: (
+      <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+      </svg>
+    ),
+    visible: ({ user }) => isAdminEligible(user),
   },
   {
     name: 'Attendance',
@@ -171,6 +231,7 @@ const navItems: NavItem[] = [
   },
   {
     name: 'Data Management',
+    adminName: 'Reports & Data',
     href: '/data-management',
     icon: (
       <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -182,6 +243,7 @@ const navItems: NavItem[] = [
   {
     name: 'Audit Log',
     href: '/audit-log',
+    workspaces: ['admin'],
     icon: (
       <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
@@ -192,6 +254,7 @@ const navItems: NavItem[] = [
   {
     name: 'Settings',
     href: '/settings',
+    workspaces: ['admin'],
     icon: (
       <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -208,9 +271,19 @@ export function Sidebar() {
   const { hasPermission } = usePermissions();
   const { close, isCollapsed, toggleCollapse } = useSidebar();
 
+  const workspace = workspaceOf(user);
   const filteredItems = user
-    ? navItems.filter((item) => item.visible({ user, can: hasPermission }))
+    ? navItems.filter(
+        (item) => inWorkspace(item, workspace) && item.visible({ user, can: hasPermission }),
+      )
     : [];
+  if (workspace === 'admin') {
+    const rank = (href: string) => {
+      const i = ADMIN_ORDER.indexOf(href);
+      return i === -1 ? ADMIN_ORDER.length : i;
+    };
+    filteredItems.sort((a, b) => rank(a.href) - rank(b.href));
+  }
 
   // `isCollapsed` is a DESKTOP-only preference (persisted). The mobile drawer is
   // always full-width (w-64), so collapse styling must never hide labels there.
@@ -266,7 +339,12 @@ export function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto" aria-label={workspace === 'admin' ? 'Admin navigation' : 'Main navigation'}>
+        {workspace === 'admin' && (
+          <p className={`px-3 pb-2 text-xs font-semibold uppercase tracking-wider text-amber-300 ${blockLabelCls}`}>
+            Administration
+          </p>
+        )}
         {filteredItems.map((item) => {
           const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
           return (
@@ -274,7 +352,7 @@ export function Sidebar() {
               key={item.href}
               href={item.href}
               onClick={close}
-              title={isCollapsed ? item.name : undefined}
+              title={isCollapsed ? labelFor(item, user!) : undefined}
               className={`flex items-center ${rowJustify} px-3 py-2.5 min-h-[44px] rounded-lg text-sm font-medium transition-colors ${
                 isActive
                   ? 'bg-gray-700 text-white'
@@ -282,7 +360,7 @@ export function Sidebar() {
               }`}
             >
               {item.icon}
-              <span className={`whitespace-nowrap ${labelCls}`}>{item.name}</span>
+              <span className={`whitespace-nowrap ${labelCls}`}>{labelFor(item, user!)}</span>
             </Link>
           );
         })}
@@ -319,7 +397,9 @@ export function Sidebar() {
               <p className="text-sm font-medium text-white truncate">
                 {user.first_name} {user.last_name}
               </p>
-              <p className="text-xs text-gray-400 truncate capitalize">{getPrimaryRole(user)}</p>
+              <p className="text-xs text-gray-400 truncate capitalize">
+                {workspace === 'admin' ? 'Administrator' : getPrimaryRole(user)}
+              </p>
             </div>
           </div>
         </div>

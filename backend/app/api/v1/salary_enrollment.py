@@ -10,6 +10,7 @@ from app.schemas.salary_enrollment import (
     CreateRequestBody,
     DecisionBody,
     EnrollmentRow,
+    GrantHistoryRow,
     MyStatusResponse,
     RequestByToken,
     RequestRow,
@@ -37,7 +38,29 @@ async def list_requests(
     current_user: User = Depends(require_salary_approver()),
     db: AsyncSession = Depends(get_db),
 ):
-    return await SalaryEnrollmentService.list_requests(db, current_user.tenant_id, status)
+    rows = await SalaryEnrollmentService.list_requests(db, current_user.tenant_id, status)
+    for r in rows:
+        if r["status"] == "pending":
+            r["approval_block"] = await SalaryEnrollmentService.approval_block(
+                db, current_user.tenant_id, r["user_id"], current_user.id,
+            )
+    return rows
+
+
+@router.get("/history", response_model=List[GrantHistoryRow])
+async def grant_history(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Who granted, declined or revoked salary access, to whom, and when. For
+    approvers and tenant administrators: the people who are told about every
+    change are also the ones who can look back over them. It names people and
+    access kinds, never a salary figure."""
+    if not current_user.has_role("tenant_admin") and not await SalaryEnrollmentService.is_approver(
+        db, current_user.tenant_id, current_user.id
+    ):
+        raise HTTPException(403, "Only an approver or an administrator can see the salary access history.")
+    return await SalaryEnrollmentService.grant_history(db, current_user.tenant_id)
 
 
 @router.get("/my-status", response_model=MyStatusResponse)

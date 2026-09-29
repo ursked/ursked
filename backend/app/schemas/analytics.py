@@ -31,7 +31,8 @@ class OvertimeMonthBreakdown(BaseModel):
     total_hours: float = 0
     by_category: Dict[str, float] = {}
     log_count: int = 0
-    total_pay: float = 0
+    # Overtime pay is a salary figure: None unless the caller is a salary viewer.
+    total_pay: Optional[float] = 0
     total_credits: float = 0
 
 
@@ -39,6 +40,7 @@ class OvertimeTrendsResponse(BaseModel):
     year: int
     categories: List[CategoryInfo]
     months: List[OvertimeMonthBreakdown]
+    pay_hidden: bool = False
 
 
 # ── Overtime Paid vs Unpaid ──────────────────────────────────────

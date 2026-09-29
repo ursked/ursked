@@ -98,7 +98,10 @@ class AppSettingsUpdate(BaseModel):
     schedule_employee_visibility: Optional[str] = Field(
         None, pattern=r"^(all|own_node|own_and_children|own_and_parent)$"
     )
-    # ── Payroll computation ──
+    # ── Payroll computation (pay rules) ──
+    # Kept so a client sending them is answered, not silently ignored: the
+    # endpoint accepts them unchanged and refuses a change with "Pay rules are
+    # managed in Finances." They change through PUT /payroll/pay-rules.
     working_days_per_month: Optional[int] = Field(None, ge=1, le=31)
     # Premiums are applied as hours x rate x (multiplier - 1), so anything below
     # 1.0 would subtract pay. Floor at 1.0 (= no premium) rather than allow that.

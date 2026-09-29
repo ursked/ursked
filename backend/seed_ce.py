@@ -142,6 +142,10 @@ async def seed() -> None:
         # this call the table stays empty, nobody can approve anything, and payroll
         # answers 403 to every user for ever. Must follow assign_roles: it selects on
         # the tenant_admin role we have only just attached.
+        #
+        # It makes the administrator an APPROVER only, not a viewer: they can set
+        # payroll up and approve other people's access, but see no salary figures
+        # until someone else approves a request of theirs (owner's decision).
         await SalaryEnrollmentService.seed_admin(db, tenant.id)
 
         db.add(AppSettings(tenant_id=tenant.id))
@@ -205,8 +209,9 @@ async def seed() -> None:
         await db.flush()
 
         # ── Default salary grade ─────────────────────────────────────────
-        # One grade so the payroll module isn't dead on arrival. Admins
-        # adjust the rate and add more grades as needed.
+        # One grade so the payroll module isn't dead on arrival. Its rate is
+        # a figure, so whoever is given salary access sets it; the admin can
+        # rename it and add the structure around it.
         db.add(SalaryGrade(
             tenant_id=tenant.id,
             code="STD",

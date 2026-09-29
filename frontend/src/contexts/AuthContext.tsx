@@ -1,19 +1,25 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
 import { User, LoginCredentials } from '@/types';
 import { api } from '@/lib/api';
 import { clearApiCache, keepApiCacheFor } from '@/components/PWARegistrar';
 import { isPublicPath } from '@/lib/publicRoutes';
+import { ADMIN_LOGIN_PATH, Workspace, signInPathFor, workspaceOf } from '@/lib/workspace';
 
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   isAuthenticated: boolean;
-  login: (credentials: LoginCredentials) => Promise<{ requires2FA: boolean }>;
+  /** `portal` picks the door: 'employee' is the ordinary sign-in page,
+   * 'admin' the administrator sign-in page (admin mode). */
+  login: (credentials: LoginCredentials, portal?: Workspace) => Promise<{ requires2FA: boolean }>;
   verify2FA: (code: string) => Promise<void>;
   logout: () => Promise<void>;
+  /** End the admin session and continue in the employee dashboard. */
+  exitAdmin: () => Promise<void>;
   refreshUser: () => Promise<void>;
 }
 
@@ -30,15 +36,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
+  const queryClient = useQueryClient();
+  // Which door the current session came through, for handlers registered
+  // once (the session-expiry handler) that must not read a stale `user`.
+  const workspaceRef = useRef<Workspace>('employee');
 
   const isAuthenticated = !!user;
 
   // Whoever is signed in is the only person whose offline copy may exist on
   // this device (see PWARegistrar / sw.js).
   const signedIn = useCallback((u: User | null) => {
-    if (u) void keepApiCacheFor(u.id);
+    if (u) {
+      void keepApiCacheFor(u.id);
+      workspaceRef.current = workspaceOf(u);
+    }
     setUser(u);
   }, []);
+
+  // A new session (another door, or another person) must not be shown the
+  // previous one's answers: the admin dashboard's company figures and the
+  // employee dashboard's personal ones share query keys.
+  const startFresh = useCallback(async () => {
+    queryClient.clear();
+    await clearApiCache();
+  }, [queryClient]);
 
   const refreshUser = useCallback(async () => {
     try {
@@ -80,47 +101,63 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // is the NORMAL state for a logged-out visitor — the initial /auth/me probe
   // 401s — so we must not bounce them off those pages.
   //
+  // An admin session goes back to the administrator sign-in, saying why: it
+  // ends on its own after 30 idle minutes or 8 hours.
+  //
   // Either way the expired session's cached data goes with it.
   useEffect(() => {
     api.setSessionExpiredHandler(() => {
+      const wasAdmin = workspaceRef.current === 'admin';
+      workspaceRef.current = 'employee';
+      queryClient.clear();
       void clearApiCache();
       setUser(null);
       if (!isPublicPath(window.location.pathname)) {
-        router.replace('/auth/login');
+        router.replace(wasAdmin ? `${ADMIN_LOGIN_PATH}?ended=1` : '/auth/login');
       }
     });
     return () => api.setSessionExpiredHandler(null);
-  }, [router]);
+  }, [router, queryClient]);
 
-  const login = async (credentials: LoginCredentials) => {
-    const response = await api.login(credentials);
+  const login = async (credentials: LoginCredentials, portal: Workspace = 'employee') => {
+    const response =
+      portal === 'admin' ? await api.adminLogin(credentials) : await api.login(credentials);
     if (response.requires_2fa) {
       return { requires2FA: true };
     }
     // Purge any cached API data from a previous session before showing this one.
-    await clearApiCache();
+    await startFresh();
     signedIn(response.user);
     return { requires2FA: false };
   };
 
   const verify2FA = async (code: string) => {
     const response = await api.verify2FA(code);
-    await clearApiCache();
+    await startFresh();
     signedIn(response.user);
   };
 
+  const exitAdmin = async () => {
+    const response = await api.exitAdminSession();
+    await startFresh();
+    signedIn(response.user);
+    router.replace('/dashboard');
+  };
+
   const logout = async () => {
+    const workspace = workspaceRef.current;
     await api.logout();
     // Awaited: the next person must not be able to open this person's offline
     // copy, and navigating away first could cut the deletion short.
-    await clearApiCache();
+    await startFresh();
+    workspaceRef.current = 'employee';
     setUser(null);
-    router.replace('/auth/login');
+    router.replace(signInPathFor(workspace));
   };
 
   return (
     <AuthContext.Provider
-      value={{ user, isLoading, isAuthenticated, login, verify2FA, logout, refreshUser }}
+      value={{ user, isLoading, isAuthenticated, login, verify2FA, logout, exitAdmin, refreshUser }}
     >
       {children}
     </AuthContext.Provider>

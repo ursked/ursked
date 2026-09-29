@@ -69,7 +69,7 @@ async def _can(db: AsyncSession, user: User, module: str, action: str) -> bool:
     handler (a query flag that needs more than the endpoint itself does)."""
     if user.has_role("tenant_admin"):
         return True
-    role_ids = [ur.role_id for ur in user.user_roles]
+    role_ids = user.role_ids
     return await PermissionService.check_permission(
         db, user.tenant_id, role_ids, module, action
     )
@@ -351,7 +351,7 @@ async def create_shift(
     current_user: User = Depends(require_permission("schedules", "create")),
     db: AsyncSession = Depends(get_db),
 ):
-    await access_scope.assert_manages(db, current_user, [data.employee_id], "schedules")
+    await access_scope.assert_manages(db, current_user, [data.employee_id], "schedules", own="shifts")
     payload = data.model_dump()
     force = payload.pop("force", False)
     try:
@@ -382,7 +382,7 @@ async def update_shift(
     # Both ends of a move: the employee it is taken from and the one it is
     # given to must be in the caller's teams.
     await access_scope.assert_manages(
-        db, current_user, [existing.employee_id, data.employee_id], "schedules"
+        db, current_user, [existing.employee_id, data.employee_id], "schedules", own="shifts"
     )
     old_emp, old_date, was_published = existing.employee_id, existing.date, existing.is_published
     payload = data.model_dump(exclude_unset=True)
@@ -426,7 +426,7 @@ async def delete_shift(
     db: AsyncSession = Depends(get_db),
 ):
     existing = await _load_shift(db, current_user, shift_id)
-    await access_scope.assert_manages(db, current_user, [existing.employee_id], "schedules")
+    await access_scope.assert_manages(db, current_user, [existing.employee_id], "schedules", own="shifts")
     emp, d, was_published = existing.employee_id, existing.date, existing.is_published
     try:
         deleted = await ScheduleService.delete_shift(
@@ -450,7 +450,7 @@ async def bulk_create_shifts(
     current_user: User = Depends(require_permission("schedules", "create")),
     db: AsyncSession = Depends(get_db),
 ):
-    await access_scope.assert_manages(db, current_user, data.employee_ids, "schedules")
+    await access_scope.assert_manages(db, current_user, data.employee_ids, "schedules", own="shifts")
     payload = data.model_dump()
     force = payload.pop("force", False)
     shifts, skipped = await ScheduleService.bulk_create_shifts(
@@ -475,7 +475,7 @@ async def copy_shifts(
     current_user: User = Depends(require_permission("schedules", "create")),
     db: AsyncSession = Depends(get_db),
 ):
-    await access_scope.assert_manages(db, current_user, data.target_employee_ids, "schedules")
+    await access_scope.assert_manages(db, current_user, data.target_employee_ids, "schedules", own="shifts")
     shifts = await ScheduleService.copy_shifts(
         db,
         tenant_id=current_user.tenant_id,
@@ -739,7 +739,7 @@ async def apply_template(
     current_user: User = Depends(require_permission("schedules", "create")),
     db: AsyncSession = Depends(get_db),
 ):
-    await access_scope.assert_manages(db, current_user, data.employee_ids, "schedules")
+    await access_scope.assert_manages(db, current_user, data.employee_ids, "schedules", own="shifts")
     skipped: list = []
     shifts = await ScheduleService.apply_template(
         db,
@@ -777,7 +777,7 @@ async def bulk_delete_shifts(
     decision. dry_run returns the same counts without deleting, so the
     confirmation can state exactly what the button will do."""
     ids = await access_scope.scope_employee_ids(
-        db, current_user, data.employee_ids, "schedules"
+        db, current_user, data.employee_ids, "schedules", leave_out_own=True
     )
     result = await ScheduleService.bulk_delete_shifts(
         db,
@@ -833,7 +833,7 @@ async def create_snapshot(
 async def _snapshot_employee_ids(db, user, requested):
     """None from the client means "the snapshot's own employees"; narrow that
     to the ones the caller manages so nobody else's calendar is written."""
-    return await access_scope.scope_employee_ids(db, user, requested, "schedules")
+    return await access_scope.scope_employee_ids(db, user, requested, "schedules", leave_out_own=True)
 
 
 @router.post("/snapshots/{snapshot_id}/preview", response_model=SnapshotPreviewResponse)
@@ -913,7 +913,7 @@ async def _copy_week_employee_ids(current_user, db, data):
     (the grid sends the rows it shows), narrowed to the ones the caller
     manages. Absent means everyone they manage; an empty list means nobody."""
     return await access_scope.scope_employee_ids(
-        db, current_user, data.employee_ids, "schedules"
+        db, current_user, data.employee_ids, "schedules", leave_out_own=True
     )
 
 
@@ -1417,7 +1417,8 @@ async def review_schedule_change_request(
                 detail="Approving a schedule change needs permission to edit schedules.",
             )
         await access_scope.assert_manages(
-            db, current_user, [request.requester_id, request.target_employee_id], "schedules"
+            db, current_user, [request.requester_id, request.target_employee_id], "schedules",
+            own="shifts",
         )
 
     try:

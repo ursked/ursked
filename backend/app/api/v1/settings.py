@@ -5,8 +5,9 @@ from sqlalchemy import func, or_, select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.middleware.auth import get_current_user, require_role
+from app.middleware.auth import get_current_user, require_permission, require_role
 from app.models.user import User
+from app.schemas.payroll import PAY_RULE_FIELDS
 from app.schemas.settings import (
     AppSettingsResponse,
     AppSettingsUpdate,
@@ -16,7 +17,7 @@ from app.schemas.settings import (
     UserPreferencesResponse,
     UserPreferencesUpdate,
 )
-from app.services.settings_service import SettingsService
+from app.services.settings_service import NULLABLE_APP_SETTINGS, SettingsService
 
 router = APIRouter(prefix="/settings", tags=["Settings"])
 
@@ -35,17 +36,35 @@ async def get_app_settings(
 @router.patch("/app", response_model=AppSettingsResponse)
 async def update_app_settings(
     data: AppSettingsUpdate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("settings", "edit")),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_role(["tenant_admin"])),
 ):
-    settings = await SettingsService.update_app_settings(
-        db, current_user.tenant_id, data.model_dump(exclude_unset=True)
-    )
+    """Company settings are settings:edit, per the permission contract. This
+    was hard-coded to tenant_admin, so the Permissions screen could not grant
+    or withhold it."""
+    changes = data.model_dump(exclude_unset=True)
+    current = await SettingsService.get_or_create_app_settings(db, current_user.tenant_id)
+    # Pay rules (working days per month, night and holiday premiums) belong to
+    # Finances and change only through PUT /payroll/pay-rules, under
+    # finances:edit: editing settings must not let someone change what
+    # everyone is paid. A client that sends them back unchanged (an older
+    # screen saving the whole object) is not refused; a real change is.
+    for field in PAY_RULE_FIELDS:
+        if field not in changes:
+            continue
+        value = changes.pop(field)
+        if value is None and field not in NULLABLE_APP_SETTINGS:
+            continue  # None means "no change" for these, as everywhere else
+        if value != getattr(current, field):
+            raise HTTPException(status_code=403, detail="Pay rules are managed in Finances.")
+    settings = await SettingsService.update_app_settings(db, current_user.tenant_id, changes)
     return AppSettingsResponse.model_validate(settings)
 
 
 # ── Shift Status Types ───────────────────────────────────────────────
+# Managed from Policies -> Shift Status Types; the screen mirrors these gates
+# (tests/test_status_types_gate.py). Reading stays open to every signed-in
+# user because the schedule grid and My Schedule draw every shift with it.
 
 @router.get("/status-types", response_model=List[ShiftStatusTypeResponse])
 async def get_status_types(

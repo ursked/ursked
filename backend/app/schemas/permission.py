@@ -54,4 +54,4 @@ class PermissionMatrixResponse(BaseModel):
 class MyPermissionsResponse(BaseModel):
     """Returned to frontend for the PermissionsContext."""
     permissions: Dict[str, Dict[str, bool]]  # {module: {view: true, create: false, ...}}
-    extra: Dict[str, bool]  # {view_salary: true, ...}
+    extra: Dict[str, bool]  # role-level extras; salary access is NOT one (see salary enrollment)

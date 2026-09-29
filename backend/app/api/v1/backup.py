@@ -42,7 +42,23 @@ async def download_backup(
 
     Refuses if the database contains more than one tenant — a full pg_dump in a
     multi-tenant deployment would be a cross-tenant data breach.
+
+    Also refuses an administrator without salary access: the dump holds every
+    salary, payslip and bonus, and an administrator sees none of those unless
+    another person has approved it (owner's decision, 2026-09; see
+    permission_service). The nightly server-side backup is unaffected; whoever
+    runs the server can read the database anyway, which no in-app rule changes.
     """
+    from app.services.salary_enrollment_service import SalaryEnrollmentService
+
+    if not await SalaryEnrollmentService.is_viewer(db, current_user.tenant_id, current_user.id):
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "A backup contains everyone's salary figures, so downloading one needs "
+                "salary access. Request it under Finances, Salary Access."
+            ),
+        )
     # ── Multi-tenant safety guard ───────────────────────────────────────
     # This is the runtime control. A docstring is not a control.
     tenant_count = await db.scalar(select(func.count()).select_from(Tenant))

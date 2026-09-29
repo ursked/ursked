@@ -264,6 +264,15 @@ export default function PermissionsTab() {
                                 )
                               })}
                             </div>
+                            {/* The boxes are all ticked for the administrator,
+                                but Finances is the one module where that is not
+                                the whole story: figures are decided by salary
+                                access, which someone else must approve. */}
+                            {isTenantAdmin && mod.key === 'finances' && (
+                              <p className="mt-1 max-w-[11rem] mx-auto text-center text-[11px] leading-snug text-gray-500">
+                                Structure only. Salary figures need salary access approved by another person.
+                              </p>
+                            )}
                           </td>
                         )
                       })}
@@ -283,7 +292,7 @@ export default function PermissionsTab() {
                           </button>
                         )}
                         {isTenantAdmin && (
-                          <span className="text-xs text-gray-400 italic">Full access</span>
+                          <span className="text-xs text-gray-400 italic">All permissions</span>
                         )}
                       </td>
                     </tr>
@@ -295,10 +304,12 @@ export default function PermissionsTab() {
 
           <div className="mt-4 rounded-md bg-blue-50 p-3">
             <p className="text-xs text-blue-700">
-              <span className="font-semibold">Note:</span> Tenant administrators always have full access to all
-              modules and cannot be restricted. Permissions are merged across roles -- if a user has multiple roles,
-              they receive the union of all granted permissions. Salary visibility is no longer set here — it is
-              granted per user under <span className="font-semibold">Finances &rarr; Salary Access</span>.
+              <span className="font-semibold">Note:</span> Tenant administrators always have every permission on
+              this screen and cannot be restricted. Permissions are merged across roles -- if a user has multiple roles,
+              they receive the union of all granted permissions. Finances here covers the structure (deduction types,
+              payout schedules, salary grade names, payroll periods). Salary figures are not set here, for any role:
+              each person needs salary access, approved by someone else under{' '}
+              <span className="font-semibold">Finances &rarr; Salary Access</span>.
             </p>
           </div>
         </div>

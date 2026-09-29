@@ -21,29 +21,16 @@ export default function EmployeeSalariesTab() {
   const [assignFor, setAssignFor] = useState<CurrentSalaryRow | null>(null)
   const [raiseFor, setRaiseFor] = useState<CurrentSalaryRow | null>(null)
 
-  // Salary figures are gated behind an enrollment (viewer). Even an admin must be
-  // enrolled — mirrors the server-side require_salary_access() gate so the UI
-  // shows a request prompt instead of failing queries for a non-viewer.
-  const { data: salaryStatus, isLoading: statusLoading } = useQuery({
-    queryKey: ['my-salary-status'],
-    queryFn: () => api.getMySalaryStatus(),
-  })
-  const isViewer = salaryStatus?.is_viewer ?? false
-
+  // Only ever mounted for a salary viewer: the Finances page wraps this tab in
+  // FiguresOnly, which shows non-viewers the request prompt instead.
   const { data: rows, isLoading, error } = useQuery<CurrentSalaryRow[]>({
     queryKey: ['current-salaries'],
     queryFn: () => api.getCurrentSalaries(),
-    enabled: isViewer,
   })
   const { data: grades } = useQuery<SalaryGrade[]>({
     queryKey: ['salary-grades'],
     queryFn: () => api.getSalaryGrades(),
-    enabled: isViewer,
   })
-
-  if (!statusLoading && !isViewer) {
-    return <SalaryAccessGate pendingId={(salaryStatus?.pending_requests ?? []).find((r) => r.kind === 'viewer')?.id ?? null} />
-  }
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['current-salaries'] })
 
@@ -175,7 +162,7 @@ function AssignModal({ row, grades, onClose, onDone }: {
         <select className="input" value={gradeId} onChange={(e) => setGradeId(e.target.value ? Number(e.target.value) : '')}>
           <option value="">Select grade</option>
           {grades.map((g) => (
-            <option key={g.id} value={g.id}>{g.code} — {g.name} (₱{g.monthly_rate.toLocaleString()})</option>
+            <option key={g.id} value={g.id}>{g.code} — {g.name} (₱{(g.monthly_rate ?? 0).toLocaleString()})</option>
           ))}
         </select>
       </Field>
@@ -243,7 +230,7 @@ function RaiseModal({ row, grades, onClose, onDone }: {
           <select className="input" value={newGrade} onChange={(e) => setNewGrade(e.target.value ? Number(e.target.value) : '')}>
             <option value="">Select grade</option>
             {grades.map((g) => (
-              <option key={g.id} value={g.id}>{g.code} — {g.name} (₱{g.monthly_rate.toLocaleString()})</option>
+              <option key={g.id} value={g.id}>{g.code} — {g.name} (₱{(g.monthly_rate ?? 0).toLocaleString()})</option>
             ))}
           </select>
         </Field>
@@ -288,76 +275,6 @@ function Actions({ onClose, onSubmit, disabled, label }: { onClose: () => void; 
     <div className="mt-4 flex justify-end gap-2">
       <button onClick={onClose} className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
       <button onClick={onSubmit} disabled={disabled} className="rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-700 disabled:opacity-50">{label}</button>
-    </div>
-  )
-}
-
-/** Shown when the current user is not an enrolled salary viewer. Lets them file
- *  a request, which an approver must approve before salary figures appear. */
-function SalaryAccessGate({ pendingId }: { pendingId: number | null }) {
-  const { showToast } = useToast()
-  const queryClient = useQueryClient()
-  const [reason, setReason] = useState('')
-  const hasPending = pendingId != null
-
-  const cancelMut = useMutation({
-    mutationFn: () => api.cancelSalaryRequest(pendingId as number),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['my-salary-status'] })
-      showToast('Request withdrawn', 'success')
-    },
-    onError: (e: Error) => showToast(e.message, 'error'),
-  })
-
-  const requestMut = useMutation({
-    mutationFn: () => api.createSalaryRequest({ kind: 'viewer', reason: reason || undefined }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['my-salary-status'] })
-      showToast('Request submitted for approval', 'success')
-    },
-    onError: (e: Error) => showToast(e.message, 'error'),
-  })
-
-  return (
-    <div className="mx-auto max-w-lg rounded-lg border border-gray-200 bg-white p-6 text-center">
-      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-amber-100">
-        <svg className="h-6 w-6 text-amber-600" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
-        </svg>
-      </div>
-      <h3 className="mt-4 text-base font-semibold text-gray-900">Salary access required</h3>
-      <p className="mt-2 text-sm text-gray-500">
-        Salary figures are restricted. You need an approved salary-viewer enrollment to see them —
-        being an admin, HR or Finance is not enough.
-      </p>
-      {hasPending ? (
-        <div className="mt-4 space-y-2">
-          <p className="text-sm font-medium text-amber-600">Your request is pending approval…</p>
-          <button
-            onClick={() => cancelMut.mutate()}
-            disabled={cancelMut.isPending}
-            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-          >
-            Withdraw request
-          </button>
-        </div>
-      ) : (
-        <div className="mt-4 space-y-2">
-          <input
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            placeholder="Reason (optional)"
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-          />
-          <button
-            onClick={() => requestMut.mutate()}
-            disabled={requestMut.isPending}
-            className="w-full rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-700 disabled:opacity-50"
-          >
-            Request salary access
-          </button>
-        </div>
-      )}
     </div>
   )
 }

@@ -23,6 +23,7 @@ from app.schemas.compensation import (
     RaiseResultRow,
     SalaryAssign,
 )
+from app.services.access_scope import assert_not_own_record
 from app.services.compensation_service import CompensationService
 from app.services.payout_schedule_service import PayoutScheduleService
 from app.services.payroll_service import PayrollService
@@ -30,7 +31,9 @@ from app.services.payroll_service import PayrollService
 router = APIRouter(prefix="/compensation", tags=["compensation"])
 
 # Governed by the permission matrix (finances module) plus, for anything that
-# shows or changes pay, the salary-viewer enrollment.
+# shows or changes pay, the salary-viewer enrollment, which nobody bypasses
+# (tenant_admin included; see the contract in permission_service). Payout
+# schedules are structure (cut-off and payout days), so the matrix alone.
 _view = require_permission("finances", "view")
 _create = require_permission("finances", "create")
 _edit = require_permission("finances", "edit")
@@ -139,6 +142,7 @@ async def create_compensation_item(
     db: AsyncSession = Depends(get_db),
     _sal=Depends(require_salary_access()),
 ):
+    assert_not_own_record(current_user, [data.employee_id], "pay")
     item = await CompensationService.add_item(
         db, current_user.tenant_id, data.model_dump(), created_by=current_user.id
     )
@@ -155,6 +159,11 @@ async def void_compensation_item(
     db: AsyncSession = Depends(get_db),
     _sal=Depends(require_salary_access()),
 ):
+    from app.models.compensation import CompensationItem
+
+    target = await db.get(CompensationItem, item_id)
+    if target is not None and target.tenant_id == current_user.tenant_id:
+        assert_not_own_record(current_user, [target.employee_id], "pay")
     try:
         item = await CompensationService.void_item(db, current_user.tenant_id, item_id, data.reason)
     except ValueError as e:
@@ -187,6 +196,7 @@ async def assign_salary(
     """Assign or change an employee's salary grade. A raise is the same call with
     a later effective_date (salary history is effective-dated). Assigning again
     on a date that already has an assignment corrects that assignment."""
+    assert_not_own_record(current_user, [data.employee_id], "pay")
     try:
         await PayrollService.assign_employee_salary(
             db, current_user.tenant_id, data.model_dump(), actor=current_user
@@ -209,6 +219,7 @@ async def give_raise(
 ):
     """Apply a percent/fixed/grade salary increase to one or more employees.
     Writes a new effective-dated salary row per employee and a ledger audit line."""
+    assert_not_own_record(current_user, data.employee_ids, "pay")
     try:
         results = await PayrollService.give_raise(
             db, current_user.tenant_id,
@@ -231,6 +242,7 @@ async def bulk_create_compensation(
     """Grant the same compensation line to many employees at once."""
     payload_base = data.model_dump()
     emp_ids = payload_base.pop("employee_ids")
+    assert_not_own_record(current_user, emp_ids, "pay")
     created = []
     for emp_id in emp_ids:
         item = await CompensationService.add_item(
@@ -249,10 +261,12 @@ async def expand_recurring(
     data: ExpandRecurringRequest,
     current_user: User = Depends(_create),
     db: AsyncSession = Depends(get_db),
+    _sal=Depends(require_salary_access()),
 ):
     """Materialize recurring allowance/incentive templates into concrete
     scheduled rows across the given horizon (idempotent). Payroll compute
-    does this for its own period, so this is only for looking ahead."""
+    does this for its own period, so this is only for looking ahead. It
+    writes pay lines, so it needs salary access like adding one by hand."""
     count = await CompensationService.expand_recurring(
         db, current_user.tenant_id, data.horizon_start, data.horizon_end
     )

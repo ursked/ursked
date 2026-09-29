@@ -134,11 +134,13 @@ export default function EmployeeModal({ employee, onClose, onSaved }: EmployeeMo
     return map;
   }, [permissionMatrix]);
 
-  // Compute effective (merged) permissions from selected roles
+  // Compute effective (merged) permissions from selected roles. There used to be
+  // a "Salary" column here, read from a view_salary extra that nothing enforced;
+  // salary figures follow salary access (Finances, Salary Access), not roles.
   const effectivePerms = useMemo(() => {
-    const merged: Record<string, { can_view: boolean; can_create: boolean; can_edit: boolean; can_delete: boolean; view_salary: boolean }> = {};
+    const merged: Record<string, { can_view: boolean; can_create: boolean; can_edit: boolean; can_delete: boolean }> = {};
     for (const mod of MODULES) {
-      merged[mod.key] = { can_view: false, can_create: false, can_edit: false, can_delete: false, view_salary: false };
+      merged[mod.key] = { can_view: false, can_create: false, can_edit: false, can_delete: false };
     }
     for (const roleCode of selectedRoles) {
       const roleModules = permsByRole[roleCode];
@@ -150,9 +152,6 @@ export default function EmployeeModal({ employee, onClose, onSaved }: EmployeeMo
         merged[mod.key].can_create = merged[mod.key].can_create || p.can_create;
         merged[mod.key].can_edit = merged[mod.key].can_edit || p.can_edit;
         merged[mod.key].can_delete = merged[mod.key].can_delete || p.can_delete;
-        if (p.extra_permissions?.view_salary) {
-          merged[mod.key].view_salary = true;
-        }
       }
     }
     return merged;
@@ -522,7 +521,6 @@ export default function EmployeeModal({ employee, onClose, onSaved }: EmployeeMo
                     const isSelected = selectedRoles.includes(role.code);
                     const rolePerms = permsByRole[role.code];
                     const isTenantAdmin = role.code === 'tenant_admin';
-                    const hasViewSalary = isTenantAdmin || (rolePerms && Object.values(rolePerms).some(p => p.extra_permissions?.view_salary));
 
                     return (
                       <div
@@ -555,7 +553,6 @@ export default function EmployeeModal({ employee, onClose, onSaved }: EmployeeMo
                                     {MODULES.map(m => (
                                       <th key={m.key} className="px-1 py-1 text-center font-medium text-gray-500">{m.label}</th>
                                     ))}
-                                    <th className="px-1 py-1 text-center font-medium text-gray-500">Salary</th>
                                   </tr>
                                 </thead>
                                 <tbody>
@@ -570,15 +567,6 @@ export default function EmployeeModal({ employee, onClose, onSaved }: EmployeeMo
                                           </td>
                                         );
                                       })}
-                                      {action.key === 'can_view' ? (
-                                        <td className="px-1 py-0.5 text-center" rowSpan={4}>
-                                          {hasViewSalary ? (
-                                            <span className="text-green-600 font-bold text-xs">&#10003;</span>
-                                          ) : (
-                                            <span className="text-gray-500 text-xs">&#8212;</span>
-                                          )}
-                                        </td>
-                                      ) : null}
                                     </tr>
                                   ))}
                                 </tbody>
@@ -608,7 +596,6 @@ export default function EmployeeModal({ employee, onClose, onSaved }: EmployeeMo
                             {MODULES.map(m => (
                               <th key={m.key} className="px-1 py-1 text-center font-medium text-purple-700">{m.label}</th>
                             ))}
-                            <th className="px-1 py-1 text-center font-medium text-purple-700">Salary</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -623,20 +610,15 @@ export default function EmployeeModal({ employee, onClose, onSaved }: EmployeeMo
                                   </td>
                                 );
                               })}
-                              {action.key === 'can_view' ? (
-                                <td className="px-1 py-0.5 text-center" rowSpan={4}>
-                                  {Object.values(effectivePerms).some(p => p.view_salary) ? (
-                                    <span className="text-purple-600 font-bold text-xs">&#10003;</span>
-                                  ) : (
-                                    <span className="text-gray-500 text-xs">&#8212;</span>
-                                  )}
-                                </td>
-                              ) : null}
                             </tr>
                           ))}
                         </tbody>
                       </table>
                     </div>
+                    <p className="mt-2 text-xs text-purple-700">
+                      No role shows salary figures. Each person needs salary access, approved by someone else under
+                      Finances, Salary Access.
+                    </p>
                   </div>
                 )}
               </div>

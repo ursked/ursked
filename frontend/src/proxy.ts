@@ -27,6 +27,10 @@ const PUBLIC_PATHS = [
   '/auth/activate',
   '/auth/forgot-password',
   '/auth/reset-password',
+  // Admin mode: the administrator sign-in page (see src/lib/publicRoutes.ts).
+  // Never redirected away when a session exists: signing in there is how an
+  // employee session is replaced by an admin one.
+  '/admin/login',
   // The service worker's offline page, precached without a session.
   '/offline',
 ];

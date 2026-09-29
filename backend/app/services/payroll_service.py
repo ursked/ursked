@@ -42,6 +42,16 @@ LOCKED_PERIOD_STATUSES = ("approved", "finalized")
 logger = logging.getLogger(__name__)
 
 
+class MakerCheckerError(PermissionError):
+    """The person who computed a run tried to approve or finalize it.
+
+    Approve and finalize used to be tenant_admin only. The owner's rule is
+    maker-checker instead: anyone with finances:edit and salary access may sign
+    a run off, but never the person who prepared it, whatever their role, so no
+    one can both produce the figures and lock them. Raised here rather than in
+    the router so every caller is held to it. Shown to the user (HTTP 403)."""
+
+
 class PayrollService:
     # ── Salary Grades ─────────────────────────────────────────────
 
@@ -1044,6 +1054,7 @@ class PayrollService:
         if period.status not in ("draft", "computed", "compute_failed"):
             raise ValueError(f"Cannot compute payroll in '{period.status}' status")
 
+        PayrollService._reset_signoff(period, computed_by)
         outcome = await PayrollService._run_compute(db, tenant_id, period)
         period.status = "computed"
         period.compute_progress = PayrollService._outcome_progress(outcome)
@@ -1070,6 +1081,7 @@ class PayrollService:
 
         period.status = "computing"
         period.compute_progress = {"done": 0, "total": 0}
+        PayrollService._reset_signoff(period, computed_by)
         await db.commit()
 
         asyncio.create_task(
@@ -1107,6 +1119,25 @@ class PayrollService:
                     await db.commit()
 
     @staticmethod
+    def _reset_signoff(period: PayrollPeriod, computed_by: int) -> None:
+        """A (re)compute makes the new figures the recomputer's work: they are
+        the preparer from the moment it starts (so they cannot approve a run
+        while it computes either), and no approval of earlier figures survives."""
+        period.computed_by = computed_by
+        period.approved_by = None
+        period.approved_at = None
+
+    @staticmethod
+    def assert_not_preparer(period: PayrollPeriod, user_id: int, verb: str) -> None:
+        """Maker-checker (see MakerCheckerError). A run with no recorded
+        preparer (computed before 2026-09, or the preparer's account deleted)
+        has nobody to exclude, so it is allowed."""
+        if period.computed_by is not None and period.computed_by == user_id:
+            raise MakerCheckerError(
+                f"You computed this payroll run, so someone else must {verb} it."
+            )
+
+    @staticmethod
     async def approve_payroll(
         db: AsyncSession, tenant_id: UUID, period_id: int, approved_by: int
     ) -> PayrollPeriod:
@@ -1115,6 +1146,7 @@ class PayrollService:
             raise ValueError("Payroll period not found")
         if period.status != "computed":
             raise ValueError(f"Cannot approve payroll in '{period.status}' status")
+        PayrollService.assert_not_preparer(period, approved_by, "approve")
         period.status = "approved"
         period.approved_at = utcnow()
         period.approved_by = approved_by
@@ -1131,6 +1163,7 @@ class PayrollService:
             raise ValueError("Payroll period not found")
         if period.status != "approved":
             raise ValueError(f"Cannot finalize payroll in '{period.status}' status")
+        PayrollService.assert_not_preparer(period, finalized_by, "finalize")
 
         now = utcnow()
         # Mark what each item paid, so none of it can be paid again or

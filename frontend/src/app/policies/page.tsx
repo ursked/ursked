@@ -4,6 +4,7 @@ import { useState } from 'react'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import { usePermissions } from '@/contexts/PermissionsContext'
 import HolidaysTab from '@/app/policies/HolidaysTab'
+import ShiftStatusTypesTab from '@/app/policies/ShiftStatusTypesTab'
 import LeavePoliciesV2 from '@/app/policies/leave/LeavePoliciesV2'
 import ChainTester from '@/app/policies/leave/ChainTester'
 import WorkSitesTab from '@/app/policies/WorkSitesTab'
@@ -20,6 +21,10 @@ type Check = (module: string, action: string) => boolean
 // the Permissions screen allowed, and showed HR tabs whose saves all 403.
 const TABS: { key: string; label: string; visible: (can: Check) => boolean }[] = [
   { key: 'holidays', label: 'Holidays', visible: (can) => can('schedules', 'view') || can('settings', 'view') },
+  // The list is readable by every signed-in user (the grid draws with it), so
+  // it shows beside Holidays to anyone who works with the schedule or company
+  // settings; the tab's own add/edit/delete follow the API's tenant_admin gate.
+  { key: 'status-types', label: 'Shift Status Types', visible: (can) => can('schedules', 'view') || can('settings', 'view') },
   { key: 'leave', label: 'Leave Policies', visible: (can) => can('leave', 'view') },
   { key: 'approval-rules', label: 'Approval Rules', visible: (can) => can('leave', 'view') },
   { key: 'overtime', label: 'Overtime', visible: (can) => can('leave', 'view') || can('settings', 'view') },
@@ -68,7 +73,7 @@ export default function PoliciesPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Policies</h1>
           <p className="mt-1 text-sm text-gray-500">
-            Configure holidays, leave, overtime, schedule formats, work sites and automation rules for your organization.
+            Configure holidays, shift status types, leave, overtime, schedule formats, work sites and automation rules for your organization.
           </p>
         </div>
 
@@ -93,6 +98,7 @@ export default function PoliciesPage() {
         </div>
 
         {activeTab === 'holidays' && <HolidaysTab />}
+        {activeTab === 'status-types' && <ShiftStatusTypesTab />}
         {activeTab === 'leave' && <LeavePoliciesV2 />}
         {activeTab === 'approval-rules' && (
           <div className="space-y-6">

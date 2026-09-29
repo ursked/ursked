@@ -64,7 +64,10 @@ export function PermissionsProvider({ children }: { children: React.ReactNode })
   const hasPermission = useCallback(
     (module: string, action: string): boolean => {
       if (!user) return false
-      // tenant_admin always has all permissions (client-side shortcut)
+      // tenant_admin always has all permissions (client-side shortcut). Only
+      // in an admin session: /auth/me lists the roles in force, and in an
+      // employee session an administrator's role is dormant and absent, so
+      // this answers exactly as the server's require_permission does.
       if (hasRole(user, 'tenant_admin')) return true
       return permissions[module]?.[action] === true
     },

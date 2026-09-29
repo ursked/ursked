@@ -76,6 +76,7 @@ import {
   UnpublishRangeResult,
   SalaryEnrollmentRow,
   SalaryRequestRow,
+  SalaryGrantHistoryRow,
   MySalaryStatus,
   SalaryRequestByToken,
   NotificationList,
@@ -105,6 +106,9 @@ import type { ConversionLeaveType, DeductionBracket, SuggestedDeduction } from '
 // Area A: setup checklist, background jobs, retention report.
 import type { BackgroundJobsView, RetentionReport, SetupStatus } from '@/types';
 
+// Finances: pay rules (moved from General settings).
+import type { PayRules } from '@/types';
+
 const CSRF_COOKIE = 'csrf_token';
 const CSRF_HEADER = 'X-CSRF-Token';
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -116,6 +120,7 @@ const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 // able to refresh-and-retry so a hard reload recovers on the first load.
 const NO_REFRESH_RETRY_PATHS = [
   '/api/v1/auth/login',
+  '/api/v1/auth/admin/login',
   '/api/v1/auth/2fa/verify',
   '/api/v1/auth/refresh',
 ];
@@ -163,6 +168,27 @@ export function isScheduleConflictError(
   );
 }
 
+// Admin mode: an admin session ends after 30 minutes without activity. The
+// server counts every request as activity unless it carries this header, so
+// requests made while nobody is using the app (the dashboard's minute-by-
+// minute refresh, the notification bell) say so; otherwise a screen left open
+// on a desk would keep an admin session alive until its 8-hour cap.
+const IDLE_HEADER = 'X-User-Idle';
+const IDLE_AFTER_MS = 60_000;
+let lastInteraction = Date.now();
+if (typeof window !== 'undefined') {
+  const touch = () => {
+    lastInteraction = Date.now();
+  };
+  for (const ev of ['pointerdown', 'keydown', 'wheel', 'touchstart'] as const) {
+    window.addEventListener(ev, touch, { passive: true, capture: true });
+  }
+}
+
+function userIsIdle(): boolean {
+  return Date.now() - lastInteraction > IDLE_AFTER_MS;
+}
+
 function readCookie(name: string): string | null {
   if (typeof document === 'undefined') return null;
   const match = document.cookie.match(
@@ -190,6 +216,7 @@ class ApiClient {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     };
+    if (userIsIdle()) headers[IDLE_HEADER] = '1';
 
     // Auth travels in httpOnly cookies that JS cannot read. The only thing we
     // attach here is the CSRF token, echoed back from a readable cookie to
@@ -363,6 +390,18 @@ class ApiClient {
   // session. The body only carries the user object and a CSRF token.
   async login(credentials: LoginCredentials): Promise<LoginResponse> {
     return this.post('/api/v1/auth/login', credentials) as Promise<LoginResponse>;
+  }
+
+  // Admin mode: the administrator sign-in door. Opens an admin session for a
+  // tenant administrator (the ordinary login always opens an employee one).
+  async adminLogin(credentials: LoginCredentials): Promise<LoginResponse> {
+    return this.post('/api/v1/auth/admin/login', credentials) as Promise<LoginResponse>;
+  }
+
+  // Ends the admin session and signs the same person into their employee
+  // dashboard. Never the other way: the way up is always adminLogin.
+  async exitAdminSession(): Promise<LoginResponse> {
+    return this.post('/api/v1/auth/admin/exit') as Promise<LoginResponse>;
   }
 
   async verify2FA(code: string): Promise<LoginResponse> {
@@ -1550,6 +1589,11 @@ class ApiClient {
     return this.get(`/api/v1/salary-enrollment/requests/by-token?token=${encodeURIComponent(token)}`) as Promise<SalaryRequestByToken>;
   }
 
+  // Finance confidentiality: who granted what salary access to whom, and when.
+  async getSalaryGrantHistory(): Promise<SalaryGrantHistoryRow[]> {
+    return this.get('/api/v1/salary-enrollment/history') as Promise<SalaryGrantHistoryRow[]>;
+  }
+
   // Notifications
   async getNotifications(unreadOnly = false): Promise<NotificationList> {
     const q = unreadOnly ? '?unread_only=true' : '';
@@ -1788,6 +1832,15 @@ class ApiClient {
     const disposition = response.headers.get('Content-Disposition') ?? '';
     const match = /filename="?([^";]+)"?/.exec(disposition);
     return { blob: await response.blob(), filename: match?.[1] ?? 'ursked-backup.sql' };
+  }
+
+  // ── Finances: pay rules (finances:view reads, finances:edit saves) ──
+  async getPayRules(): Promise<PayRules> {
+    return this.get('/api/v1/payroll/pay-rules') as Promise<PayRules>;
+  }
+
+  async updatePayRules(data: PayRules): Promise<PayRules> {
+    return this.put('/api/v1/payroll/pay-rules', data) as Promise<PayRules>;
   }
 }
 

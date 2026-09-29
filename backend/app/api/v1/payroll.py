@@ -1,14 +1,14 @@
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.middleware.auth import (
     get_current_user,
     require_permission,
-    require_role,
     require_salary_access,
+    salary_visibility,
 )
 from app.models.payroll import SalaryGrade
 from app.models.user import User
@@ -20,8 +20,11 @@ from app.schemas.payroll import (
     DeductionTypeUpdate,
     EmployeeSalaryCreate,
     EmployeeSalaryResponse,
+    PAY_RULE_FIELDS,
     MyPayslipDetail,
     MyPayslipSummary,
+    PayRulesResponse,
+    PayRulesUpdate,
     PayrollItemResponse,
     PayrollPeriodCreate,
     PayrollPeriodResponse,
@@ -30,18 +33,56 @@ from app.schemas.payroll import (
     SalaryGradeResponse,
     SalaryGradeUpdate,
 )
-from app.services.payroll_service import PayrollService
+from app.services import audit_service
+from app.services.payroll_service import MakerCheckerError, PayrollService
+from app.services.settings_service import SettingsService
 
 router = APIRouter(prefix="/payroll", tags=["payroll"])
 
-# The permission matrix governs this router (finances: view / create / edit /
-# delete; see permission_service). Salary figures additionally need an
-# approved salary-viewer enrollment, which even an admin must hold. Approving
-# and finalizing a run stay tenant_admin only: whoever computes a payroll
-# should not also be the one who locks it.
+# The permission matrix governs the STRUCTURE here (finances: view / create /
+# edit / delete; see the contract in permission_service): deduction types and
+# their brackets, grade names, the period calendar. Every FIGURE additionally
+# needs an approved salary-viewer enrollment, and nobody bypasses that,
+# tenant_admin included. Endpoints that serve both (grades, periods) answer
+# finances:view and strip the figures for a non-viewer; endpoints that are
+# only figures (salaries, items, summaries, compute) refuse them.
+#
+# Approve and finalize are maker-checker: finances:edit plus viewer, and never
+# the person who computed the run (PayrollService.assert_not_preparer).
+
+_RATE_FIELDS = ("monthly_rate", "daily_rate", "hourly_rate")
 
 
-def _period_response(p, items=None) -> PayrollPeriodResponse:
+def _grade_response(grade, can_see_pay: bool) -> SalaryGradeResponse:
+    out = SalaryGradeResponse.model_validate(grade)
+    if not can_see_pay:
+        out = out.model_copy(update={f: None for f in _RATE_FIELDS} | {"rates_hidden": True})
+    return out
+
+
+def _progress_for(progress, can_see_pay: bool):
+    """compute_progress for this caller. Its warnings can quote pay (a bracket
+    that does not cover someone's gross), so a non-viewer gets the progress,
+    the skipped names and any failure, but not the warnings themselves."""
+    if can_see_pay or not progress or "warnings" not in progress:
+        return progress
+    return {k: v for k, v in progress.items() if k != "warnings"}
+
+
+def _period_response(p, items=None, can_see_pay: bool = True) -> PayrollPeriodResponse:
+    resp = _full_period_response(p, items)
+    if can_see_pay:
+        return resp
+    # The payroll calendar is structure; its totals are figures.
+    return resp.model_copy(update={
+        "total_gross": None,
+        "total_net": None,
+        "figures_hidden": True,
+        "compute_progress": _progress_for(p.compute_progress, False),
+    })
+
+
+def _full_period_response(p, items=None) -> PayrollPeriodResponse:
     items = items or []
     return PayrollPeriodResponse(
         id=p.id,
@@ -92,18 +133,20 @@ async def _salary_response(db, es) -> EmployeeSalaryResponse:
 async def list_salary_grades(
     current_user: User = Depends(require_permission("finances", "view")),
     db: AsyncSession = Depends(get_db),
-    _sal=Depends(require_salary_access()),
+    can_see_pay: bool = Depends(salary_visibility()),
 ):
-    return await PayrollService.list_salary_grades(db, current_user.tenant_id)
+    grades = await PayrollService.list_salary_grades(db, current_user.tenant_id)
+    return [_grade_response(g, can_see_pay) for g in grades]
 
 
 @router.get("/salary-grades/all", response_model=List[SalaryGradeResponse])
 async def list_all_salary_grades(
     current_user: User = Depends(require_permission("finances", "view")),
     db: AsyncSession = Depends(get_db),
-    _sal=Depends(require_salary_access()),
+    can_see_pay: bool = Depends(salary_visibility()),
 ):
-    return await PayrollService.list_salary_grades(db, current_user.tenant_id, active_only=False)
+    grades = await PayrollService.list_salary_grades(db, current_user.tenant_id, active_only=False)
+    return [_grade_response(g, can_see_pay) for g in grades]
 
 
 @router.post("/salary-grades", response_model=SalaryGradeResponse, status_code=201)
@@ -113,12 +156,15 @@ async def create_salary_grade(
     db: AsyncSession = Depends(get_db),
     _sal=Depends(require_salary_access()),
 ):
+    """A new grade always carries a monthly rate, which is a figure, so
+    creating one needs salary access as well as finances:create."""
     try:
-        return await PayrollService.create_salary_grade(
+        grade = await PayrollService.create_salary_grade(
             db, current_user.tenant_id, data.model_dump()
         )
     except ValueError as e:
         raise HTTPException(400, str(e))
+    return _grade_response(grade, True)
 
 
 @router.patch("/salary-grades/{grade_id}", response_model=SalaryGradeResponse)
@@ -127,14 +173,24 @@ async def update_salary_grade(
     data: SalaryGradeUpdate,
     current_user: User = Depends(require_permission("finances", "edit")),
     db: AsyncSession = Depends(get_db),
-    _sal=Depends(require_salary_access()),
+    can_see_pay: bool = Depends(salary_visibility()),
 ):
+    """Renaming, describing, reordering or retiring a grade is structure. Setting
+    a rate is a figure, so it needs salary access too."""
+    changes = data.model_dump(exclude_unset=True)
+    if not can_see_pay and any(f in changes for f in _RATE_FIELDS):
+        raise HTTPException(
+            403,
+            "Changing a grade's rates needs salary access. You can still rename, "
+            "describe or retire the grade.",
+        )
     try:
-        return await PayrollService.update_salary_grade(
-            db, current_user.tenant_id, grade_id, data.model_dump(exclude_unset=True)
+        grade = await PayrollService.update_salary_grade(
+            db, current_user.tenant_id, grade_id, changes
         )
     except ValueError as e:
         raise HTTPException(404, str(e))
+    return _grade_response(grade, can_see_pay)
 
 
 @router.delete("/salary-grades/{grade_id}", status_code=204)
@@ -142,8 +198,8 @@ async def delete_salary_grade(
     grade_id: int,
     current_user: User = Depends(require_permission("finances", "delete")),
     db: AsyncSession = Depends(get_db),
-    _sal=Depends(require_salary_access()),
 ):
+    # Structure: removing (or, when in use, retiring) a grade reveals no figure.
     try:
         await PayrollService.delete_salary_grade(db, current_user.tenant_id, grade_id)
     except ValueError as e:
@@ -160,6 +216,10 @@ async def assign_employee_salary(
     db: AsyncSession = Depends(get_db),
     _sal=Depends(require_salary_access()),
 ):
+    from app.services.access_scope import assert_not_own_record
+
+    # Conflict of interest: see access_scope.OWN_RECORD_MESSAGES.
+    assert_not_own_record(current_user, [data.employee_id], "pay")
     try:
         es = await PayrollService.assign_employee_salary(
             db, current_user.tenant_id, data.model_dump(), actor=current_user
@@ -198,6 +258,13 @@ async def get_employee_salary_history(
 
 
 # ── Deduction Types ───────────────────────────────────────────────
+# Structure, not figures: finances:view / create / edit / delete, no salary
+# access. Assumption, stated because it is a judgment call: a deduction type's
+# fixed amount or rate and a bracket table (the statutory contribution tables
+# are the usual case) are company-wide or published rules that apply to
+# everyone alike. They do not say what any one person earns, which is what the
+# owner asked to keep confidential. The amount a table produces for a given
+# employee IS a figure and only appears in payroll items and payslips.
 
 
 @router.get("/deduction-types", response_model=List[DeductionTypeResponse])
@@ -295,13 +362,14 @@ async def replace_deduction_brackets(
 async def list_payroll_periods(
     current_user: User = Depends(require_permission("finances", "view")),
     db: AsyncSession = Depends(get_db),
-    _sal=Depends(require_salary_access()),
+    can_see_pay: bool = Depends(salary_visibility()),
 ):
+    """The payroll calendar. Totals only for salary viewers."""
     periods = await PayrollService.list_payroll_periods(db, current_user.tenant_id)
     results = []
     for p in periods:
         items = await PayrollService.get_payroll_items(db, current_user.tenant_id, p.id)
-        results.append(_period_response(p, items))
+        results.append(_period_response(p, items, can_see_pay))
     return results
 
 
@@ -310,16 +378,17 @@ async def get_payroll_period(
     period_id: int,
     current_user: User = Depends(require_permission("finances", "view")),
     db: AsyncSession = Depends(get_db),
-    _sal=Depends(require_salary_access()),
+    can_see_pay: bool = Depends(salary_visibility()),
 ):
     """One period, including compute_progress: {done, total} while computing,
     then who was skipped (no salary), any warnings, or the failure reason.
-    The Payroll screen polls this after starting a compute."""
+    The Payroll screen polls this after starting a compute. Totals and
+    warnings only for salary viewers."""
     period = await PayrollService.get_payroll_period(db, current_user.tenant_id, period_id)
     if not period:
         raise HTTPException(404, "Payroll period not found")
     items = await PayrollService.get_payroll_items(db, current_user.tenant_id, period_id)
-    return _period_response(period, items)
+    return _period_response(period, items, can_see_pay)
 
 
 @router.post("/periods", response_model=PayrollPeriodResponse, status_code=201)
@@ -327,7 +396,9 @@ async def create_payroll_period(
     data: PayrollPeriodCreate,
     current_user: User = Depends(require_permission("finances", "create")),
     db: AsyncSession = Depends(get_db),
+    can_see_pay: bool = Depends(salary_visibility()),
 ):
+    """Structure: a new period is a name and dates, no figures yet."""
     if data.end_date < data.start_date:
         raise HTTPException(400, "The end date must be on or after the start date.")
     try:
@@ -336,7 +407,7 @@ async def create_payroll_period(
         )
     except ValueError as e:
         raise HTTPException(400, str(e))
-    return _period_response(period)
+    return _period_response(period, None, can_see_pay)
 
 
 @router.post("/periods/{period_id}/compute", response_model=PayrollPeriodResponse, status_code=202)
@@ -344,10 +415,14 @@ async def compute_payroll(
     period_id: int,
     current_user: User = Depends(require_permission("finances", "edit")),
     db: AsyncSession = Depends(get_db),
+    _sal=Depends(require_salary_access()),
 ):
     """Kick off a background compute and return immediately with status
     'computing'. Poll GET /payroll/periods/{id} for compute_progress and the
-    terminal 'computed' / 'compute_failed' status."""
+    terminal 'computed' / 'compute_failed' status.
+
+    Computing produces everyone's figures, so it needs salary access as well
+    as finances:edit, and it makes the caller this run's preparer."""
     try:
         period = await PayrollService.start_compute(
             db, current_user.tenant_id, period_id, current_user.id
@@ -360,14 +435,18 @@ async def compute_payroll(
 @router.post("/periods/{period_id}/approve", response_model=PayrollPeriodResponse)
 async def approve_payroll(
     period_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("finances", "edit")),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_role(["tenant_admin"])),
+    _sal=Depends(require_salary_access()),
 ):
+    """Maker-checker: anyone with finances:edit and salary access, except the
+    person who computed the run (403 with a readable reason)."""
     try:
         period = await PayrollService.approve_payroll(
             db, current_user.tenant_id, period_id, current_user.id
         )
+    except MakerCheckerError as e:
+        raise HTTPException(403, str(e))
     except ValueError as e:
         raise HTTPException(400, str(e))
     items = await PayrollService.get_payroll_items(db, current_user.tenant_id, period_id)
@@ -377,14 +456,17 @@ async def approve_payroll(
 @router.post("/periods/{period_id}/finalize", response_model=PayrollPeriodResponse)
 async def finalize_payroll(
     period_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("finances", "edit")),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_role(["tenant_admin"])),
+    _sal=Depends(require_salary_access()),
 ):
+    """Same rule as approve: never the person who computed the run."""
     try:
         period = await PayrollService.finalize_payroll(
             db, current_user.tenant_id, period_id, current_user.id
         )
+    except MakerCheckerError as e:
+        raise HTTPException(403, str(e))
     except ValueError as e:
         raise HTTPException(400, str(e))
     items = await PayrollService.get_payroll_items(db, current_user.tenant_id, period_id)
@@ -462,6 +544,46 @@ async def get_payroll_summary(
         total_net_pay=summary["total_net_pay"],
         items=item_responses,
     )
+
+
+# ── Pay rules ─────────────────────────────────────────────────────
+# Working days per month and the night and holiday premiums. Structure, so
+# finances:view reads them and finances:edit changes them, with no salary
+# access needed: they say how pay is worked out, not what anyone earns.
+# Settings no longer changes them (PATCH /settings/app refuses).
+
+@router.get("/pay-rules", response_model=PayRulesResponse)
+async def get_pay_rules(
+    current_user: User = Depends(require_permission("finances", "view")),
+    db: AsyncSession = Depends(get_db),
+):
+    settings = await SettingsService.get_or_create_app_settings(db, current_user.tenant_id)
+    return PayRulesResponse.model_validate(settings)
+
+
+@router.put("/pay-rules", response_model=PayRulesResponse)
+async def update_pay_rules(
+    data: PayRulesUpdate,
+    request: Request,
+    current_user: User = Depends(require_permission("finances", "edit")),
+    db: AsyncSession = Depends(get_db),
+):
+    settings = await SettingsService.get_or_create_app_settings(db, current_user.tenant_id)
+    before = {f: getattr(settings, f) for f in PAY_RULE_FIELDS}
+    after = data.model_dump()
+    for field, value in after.items():
+        setattr(settings, field, value)
+    # These change what every future payroll pays, so who changed which rule,
+    # and from what, is written down.
+    changes = audit_service.diff(before, after)
+    if changes:
+        audit_service.record(
+            db, actor=current_user, action="pay_rules_update", resource_type="app_settings",
+            resource_id=settings.id, details={"changes": changes}, request=request,
+        )
+    await db.flush()
+    await db.refresh(settings)
+    return PayRulesResponse.model_validate(settings)
 
 
 # ── Employee self-service payslips ────────────────────────────────

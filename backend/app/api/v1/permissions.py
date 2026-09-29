@@ -24,7 +24,9 @@ async def get_my_permissions(
     db: AsyncSession = Depends(get_db),
 ):
     """Get merged permissions for the current user across all their roles."""
-    # tenant_admin gets all permissions
+    # tenant_admin gets every matrix permission. That does not include salary
+    # figures, which the matrix does not govern (salary-viewer enrollment
+    # does), so no "view_salary" is claimed here.
     if current_user.has_role("tenant_admin"):
         from app.services.permission_service import VALID_MODULES
 
@@ -32,12 +34,9 @@ async def get_my_permissions(
             m: {"view": True, "create": True, "edit": True, "delete": True}
             for m in VALID_MODULES
         }
-        return MyPermissionsResponse(
-            permissions=perms,
-            extra={"view_salary": True},
-        )
+        return MyPermissionsResponse(permissions=perms, extra={})
 
-    role_ids = [ur.role_id for ur in current_user.user_roles]
+    role_ids = current_user.role_ids
     result = await PermissionService.get_user_permissions(
         db, current_user.tenant_id, role_ids
     )

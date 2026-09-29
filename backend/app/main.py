@@ -112,7 +112,9 @@ app.add_middleware(
     allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", settings.CSRF_HEADER_NAME],
+    # X-User-Idle: admin mode's "this request is not the user doing anything"
+    # (app.services.session_portal.IDLE_HEADER).
+    allow_headers=["Authorization", "Content-Type", settings.CSRF_HEADER_NAME, "X-User-Idle"],
     max_age=600,
 )
 app.add_middleware(SecurityHeadersMiddleware)

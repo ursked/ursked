@@ -233,6 +233,16 @@ async def get_current_user(
             detail="Session expired, please sign in again",
         )
 
+    # Admin mode. Decide which roles are in force for this request from the
+    # session's portal (app.services.session_portal): in an employee session a
+    # tenant_admin's role is dormant, and every role check made with this user
+    # object from here on sees that. An admin session is checked against its
+    # user_sessions row on every request (idle and absolute limits); an ended
+    # one is refused with 401 so the client returns to the admin sign-in.
+    from app.services import session_portal
+
+    await session_portal.resolve_request(db, user, payload, request)
+
     # Server-side enforcement of a forced password change. A user who is allowed
     # in but still carries must_change_password (a self-hosted first admin, or an
     # admin-forced reset) must not be able to exercise the API until they change
@@ -269,7 +279,8 @@ def require_role(roles: List[str]):
 
 def require_permission(module: str, action: str):
     """Check if current user has a specific module+action permission via role_permissions table.
-    tenant_admin always bypasses.
+    tenant_admin always bypasses, but only in an admin session: role_ids and
+    has_role both answer from the roles in force (session_portal.apply_portal).
     action: 'view', 'create', 'edit', 'delete'
     """
     async def permission_checker(
@@ -282,7 +293,7 @@ def require_permission(module: str, action: str):
 
         from app.services.permission_service import PermissionService
 
-        role_ids = [ur.role_id for ur in current_user.user_roles]
+        role_ids = current_user.role_ids
         allowed = await PermissionService.check_permission(
             db, current_user.tenant_id, role_ids, module, action
         )
@@ -319,6 +330,26 @@ def require_salary_access():
     return checker
 
 
+def salary_visibility():
+    """True when the caller may see salary figures (an active 'viewer').
+
+    For endpoints that serve the same resource to two audiences: finances:view
+    gets the STRUCTURE (a grade's name, a period's dates) and a viewer also gets
+    the FIGURES. Never raises; the endpoint strips what the caller may not see.
+    No role bypass, tenant_admin included (see permission_service)."""
+    async def checker(
+        current_user: User = Depends(get_current_user),
+        db: AsyncSession = Depends(get_db),
+    ) -> bool:
+        from app.services.salary_enrollment_service import SalaryEnrollmentService
+
+        return await SalaryEnrollmentService.is_viewer(
+            db, current_user.tenant_id, current_user.id
+        )
+
+    return checker
+
+
 def require_salary_approver():
     """Gate salary-enrollment management (approve/decline/revoke/list) behind an
     active 'approver' enrollment. Also does NOT bypass tenant_admin."""
@@ -341,8 +372,9 @@ def require_salary_approver():
 
 
 def require_extra_permission(permission_key: str):
-    """Check if current user has a specific extra permission (e.g. view_salary).
-    tenant_admin always bypasses.
+    """Check if current user has a specific extra permission.
+    tenant_admin always bypasses. Never use this for salary figures: those are
+    gated by require_salary_access(), which nobody bypasses.
     """
     async def checker(
         current_user: User = Depends(get_current_user),
@@ -353,7 +385,7 @@ def require_extra_permission(permission_key: str):
 
         from app.services.permission_service import PermissionService
 
-        role_ids = [ur.role_id for ur in current_user.user_roles]
+        role_ids = current_user.role_ids
         allowed = await PermissionService.check_extra_permission(
             db, current_user.tenant_id, role_ids, permission_key
         )

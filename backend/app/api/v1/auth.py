@@ -10,8 +10,6 @@ from app.config import settings
 from app.database import get_db
 from app.middleware.auth import (
     TokenType,
-    create_access_token,
-    create_refresh_token,
     create_two_factor_token,
     decode_token,
     dummy_verify_password,
@@ -33,6 +31,7 @@ from app.schemas.auth import (
     ForgotPasswordRequest,
     LoginRequest,
     LoginResponse,
+    MeResponse,
     PasswordChangeRequest,
     ResetPasswordRequest,
     SessionResponse,
@@ -43,8 +42,8 @@ from app.schemas.auth import (
     TwoFactorVerifyRequest,
     ValidateTokenResponse,
 )
-from app.schemas.user import UserResponse
 from app.models.site_settings import AuditLog
+from app.services import session_portal
 from app.services.auth_service import AuthService
 from app.services.email_service import EmailService
 from app.services.invite_service import InviteService
@@ -89,56 +88,97 @@ async def _frontend_base(db: AsyncSession, http_request: Request) -> str:
 async def _issue_session(
     response: Response,
     user: User,
+    db: AsyncSession,
     request: Request | None = None,
-    db: AsyncSession | None = None,
+    portal: str = session_portal.EMPLOYEE,
 ) -> str:
-    """Mint an access/refresh pair as httpOnly cookies. Returns the CSRF token.
+    """Start a sign-in session and set its token pair as httpOnly cookies.
+    Returns the CSRF token.
 
-    When *request* and *db* are provided, a persistent UserSession row is
-    recorded so the user can see active sessions and revoke individual ones.
+    Every session is recorded as a UserSession row: the "Active sessions"
+    profile card lists them, and the row is what says which portal (employee
+    or admin) the session belongs to; see app.services.session_portal.
     """
-    access_token = create_access_token(
-        data={"sub": str(user.id), "tenant_id": str(user.tenant_id), "roles": user.role_codes}
+    access_token, refresh_token, row = await session_portal.open_session(
+        db,
+        user,
+        portal,
+        ip_address=_client_ip(request) if request else None,
+        user_agent=(request.headers.get("user-agent", "")[:500] if request else None),
     )
-    refresh_token = create_refresh_token(
-        data={"sub": str(user.id), "tenant_id": str(user.tenant_id)}
+    # So _me() describes the session just opened, not the one the request
+    # came in with (or none, at sign-in).
+    session_portal.apply_portal(user, row.portal)
+    if request is not None:
+        request.state.portal = row.portal
+        request.state.portal_session = row
+    return set_auth_cookies(response, access_token, refresh_token)
+
+
+async def _retire_presented_session(http_request: Request, db: AsyncSession) -> None:
+    """End the session this browser is carrying before starting another.
+
+    One session per browser: signing in at either door replaces whatever the
+    cookies held, so an admin session is never left alive behind a new
+    employee one (or the other way round) with nobody watching it.
+    """
+    for cookie_name, expected in (
+        (settings.ACCESS_COOKIE_NAME, TokenType.ACCESS),
+        (settings.REFRESH_COOKIE_NAME, TokenType.REFRESH),
+    ):
+        raw = http_request.cookies.get(cookie_name)
+        if not raw:
+            continue
+        try:
+            payload = decode_token(raw, expected_type=expected)
+        except HTTPException:
+            continue
+        await TokenDenylist.revoke(payload.get("jti"), payload.get("exp"))
+        row = await session_portal.session_by_key(db, payload.get("sid"))
+        if row is not None and str(row.user_id) == str(payload.get("sub")):
+            await session_portal.end_session(
+                db, row, reason="replaced_by_new_sign_in", ip=_client_ip(http_request)
+            )
+
+
+def _me(user: User, request: Request) -> MeResponse:
+    """The user as this session sees them: roles in force, plus the portal."""
+    in_force = set(user.role_codes)
+    me = MeResponse.model_validate(user)
+    return me.model_copy(
+        update={
+            "roles": [r for r in me.roles if r.role.code in in_force],
+            **session_portal.describe(user, request),
+        }
     )
-    csrf = set_auth_cookies(response, access_token, refresh_token)
-
-    # Persist the session for the "Active sessions" profile card (CE).
-    if db is not None:
-        from app.models.user import UserSession
-        payload = decode_token(access_token, expected_type=TokenType.ACCESS)
-        db.add(UserSession(
-            user_id=user.id,
-            tenant_id=user.tenant_id,
-            jti=payload["jti"],
-            ip_address=_client_ip(request) if request else None,
-            user_agent=(request.headers.get("user-agent", "")[:500] if request else None),
-            login_at=datetime.now(timezone.utc),
-            expires_at=datetime.fromtimestamp(payload["exp"], tz=timezone.utc),
-        ))
-        await db.flush()
-
-    return csrf
 
 
-@router.post("/login", response_model=LoginResponse)
-async def login(
+async def _password_sign_in(
     request: LoginRequest,
     http_request: Request,
     response: Response,
-    db: AsyncSession = Depends(get_db),
-):
+    db: AsyncSession,
+    portal: str,
+) -> LoginResponse:
+    """Username/email + password sign-in, for either door.
+
+    `portal` is the door: session_portal.EMPLOYEE for /auth/login (everyone,
+    always an employee session) or ADMIN for /auth/admin/login (tenant_admin
+    holders only). Both doors share the account lockout, since guessing a
+    password at one door is guessing it at both; each has its own per-IP
+    limit so the admin door cannot be used to lock people out of the other.
+    """
     identifier = request.username.strip().lower()
     ip = _client_ip(http_request)
+    is_admin_door = portal == session_portal.ADMIN
+    audit_extra = {"portal": portal} if is_admin_door else {}
 
     if await RateLimiter.hit(
-        f"login:ip:{ip}",
+        f"{'admin-login' if is_admin_door else 'login'}:ip:{ip}",
         settings.LOGIN_RATE_LIMIT_ATTEMPTS,
         settings.LOGIN_RATE_LIMIT_WINDOW_SECONDS,
     ):
-        logger.warning("Login rate limit exceeded for ip=%s", ip)
+        logger.warning("Login rate limit exceeded for ip=%s portal=%s", ip, portal)
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Too many login attempts. Please try again later.",
@@ -195,7 +235,7 @@ async def login(
             action="login_failure",
             ip_address=ip,
             user_agent=http_request.headers.get("user-agent", "")[:500],
-            details={"reason": "invalid_credentials"},
+            details={"reason": "invalid_credentials", **audit_extra},
         ))
         await db.flush()
         # If this failure just tripped the lockout AND the account exists, alert
@@ -227,6 +267,25 @@ async def login(
             detail="Invalid username or password",
         )
 
+    if is_admin_door and not session_portal.is_admin_eligible(user):
+        # Only after the password proved who is asking, so the admin door does
+        # not tell a stranger which accounts are administrators. Audited like
+        # a failed sign-in; the IP limit above already counted it.
+        db.add(AuditLog(
+            tenant_id=user.tenant_id,
+            user_id=user.id,
+            user_email=user.email,
+            action="login_failure",
+            ip_address=ip,
+            user_agent=http_request.headers.get("user-agent", "")[:500],
+            details={"reason": "not_admin", **audit_extra},
+        ))
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This account is not an administrator.",
+        )
+
     await AccountLockout.clear(identifier)
 
     # Record successful login in the audit log.
@@ -237,6 +296,7 @@ async def login(
         action="login_success",
         ip_address=ip,
         user_agent=http_request.headers.get("user-agent", "")[:500],
+        details=audit_extra or None,
     ))
     await db.flush()
 
@@ -250,18 +310,81 @@ async def login(
     # the flag is surfaced on the login response and on /auth/me.
 
     # 2FA required: issue a challenge token ONLY. It is typed `2fa_pending`, so
-    # get_current_user rejects it and it grants no API access on its own.
+    # get_current_user rejects it and it grants no API access on its own. It
+    # carries the door, so /2fa/verify opens the session the person asked for.
     if user.two_factor and user.two_factor.status == "enabled" and user.two_factor.totp_verified:
         challenge = create_two_factor_token(
-            data={"sub": str(user.id), "tenant_id": str(user.tenant_id)}
+            data={"sub": str(user.id), "tenant_id": str(user.tenant_id), "portal": portal}
         )
         set_two_factor_cookie(response, challenge)
         return LoginResponse(expires_in=0, user=None, requires_2fa=True)
 
-    csrf_token = await _issue_session(response, user, request=http_request, db=db)
+    await _retire_presented_session(http_request, db)
+    csrf_token = await _issue_session(response, user, db, request=http_request, portal=portal)
     return LoginResponse(
         expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-        user=UserResponse.model_validate(user),
+        user=_me(user, http_request),
+        requires_2fa=False,
+        csrf_token=csrf_token,
+    )
+
+
+@router.post("/login", response_model=LoginResponse)
+async def login(
+    request: LoginRequest,
+    http_request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+):
+    """The ordinary sign-in page. Always an EMPLOYEE session, administrators
+    included: their tenant_admin role is dormant in it (admin mode)."""
+    return await _password_sign_in(request, http_request, response, db, session_portal.EMPLOYEE)
+
+
+@router.post("/admin/login", response_model=LoginResponse)
+async def admin_login(
+    request: LoginRequest,
+    http_request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+):
+    """The administrator sign-in page. Opens an ADMIN session (30 idle minutes,
+    8 hours at most) for tenant_admin holders; anyone else is refused after
+    their password is checked. The only way into the admin portal: no endpoint
+    turns an employee session into an admin one."""
+    return await _password_sign_in(request, http_request, response, db, session_portal.ADMIN)
+
+
+@router.post("/admin/exit", response_model=LoginResponse)
+async def exit_admin_session(
+    http_request: Request,
+    response: Response,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """"Go to my employee dashboard": end this admin session and sign the same
+    person into an employee session without asking for the password again.
+    Safe because it only ever lowers what the browser can do; the way up is
+    always the administrator sign-in."""
+    if getattr(http_request.state, "portal", None) != session_portal.ADMIN:
+        raise HTTPException(status_code=400, detail="This is not an admin session.")
+    row = http_request.state.portal_session
+    await session_portal.end_session(
+        db, row, reason="switched_to_employee", actor=current_user, ip=_client_ip(http_request)
+    )
+    refresh_raw = http_request.cookies.get(settings.REFRESH_COOKIE_NAME)
+    if refresh_raw:
+        try:
+            payload = decode_token(refresh_raw, expected_type=TokenType.REFRESH)
+            await TokenDenylist.revoke(payload.get("jti"), payload.get("exp"))
+        except HTTPException:
+            pass
+    csrf_token = await _issue_session(
+        response, current_user, db, request=http_request, portal=session_portal.EMPLOYEE
+    )
+    return LoginResponse(
+        expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        user=_me(current_user, http_request),
         requires_2fa=False,
         csrf_token=csrf_token,
     )
@@ -450,10 +573,17 @@ async def verify_2fa(
     await TokenDenylist.revoke(payload.get("jti"), payload.get("exp"))
     response.delete_cookie(settings.TWO_FACTOR_COOKIE_NAME, path="/")
 
-    csrf_token = await _issue_session(response, user, request=http_request, db=db)
+    # The door the password was given at (signed into the challenge). A
+    # challenge minted before admin mode carries none: employee.
+    portal = session_portal.ADMIN if payload.get("portal") == session_portal.ADMIN else session_portal.EMPLOYEE
+    if portal == session_portal.ADMIN and not session_portal.is_admin_eligible(user):
+        raise HTTPException(status_code=403, detail="This account is not an administrator.")
+
+    await _retire_presented_session(http_request, db)
+    csrf_token = await _issue_session(response, user, db, request=http_request, portal=portal)
     return LoginResponse(
         expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-        user=UserResponse.model_validate(user),
+        user=_me(user, http_request),
         requires_2fa=False,
         csrf_token=csrf_token,
     )
@@ -496,10 +626,37 @@ async def refresh_token(
         if issued_at is None or issued_at < int(valid_from.timestamp()):
             raise HTTPException(status_code=401, detail="Session expired, please sign in again")
 
+    # Admin mode: a refresh continues the SAME session, in the portal its row
+    # records. The refresh token's own portal claim is ignored, so no refresh
+    # can turn an employee session into an admin one, and an ended admin
+    # session cannot be revived by refreshing.
+    sid = payload.get("sid")
+    row = await session_portal.session_by_key(db, sid) if sid else None
+    if sid and (row is None or row.user_id != user.id or row.revoked_at is not None):
+        raise HTTPException(status_code=401, detail="Session expired, please sign in again")
+    if row is not None and row.portal == session_portal.ADMIN:
+        problem = session_portal.admin_session_problem(row, user)
+        if problem:
+            await session_portal.end_session(
+                db, row, reason=problem, actor=user, ip=_client_ip(http_request)
+            )
+            await db.commit()
+            raise HTTPException(
+                status_code=401,
+                detail=session_portal.ADMIN_ENDED_DETAIL,
+                headers={"X-Session-Ended": "admin"},
+            )
+
     # Rotation: the presented refresh token is single-use.
     await TokenDenylist.revoke(jti, payload.get("exp"))
 
-    csrf_token = await _issue_session(response, user, request=http_request, db=db)
+    if row is None:
+        # A refresh token from before admin mode (no sid): start a recorded
+        # employee session in its place.
+        csrf_token = await _issue_session(response, user, db, request=http_request)
+    else:
+        access_token, new_refresh = await session_portal.rotate_session(db, user, row)
+        csrf_token = set_auth_cookies(response, access_token, new_refresh)
     return TokenRefreshResponse(
         expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         csrf_token=csrf_token,
@@ -512,7 +669,8 @@ async def logout(
     response: Response,
     db: AsyncSession = Depends(get_db),
 ):
-    """Clear cookies, deny-list the presented tokens, and mark the session revoked."""
+    """Clear cookies, deny-list the presented tokens, and mark the session
+    revoked (which also ends an admin session: see session_portal)."""
     from app.models.user import UserSession
 
     now = datetime.now(timezone.utc)
@@ -529,13 +687,20 @@ async def logout(
             continue  # already invalid; nothing to revoke
         jti = payload.get("jti")
         await TokenDenylist.revoke(jti, payload.get("exp"))
-        # Mark the persistent session row as revoked (if it exists).
-        if expected == TokenType.ACCESS and jti:
+        # Mark the persistent session row as revoked (if it exists): by its
+        # sid, which both tokens carry, or by the JTI for pre-admin-mode rows.
+        session = await session_portal.session_by_key(db, payload.get("sid"))
+        if session is None and expected == TokenType.ACCESS and jti:
             result = await db.execute(
                 select(UserSession).where(UserSession.jti == jti)
             )
             session = result.scalar_one_or_none()
-            if session:
+        if session is not None and str(session.user_id) == str(payload.get("sub")):
+            if session.portal == session_portal.ADMIN:
+                await session_portal.end_session(
+                    db, session, reason="signed_out", ip=_client_ip(http_request)
+                )
+            elif session.revoked_at is None:
                 session.revoked_at = now
 
     await db.commit()
@@ -543,9 +708,12 @@ async def logout(
     return {"message": "Logged out"}
 
 
-@router.get("/me", response_model=UserResponse)
-async def get_me(current_user: User = Depends(get_current_user)):
-    return UserResponse.model_validate(current_user)
+@router.get("/me", response_model=MeResponse)
+async def get_me(request: Request, current_user: User = Depends(get_current_user)):
+    """Who is signed in, the roles in force for this session and its portal
+    (admin mode). The web client picks the employee or admin workspace from
+    `portal`; the server enforces the difference regardless."""
+    return _me(current_user, request)
 
 
 @router.get("/2fa/status")
@@ -687,6 +855,7 @@ async def disable_2fa(
 @router.post("/change-password")
 async def change_password(
     request: PasswordChangeRequest,
+    http_request: Request,
     response: Response,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -703,8 +872,13 @@ async def change_password(
     # the caller is not logged out of the browser they just used.
     current_user.tokens_valid_from = datetime.now(timezone.utc)
     await db.flush()
+    # Admin mode: a password change ends every session, admin ones included,
+    # and the replacement for this browser is an EMPLOYEE session. Changing a
+    # password is exactly when an admin session should have to be re-earned
+    # at the administrator sign-in.
+    await session_portal.end_all_sessions(db, current_user.id, reason="password_changed")
 
-    csrf_token = await _issue_session(response, current_user, db=db)
+    csrf_token = await _issue_session(response, current_user, db, request=http_request)
 
     # Send password changed confirmation email (fire-and-forget)
     EmailService.fire_and_forget(
@@ -746,7 +920,9 @@ async def list_sessions(
     result = await db.execute(stmt)
     rows = result.scalars().all()
 
-    current_jti = getattr(request.state, "token_payload", {}).get("jti")
+    payload = getattr(request.state, "token_payload", {})
+    current_jti = payload.get("jti")
+    current_sid = payload.get("sid")
 
     return [
         SessionResponse(
@@ -755,7 +931,8 @@ async def list_sessions(
             user_agent=s.user_agent,
             login_at=s.login_at.isoformat() if s.login_at else None,
             last_activity_at=s.last_activity_at.isoformat() if s.last_activity_at else None,
-            is_current=(s.jti == current_jti),
+            is_current=(s.session_key == current_sid) if current_sid else (s.jti == current_jti),
+            portal=s.portal or "employee",
         )
         for s in rows
     ]
@@ -764,6 +941,7 @@ async def list_sessions(
 @router.delete("/sessions/{session_id}", status_code=204)
 async def revoke_session(
     session_id: int,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -780,14 +958,12 @@ async def revoke_session(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    session.revoked_at = datetime.now(timezone.utc)
-    await db.flush()
-
-    # Also add the JTI to the Redis denylist so the token is immediately rejected
-    # even before the DB check.
-    exp = int(session.expires_at.timestamp()) if session.expires_at else None
-    await TokenDenylist.revoke(session.jti, exp)
-
+    # Marks it revoked and deny-lists its current access token so it is
+    # rejected at once. /auth/refresh checks the row, so its refresh token
+    # dies with it, and an admin session revoked here is over for good.
+    await session_portal.end_session(
+        db, session, reason="revoked_by_user", actor=current_user, ip=_client_ip(request)
+    )
     await db.commit()
 
 

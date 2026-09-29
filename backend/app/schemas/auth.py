@@ -1,4 +1,5 @@
 import re
+from datetime import datetime
 from typing import List, Optional
 
 from pydantic import BaseModel, Field, field_validator
@@ -13,6 +14,25 @@ class LoginRequest(BaseModel):
     device_token: Optional[str] = None
 
 
+class MeResponse(UserResponse):
+    """The signed-in user as this session sees them (admin mode).
+
+    `roles` lists the roles IN FORCE for this session, so a client deciding
+    what to show from it cannot offer admin screens in an employee session.
+    `admin_eligible` says whether the account holds tenant_admin at all (the
+    administrator sign-in link is offered on that). For an admin session,
+    `expires_at` is when it ends if nothing else happens (the idle limit or the
+    absolute cap, whichever is sooner) and `admin_expires_at` the cap itself.
+    """
+
+    portal: str = "employee"
+    admin_eligible: bool = False
+    has_employee_workspace: bool = True
+    expires_at: Optional[datetime] = None
+    admin_expires_at: Optional[datetime] = None
+    idle_timeout_seconds: Optional[int] = None
+
+
 class LoginResponse(BaseModel):
     """Tokens are delivered as httpOnly cookies, never in the body.
 
@@ -21,7 +41,7 @@ class LoginResponse(BaseModel):
     """
 
     expires_in: int
-    user: Optional[UserResponse] = None
+    user: Optional[MeResponse] = None
     requires_2fa: bool = False
     csrf_token: Optional[str] = None
 
@@ -120,5 +140,7 @@ class SessionResponse(BaseModel):
     login_at: Optional[str] = None
     last_activity_at: Optional[str] = None
     is_current: bool = False
+    # "employee" or "admin" (admin mode): which sign-in page opened it.
+    portal: str = "employee"
 
     model_config = {"from_attributes": True}

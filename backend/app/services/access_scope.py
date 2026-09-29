@@ -30,6 +30,34 @@ from app.models.user import User
 from app.services.permission_service import FULL_SCOPE_ROLES
 
 
+# Conflict of interest in the admin portal (session_portal). An administrator
+# who is also an employee has every power over the company in an admin
+# session, and the owner's rule is that those powers are for other people: in
+# the admin portal nobody changes their own shifts, attendance, overtime, pay
+# or roles, or decides their own leave. The same person does their own things
+# from the employee dashboard, where they are an employee like anyone else,
+# and anything that needs deciding goes to someone else. Other roles (HR,
+# managers, Finance) are unaffected: they have no second portal to move to.
+OWN_RECORD_MESSAGES = {
+    "shifts": "Someone else has to change your own shifts.",
+    "attendance": "Someone else has to change your own attendance.",
+    "overtime": "Someone else has to decide your own overtime.",
+    "pay": "Someone else has to change your own pay.",
+    "roles": "Someone else has to change your own roles.",
+    "leave": "Someone else has to approve your own leave.",
+}
+
+
+def assert_not_own_record(user: User, employee_ids: Iterable[Optional[int]], what: str) -> None:
+    """In an admin session, refuse an action on the admin's own record."""
+    if not getattr(user, "in_admin_portal", False):
+        return
+    if user.id in {e for e in employee_ids if e is not None}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail=OWN_RECORD_MESSAGES[what]
+        )
+
+
 def has_full_scope(user: User, module: str) -> bool:
     return bool(set(user.role_codes) & FULL_SCOPE_ROLES.get(module, {"tenant_admin"}))
 
@@ -74,11 +102,19 @@ async def assert_manages(
     user: User,
     employee_ids: Iterable[Optional[int]],
     module: str,
+    *,
+    own: Optional[str] = None,
 ) -> None:
-    """Raise 403 unless `user` may act on every one of `employee_ids`."""
+    """Raise 403 unless `user` may act on every one of `employee_ids`.
+
+    `own` names what a write does (a key of OWN_RECORD_MESSAGES): in an admin
+    session it also refuses when the admin's own id is among the targets.
+    Reads leave it out, since looking at your own record is never a conflict."""
     wanted = {e for e in employee_ids if e is not None}
     if not wanted:
         return
+    if own:
+        assert_not_own_record(user, wanted, own)
     allowed = await managed_employee_ids(db, user, module)
     if allowed is None:
         return
@@ -99,19 +135,35 @@ async def scope_employee_ids(
     user: User,
     requested: Optional[Iterable[int]],
     module: str,
+    *,
+    leave_out_own: bool = False,
 ) -> Optional[list]:
     """Narrow a bulk operation to what `user` manages.
 
     `requested` None means "everyone I can act on". Returns None only when the
     caller has full scope AND asked for everyone; otherwise an explicit list, so
     a bulk delete can never silently widen to the whole tenant.
+
+    `leave_out_own`: in an admin session, the admin's own row is taken out of
+    the result (see OWN_RECORD_MESSAGES). These are the whole-view operations
+    ("clear the shifts in view", "copy last week"): the grid sends every row
+    it shows, the admin's own included, so refusing would make them unusable
+    in the admin portal. Their previews run through here too, so the counts
+    the confirmation shows are the counts that will be written.
     """
     allowed = await managed_employee_ids(db, user, module)
     if requested is None:
-        return None if allowed is None else sorted(allowed)
-    wanted = set(requested)
-    if allowed is not None:
-        outside = wanted - allowed
-        if outside:
-            await assert_manages(db, user, outside, module)
-    return sorted(wanted)
+        result = None if allowed is None else sorted(allowed)
+    else:
+        wanted = set(requested)
+        if allowed is not None:
+            outside = wanted - allowed
+            if outside:
+                await assert_manages(db, user, outside, module)
+        result = sorted(wanted)
+    if leave_out_own and getattr(user, "in_admin_portal", False):
+        if result is None:
+            everyone = await db.execute(select(User.id).where(User.tenant_id == user.tenant_id))
+            result = sorted(everyone.scalars().all())
+        result = [e for e in result if e != user.id]
+    return result

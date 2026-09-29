@@ -1644,6 +1644,16 @@ async def self_approve_leave_application(
     app = await _load_app(db, tenant_id, application_id)
     if app.employee_id != current_user.id:
         raise HTTPException(status_code=403, detail="You can only self-approve your own request.")
+    if current_user.in_admin_portal:
+        # Admin mode (session_portal): the admin portal is for acting on other
+        # people. Self-approval stays the employee's own recorded escape hatch.
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Someone else has to approve your own leave. If nobody else can, "
+                "self-approve it from your employee dashboard."
+            ),
+        )
     if app.status != "pending":
         raise HTTPException(status_code=400, detail=f"This request is already {app.status}.")
     step = LeaveApprovalService.current_step(app)

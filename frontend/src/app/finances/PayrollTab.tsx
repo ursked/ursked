@@ -9,8 +9,7 @@ import { useToast } from '@/components/ui/Toast'
 import { useCurrency } from '@/lib/currency'
 import { useAuth } from '@/contexts/AuthContext'
 import { usePermissions } from '@/contexts/PermissionsContext'
-import { hasRole } from '@/lib/roles'
-import { LoadProblem } from './financeUi'
+import { LoadProblem, SalaryAccessGate, useSalaryAccess } from './financeUi'
 
 interface PeriodFormData {
   name: string
@@ -77,10 +76,15 @@ export default function PayrollTab() {
   const { user } = useAuth()
   const { hasPermission } = usePermissions()
   const canCreate = hasPermission('finances', 'create')
-  const canCompute = hasPermission('finances', 'edit')
-  // Approve and finalize are the tenant administrator's alone (the API
-  // refuses anyone else), so nobody else is offered the buttons.
-  const isAdmin = !!user && hasRole(user, 'tenant_admin')
+  // The period calendar is structure (finances:view). Computing produces
+  // everyone's figures, and signing a run off means reading them, so both need
+  // salary access on top of finances:edit, whatever the role. Signing off is
+  // maker-checker: never by whoever computed the run (the API refuses them;
+  // here they see the button disabled with the reason).
+  const { isViewer, pendingViewerId } = useSalaryAccess()
+  const canCompute = hasPermission('finances', 'edit') && isViewer
+  const canSignOff = hasPermission('finances', 'edit') && isViewer
+  const isPreparer = (p: PayrollPeriod) => !!user && p.computed_by != null && p.computed_by === user.id
 
   const [showForm, setShowForm] = useState(false)
   const [formData, setFormData] = useState<PeriodFormData>(EMPTY_PERIOD)
@@ -101,7 +105,7 @@ export default function PayrollTab() {
   const { data: items, isLoading: itemsLoading, error: itemsError } = useQuery<PayrollItem[]>({
     queryKey: ['payroll-items', selectedPeriodId],
     queryFn: () => api.getPayrollItems(selectedPeriodId!),
-    enabled: !!selectedPeriodId,
+    enabled: !!selectedPeriodId && isViewer,
   })
 
   const createMutation = useMutation({
@@ -374,8 +378,17 @@ export default function PayrollTab() {
                       ) : null}
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-500 text-right">{p.item_count || 0}</td>
-                    <td className="px-4 py-3 text-sm text-gray-900 text-right">{formatCurrency(p.total_gross || 0)}</td>
-                    <td className="px-4 py-3 text-sm text-gray-900 text-right">{formatCurrency(p.total_net || 0)}</td>
+                    {p.figures_hidden ? (
+                      <>
+                        <td className="px-4 py-3 text-sm text-gray-400 text-right" title="Needs salary access">Hidden</td>
+                        <td className="px-4 py-3 text-sm text-gray-400 text-right" title="Needs salary access">Hidden</td>
+                      </>
+                    ) : (
+                      <>
+                        <td className="px-4 py-3 text-sm text-gray-900 text-right">{formatCurrency(p.total_gross || 0)}</td>
+                        <td className="px-4 py-3 text-sm text-gray-900 text-right">{formatCurrency(p.total_net || 0)}</td>
+                      </>
+                    )}
                     <td className="px-4 py-3 text-right space-x-1" onClick={(e) => e.stopPropagation()}>
                       {canCompute && (status === 'draft' || status === 'computed' || status === 'compute_failed') && (
                         <button
@@ -387,23 +400,25 @@ export default function PayrollTab() {
                         </button>
                       )}
                       {status === 'computing' && <span className="text-sm text-gray-500">Computing…</span>}
-                      {isAdmin && status === 'computed' && (
-                        <button
+                      {canSignOff && status === 'computed' && (
+                        <SignOffButton
+                          label="Approve"
+                          verb="approve"
+                          preparer={isPreparer(p)}
+                          busy={approveMutation.isPending}
                           onClick={() => approveMutation.mutate(p.id)}
-                          disabled={approveMutation.isPending}
-                          className="text-sm text-green-600 hover:text-green-800 disabled:opacity-50"
-                        >
-                          Approve
-                        </button>
+                          className="text-green-600 hover:text-green-800"
+                        />
                       )}
-                      {isAdmin && status === 'approved' && (
-                        <button
+                      {canSignOff && status === 'approved' && (
+                        <SignOffButton
+                          label="Finalize"
+                          verb="finalize"
+                          preparer={isPreparer(p)}
+                          busy={finalizeMutation.isPending}
                           onClick={() => finalizeMutation.mutate(p.id)}
-                          disabled={finalizeMutation.isPending}
-                          className="text-sm text-purple-600 hover:text-purple-800 disabled:opacity-50"
-                        >
-                          Finalize
-                        </button>
+                          className="text-purple-600 hover:text-purple-800"
+                        />
                       )}
                     </td>
                   </tr>
@@ -436,6 +451,10 @@ export default function PayrollTab() {
             retrying={computeMutation.isPending}
           />
 
+          {!isViewer ? (
+            <SalaryAccessGate what="this run's payroll figures" pendingId={pendingViewerId} />
+          ) : (
+          <>
           {/* Summary Cards */}
           {items && items.length > 0 && (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -515,9 +534,39 @@ export default function PayrollTab() {
               </table>
             </div>
           )}
+          </>
+          )}
         </div>
       )}
     </div>
+  )
+}
+
+/** Approve or Finalize. For whoever computed the run it stays visible but
+ *  disabled, with the reason, so they know the next step is someone else's. */
+function SignOffButton({ label, verb, preparer, busy, onClick, className }: {
+  label: string
+  verb: 'approve' | 'finalize'
+  preparer: boolean
+  busy: boolean
+  onClick: () => void
+  className: string
+}) {
+  if (preparer) {
+    const why = `You computed this run; someone else must ${verb} it`
+    return (
+      <span className="inline-flex flex-col items-end">
+        <button disabled title={why} className="text-sm text-gray-400 cursor-not-allowed">
+          {label}
+        </button>
+        <span className="text-xs text-gray-500">{why}</span>
+      </span>
+    )
+  }
+  return (
+    <button onClick={onClick} disabled={busy} className={`text-sm disabled:opacity-50 ${className}`}>
+      {label}
+    </button>
   )
 }
 

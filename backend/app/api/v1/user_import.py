@@ -387,7 +387,7 @@ async def import_csv(
                     employee_access.assert_may_change_sign_in(current_user, target, changing_sign_in)
                     await records.validate_fields(db, tenant_id, data, target=target)
                     before = audit_service.snapshot_user(target)
-                    roles_before = roles_after = sorted(target.role_codes)
+                    roles_before = roles_after = sorted(target.stored_role_codes)
                     if roles is not None:
                         roles_before, roles_after = await records.set_roles(db, current_user, target, roles)
                     cf_changes = await efs.set_values(

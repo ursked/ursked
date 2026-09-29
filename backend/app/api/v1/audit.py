@@ -50,6 +50,14 @@ ACTION_LABELS = {
     "two_factor_enabled": "Turned on two-factor sign-in",
     "two_factor_disabled": "Turned off two-factor sign-in",
     "session_revoked": "Signed out a session",
+    "salary_assigned": "Assigned a salary",
+    "salary_assignment_updated": "Changed a salary assignment",
+    "salary_enrollment.request_created": "Asked for salary access",
+    "salary_enrollment.request_approved": "Approved salary access",
+    "salary_enrollment.request_declined": "Declined salary access",
+    "salary_enrollment.revoked": "Revoked salary access",
+    "salary_enrollment.seeded": "Granted salary access at setup",
+    "salary_enrollment.bootstrap_revoked": "Removed setup-granted salary access",
 }
 
 _BULK_LABELS = {
@@ -109,6 +117,21 @@ def describe(row: AuditLog, actor_name: Optional[str]) -> str:
     if a == "employee_number_label_update":
         return f"{who} renamed the employee number field to “{d.get('to') or 'Personnel #'}”"
     return f"{who}: {ACTION_LABELS.get(a, a.replace('_', ' '))}" + (f" ({target})" if target else "")
+
+
+# Entries whose details carry salary figures (a salary assignment's before and
+# after rate). The log is tenant_admin only, and a tenant_admin does not see
+# figures without salary access (see permission_service), so a non-viewer gets
+# who, whom and when, but not the amounts.
+_FIGURE_RESOURCE_TYPES = {"employee_salary"}
+_FIGURE_SAFE_KEYS = ("employee_id", "effective_date")
+
+
+def _details_for(row: AuditLog, can_see_pay: bool) -> Optional[Dict[str, Any]]:
+    if can_see_pay or row.resource_type not in _FIGURE_RESOURCE_TYPES or not row.details:
+        return row.details
+    kept = {k: row.details[k] for k in _FIGURE_SAFE_KEYS if k in row.details}
+    return {**kept, "figures_hidden": True}
 
 
 @router.get("/actions")
@@ -192,6 +215,10 @@ async def list_audit_logs(
             ).all()
         }
 
+    from app.services.salary_enrollment_service import SalaryEnrollmentService
+
+    can_see_pay = await SalaryEnrollmentService.is_viewer(db, current_user.tenant_id, current_user.id)
+
     return {
         "items": [
             {
@@ -204,7 +231,7 @@ async def list_audit_logs(
                 "description": describe(r, names.get(r.user_id)),
                 "resource_type": r.resource_type,
                 "resource_id": r.resource_id,
-                "details": r.details,
+                "details": _details_for(r, can_see_pay),
                 "ip_address": r.ip_address,
                 "created_at": r.created_at.isoformat() if r.created_at else None,
             }

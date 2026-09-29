@@ -62,7 +62,8 @@ export default function DataBackupsTab() {
           <h2 className="text-lg font-semibold text-gray-900">Backup</h2>
           <p className="mt-1 text-sm text-gray-500">
             Download a complete copy of the database: every employee, schedule, leave record and payroll run.
-            Keep it somewhere safe; it contains personal and pay data.
+            Keep it somewhere safe; it contains personal and pay data. Because it holds everyone&apos;s salary
+            figures, downloading one needs salary access (Finances, Salary Access), even for an administrator.
           </p>
         </div>
         <div className="px-6 py-6 space-y-3">

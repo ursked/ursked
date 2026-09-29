@@ -132,7 +132,7 @@ async def _attendance_response(record, db) -> dict:
     return data
 
 
-async def _overtime_response(log, db) -> dict:
+async def _overtime_response(log, db, can_see_pay: bool) -> dict:
     data = {
         "id": log.id,
         "tenant_id": str(log.tenant_id),
@@ -142,8 +142,12 @@ async def _overtime_response(log, db) -> dict:
         "overtime_minutes": log.overtime_minutes,
         "overtime_category_id": log.overtime_category_id,
         "log_type": log.log_type,
+        # The multiplier is the overtime policy (1.25x, 2x), the same for
+        # everyone in a category, so it is structure. The amount is minutes x
+        # this employee's rate x multiplier: a salary figure, viewers only.
         "pay_multiplier": log.pay_multiplier,
-        "pay_amount": log.pay_amount,
+        "pay_amount": log.pay_amount if can_see_pay else None,
+        "amount_hidden": (log.pay_amount is not None) and not can_see_pay,
         "leave_credits_earned": log.leave_credits_earned,
         "status": log.status,
         "approved_by": log.approved_by,
@@ -216,7 +220,8 @@ async def list_overtime_logs(
         db, current_user.tenant_id, employee_id, status, skip, limit,
         employee_ids=await _scope(db, current_user),
     )
-    return [await _overtime_response(log, db) for log in logs]
+    can_see_pay = await _is_salary_viewer(db, current_user)
+    return [await _overtime_response(log, db, can_see_pay) for log in logs]
 
 
 @router.get("/overtime/conversion-leave-types", response_model=List[ConversionLeaveType])
@@ -232,7 +237,7 @@ async def list_conversion_leave_types(
 async def _scoped_log(db, user, log_id):
     log = await OvertimeService.get_overtime_log(db, user.tenant_id, log_id)
     if log is not None:
-        await assert_manages(db, user, [log.employee_id], MODULE)
+        await assert_manages(db, user, [log.employee_id], MODULE, own="overtime")
     return log
 
 
@@ -251,7 +256,7 @@ async def approve_overtime(
         raise HTTPException(400, "This overtime is no longer waiting for a decision.")
     await db.commit()
     _notify_overtime_decision(log, current_user, "approved", data.notes)
-    return await _overtime_response(log, db)
+    return await _overtime_response(log, db, await _is_salary_viewer(db, current_user))
 
 
 @router.post("/overtime/{log_id}/reject", response_model=OvertimeLogResponse)
@@ -269,7 +274,7 @@ async def reject_overtime(
         raise HTTPException(400, "This overtime is no longer waiting for a decision.")
     await db.commit()
     _notify_overtime_decision(log, current_user, "rejected", data.notes)
-    return await _overtime_response(log, db)
+    return await _overtime_response(log, db, await _is_salary_viewer(db, current_user))
 
 
 @router.post("/overtime/{log_id}/convert", response_model=OvertimeLogResponse)
@@ -290,7 +295,7 @@ async def convert_overtime_to_leave(
         raise HTTPException(400, "Only approved overtime can be converted to leave.")
     await db.commit()
     _notify_overtime_decision(log, current_user, "converted", data.notes)
-    return await _overtime_response(log, db)
+    return await _overtime_response(log, db, await _is_salary_viewer(db, current_user))
 
 
 # ── Tardiness Records (must be before /{record_id} to avoid route conflict) ──
@@ -347,7 +352,7 @@ async def resolve_tardiness(
     existing = await TardinessService.get_tardiness_record(db, current_user.tenant_id, record_id)
     if not existing:
         raise HTTPException(404, "Tardiness record not found")
-    await assert_manages(db, current_user, [existing.employee_id], MODULE)
+    await assert_manages(db, current_user, [existing.employee_id], MODULE, own="attendance")
     await _refuse_if_locked(db, current_user.tenant_id, existing.employee_id, existing.date)
     can_see_pay = await _is_salary_viewer(db, current_user)
     # Only a salary viewer may type an amount; for anyone else it is derived.
@@ -388,7 +393,7 @@ async def record_attendance(
     Upserts: one record per employee per day is a database constraint, so
     recording the same day twice is a correction, not an error.
     """
-    await assert_manages(db, current_user, [data.employee_id], MODULE)
+    await assert_manages(db, current_user, [data.employee_id], MODULE, own="attendance")
     await _refuse_if_locked(db, current_user.tenant_id, data.employee_id, data.date)
     try:
         record = await AttendanceService.upsert_attendance(
@@ -509,7 +514,7 @@ async def update_attendance(
     record = await AttendanceService.get_attendance(db, current_user.tenant_id, record_id)
     if not record:
         raise HTTPException(404, "Attendance record not found")
-    await assert_manages(db, current_user, [record.employee_id], MODULE)
+    await assert_manages(db, current_user, [record.employee_id], MODULE, own="attendance")
     await _refuse_if_locked(db, current_user.tenant_id, record.employee_id, record.date)
 
     fields = ("actual_start_time", "actual_end_time", "status", "status_override", "notes",

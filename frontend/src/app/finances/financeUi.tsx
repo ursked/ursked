@@ -1,7 +1,10 @@
 'use client'
 
+import { useState, type ReactNode } from 'react'
 import Link from 'next/link'
-import { ApiError } from '@/lib/api'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { api, ApiError } from '@/lib/api'
+import { useToast } from '@/components/ui/Toast'
 
 // Shared bits for the Finances tabs.
 //
@@ -44,6 +47,108 @@ export function LoadProblem({ error, what }: { error: unknown; what: string }) {
   return (
     <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
       Could not load {what}: {error instanceof Error ? error.message : 'something went wrong'}. Try again in a moment.
+    </div>
+  )
+}
+
+// ── Salary figures ────────────────────────────────────────────────────
+//
+// Finances has two audiences. Anyone whose role has finances:view sees the
+// structure (deduction types, payout schedules, grade names, the period
+// calendar). Figures (rates, salaries, bonuses, payroll results) are shown
+// only to someone another person has approved for salary access, whatever
+// their role: an administrator included, on the owner's decision. These
+// mirror the API's require_salary_access(), so a non-viewer gets a way to ask
+// instead of a screen full of failed requests.
+
+/** The caller's own salary access, from the same query every tab shares. */
+export function useSalaryAccess() {
+  const q = useQuery({ queryKey: ['my-salary-status'], queryFn: () => api.getMySalaryStatus() })
+  return {
+    loading: q.isLoading,
+    isViewer: q.data?.is_viewer ?? false,
+    isApprover: q.data?.is_approver ?? false,
+    pendingViewerId: (q.data?.pending_requests ?? []).find((r) => r.kind === 'viewer')?.id ?? null,
+  }
+}
+
+/** Renders its children for a salary viewer and the request prompt for anyone else. */
+export function FiguresOnly({ what, children }: { what: string; children: ReactNode }) {
+  const { loading, isViewer, pendingViewerId } = useSalaryAccess()
+  if (loading) return <p className="py-8 text-center text-sm text-gray-500">Loading…</p>
+  if (!isViewer) return <SalaryAccessGate what={what} pendingId={pendingViewerId} />
+  return <>{children}</>
+}
+
+/** Shown where figures would be, to someone who is not a salary viewer. Lets
+ *  them file a request (or withdraw one) without leaving the page; another
+ *  approver must approve it before any figure appears. */
+export function SalaryAccessGate({ what, pendingId }: { what: string; pendingId: number | null }) {
+  const { showToast } = useToast()
+  const queryClient = useQueryClient()
+  const [reason, setReason] = useState('')
+  const hasPending = pendingId != null
+
+  const cancelMut = useMutation({
+    mutationFn: () => api.cancelSalaryRequest(pendingId as number),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['my-salary-status'] })
+      showToast('Request withdrawn', 'success')
+    },
+    onError: (e: Error) => showToast(e.message, 'error'),
+  })
+
+  const requestMut = useMutation({
+    mutationFn: () => api.createSalaryRequest({ kind: 'viewer', reason: reason || undefined }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['my-salary-status'] })
+      showToast('Request submitted for approval', 'success')
+    },
+    onError: (e: Error) => showToast(e.message, 'error'),
+  })
+
+  return (
+    <div className="mx-auto max-w-lg rounded-lg border border-gray-200 bg-white p-6 text-center">
+      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-amber-100">
+        <svg className="h-6 w-6 text-amber-600" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" aria-hidden="true">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+        </svg>
+      </div>
+      <h3 className="mt-4 text-base font-semibold text-gray-900">You need salary access to see {what}</h3>
+      <p className="mt-2 text-sm text-gray-500">
+        Salary figures are confidential. They are shown only to people another person has approved for
+        salary access, whatever their role, administrators included. Request it below.
+      </p>
+      {hasPending ? (
+        <div className="mt-4 space-y-2">
+          <p className="text-sm font-medium text-amber-600">Your request is waiting for another approver.</p>
+          <button
+            onClick={() => cancelMut.mutate()}
+            disabled={cancelMut.isPending}
+            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+          >
+            Withdraw request
+          </button>
+        </div>
+      ) : (
+        <div className="mt-4 space-y-2">
+          <label htmlFor="salary-access-reason" className="sr-only">Reason</label>
+          <input
+            id="salary-access-reason"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="Reason (optional)"
+            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+          />
+          <button
+            onClick={() => requestMut.mutate()}
+            disabled={requestMut.isPending}
+            className="w-full rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-700 disabled:opacity-50"
+          >
+            Request salary access
+          </button>
+        </div>
+      )}
     </div>
   )
 }

@@ -83,14 +83,48 @@ class User(Base):
         last = (self.last_name or "").upper()
         return f"{last}, {given}".strip().rstrip(",").strip()
 
+    # Roles this user holds but may not use in the current request. Set only by
+    # get_current_user (app.services.session_portal.apply_portal) on the
+    # request's own user: a tenant_admin signed in at the ordinary sign-in page
+    # has tenant_admin here, so every check below answers as if they did not
+    # hold it. A plain attribute, not a column or a change to user_roles, so the
+    # stored roles can never be rewritten by it. Any other User instance keeps
+    # the empty default and answers from its stored roles.
+    _dormant_role_codes = frozenset()
+    # True only on the request's user, and only in an admin session.
+    in_admin_portal = False
+
     @property
-    def role_codes(self) -> List[str]:
-        """Return list of role codes for this user (requires user_roles to be loaded)."""
+    def stored_role_codes(self) -> List[str]:
+        """Every active role the user holds, dormant or not. For decisions
+        about the account itself (is this person an administrator?), never for
+        deciding what the current request may do."""
         return [ur.role.code for ur in self.user_roles if ur.role.is_active]
 
+    @property
+    def role_codes(self) -> List[str]:
+        """Role codes in force for this request (requires user_roles to be
+        loaded). Excludes dormant roles; see _dormant_role_codes."""
+        dormant = self._dormant_role_codes
+        return [c for c in self.stored_role_codes if c not in dormant]
+
+    @property
+    def role_ids(self) -> List[int]:
+        """Ids of the roles in force for this request, for permission-matrix
+        lookups. Always use this rather than reading user_roles, or a dormant
+        tenant_admin role's matrix rows would still grant everything."""
+        dormant = self._dormant_role_codes
+        return [ur.role_id for ur in self.user_roles if ur.role.code not in dormant]
+
     def has_role(self, role_code: str) -> bool:
-        """Check if user has a specific role."""
+        """Check if user has a specific role in force for this request."""
         return role_code in self.role_codes
+
+    def holds_role(self, role_code: str) -> bool:
+        """Check if user holds a role at all, dormant or not. For rules about
+        the account as a target ("only an administrator may deactivate an
+        administrator"), which must not change with the session it signed in by."""
+        return role_code in self.stored_role_codes
 
     @property
     def primary_role(self) -> str:
@@ -161,6 +195,13 @@ class UserSession(Base):
     last_activity_at = Column(DateTime(timezone=True), nullable=True)
     expires_at = Column(DateTime(timezone=True), nullable=False)
     revoked_at = Column(DateTime(timezone=True), nullable=True)
+    # Admin mode (migration 067, app.services.session_portal). session_key is
+    # the `sid` both tokens carry, stable across refreshes (jti is not);
+    # portal is the door the user signed in through; admin_expires_at is an
+    # admin session's absolute end. The idle limit slides on last_activity_at.
+    session_key = Column(String(64), nullable=True, unique=True, index=True)
+    portal = Column(String(16), nullable=False, default="employee", server_default="employee")
+    admin_expires_at = Column(DateTime(timezone=True), nullable=True)
 
     user = relationship("User", backref="sessions")
 

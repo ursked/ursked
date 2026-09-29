@@ -272,7 +272,7 @@ class ScheduledExportService:
             )
         if not owner.has_role("tenant_admin"):
             allowed = await PermissionService.check_permission(
-                db, owner.tenant_id, [ur.role_id for ur in owner.user_roles], "reports", "create"
+                db, owner.tenant_id, owner.role_ids, "reports", "create"
             )
             if not allowed:
                 raise OwnerUnavailable(

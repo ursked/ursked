@@ -41,7 +41,7 @@ async def has_permission(db: AsyncSession, user: User, module: str, action: str)
     """The matrix check `require_permission` makes, usable inside a handler."""
     if user.has_role("tenant_admin"):
         return True
-    role_ids = [ur.role_id for ur in user.user_roles]
+    role_ids = user.role_ids
     col = {
         "view": RolePermission.can_view,
         "create": RolePermission.can_create,

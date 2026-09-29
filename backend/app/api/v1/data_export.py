@@ -70,7 +70,7 @@ async def _can(db: AsyncSession, user: User, module: str, action: str) -> bool:
     if user.has_role("tenant_admin"):
         return True
     return await PermissionService.check_permission(
-        db, user.tenant_id, [ur.role_id for ur in user.user_roles], module, action
+        db, user.tenant_id, user.role_ids, module, action
     )
 
 

@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, time
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -29,15 +29,19 @@ class SalaryGradeUpdate(BaseModel):
 
 
 class SalaryGradeResponse(BaseModel):
+    """A grade's code, name and status are structure (finances:view); its rates
+    are figures, None with rates_hidden=True for anyone who is not a salary
+    viewer."""
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     code: str
     name: str
     description: Optional[str] = None
-    monthly_rate: float
+    monthly_rate: Optional[float] = None
     daily_rate: Optional[float] = None
     hourly_rate: Optional[float] = None
+    rates_hidden: bool = False
     is_active: bool
     sort_order: int
     created_at: Optional[datetime] = None
@@ -173,8 +177,11 @@ class PayrollPeriodResponse(BaseModel):
     finalized_by: Optional[int] = None
     notes: Optional[str] = None
     item_count: Optional[int] = None
+    # Figures: None with figures_hidden=True unless the caller is a salary
+    # viewer. The rest of the period is the payroll calendar (structure).
     total_gross: Optional[float] = None
     total_net: Optional[float] = None
+    figures_hidden: bool = False
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -251,3 +258,42 @@ class MyPayslipDetail(BaseModel):
     employee_deductions: List[Dict[str, Any]] = []
     employer_contributions: List[Dict[str, Any]] = []
     breakdown: Dict[str, Any] = {}
+
+
+# ── Pay rules ─────────────────────────────────────────────────────
+# Company-wide rules payroll applies to everyone: how a monthly rate becomes a
+# daily one, and the night and holiday premiums. They are STRUCTURE, not
+# anyone's pay, so finances:view reads them without salary access. They are
+# stored on app_settings, but only this endpoint changes them: they used to sit
+# in General settings, where anyone who could edit settings could change what
+# everyone is paid without holding any finance permission.
+
+class PayRulesResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    working_days_per_month: int = 22
+    night_diff_multiplier: float = 1.10
+    night_shift_start: Optional[time] = None
+    night_shift_end: Optional[time] = None
+    holiday_worked_multiplier: float = 2.0
+    special_holiday_worked_multiplier: float = 1.3
+
+
+class PayRulesUpdate(BaseModel):
+    """The whole set, saved together. The night window has no default: it must
+    be sent, and null means no window (so no night differential). A client that
+    leaves it out gets an error instead of silently clearing it."""
+
+    working_days_per_month: int = Field(..., ge=1, le=31)
+    # Premiums are paid as hours x rate x (multiplier - 1), so anything below
+    # 1.0 would subtract pay. Floor at 1.0 (= no premium) rather than allow that.
+    night_diff_multiplier: float = Field(..., ge=1.0, le=10.0)
+    night_shift_start: Optional[time]
+    night_shift_end: Optional[time]
+    holiday_worked_multiplier: float = Field(..., ge=1.0, le=10.0)
+    special_holiday_worked_multiplier: float = Field(..., ge=1.0, le=10.0)
+
+
+# The app_settings columns the pay rules are made of. PATCH /settings/app
+# refuses to change these; they are changed here, under finances:edit.
+PAY_RULE_FIELDS = tuple(PayRulesUpdate.model_fields)

@@ -62,7 +62,10 @@ export default function OvertimeAnalyticsTab({ year, startDate, endDate }: Props
 
   // KPIs
   const totalHours = trends?.months.reduce((s, m) => s + m.total_hours, 0) ?? 0;
-  const totalPay = trends?.months.reduce((s, m) => s + m.total_pay, 0) ?? 0;
+  // Overtime pay is a salary figure: the API leaves it out (pay_hidden) for
+  // anyone without salary access, administrators included.
+  const payHidden = !!trends?.pay_hidden;
+  const totalPay = trends?.months.reduce((s, m) => s + (m.total_pay ?? 0), 0) ?? 0;
   const totalLogs = trends?.months.reduce((s, m) => s + m.log_count, 0) ?? 0;
   const avgMonthly = totalHours > 0 ? Math.round((totalHours / 12) * 10) / 10 : 0;
 
@@ -101,7 +104,11 @@ export default function OvertimeAnalyticsTab({ year, startDate, endDate }: Props
         </div>
         <div className="bg-white border border-gray-200 rounded-xl p-5">
           <p className="text-sm text-gray-500">Total OT Pay</p>
-          <p className="mt-1 text-2xl font-bold text-gray-900">{totalPay.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+          {payHidden ? (
+            <p className="mt-1 text-sm text-gray-500">Hidden: needs salary access</p>
+          ) : (
+            <p className="mt-1 text-2xl font-bold text-gray-900">{totalPay.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+          )}
         </div>
         <div className="bg-white border border-gray-200 rounded-xl p-5">
           <p className="text-sm text-gray-500">Total OT Logs</p>

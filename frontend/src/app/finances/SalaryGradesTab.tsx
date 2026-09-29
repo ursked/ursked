@@ -6,8 +6,9 @@ import { api } from '@/lib/api'
 import { SalaryGrade } from '@/types'
 import { useToast } from '@/components/ui/Toast'
 import { useCurrency } from '@/lib/currency'
+import Link from 'next/link'
 import { usePermissions } from '@/contexts/PermissionsContext'
-import { LoadProblem } from './financeUi'
+import { LoadProblem, useSalaryAccess } from './financeUi'
 
 interface FormData {
   code: string
@@ -36,6 +37,11 @@ export default function SalaryGradesTab() {
   const canCreate = hasPermission('finances', 'create')
   const canEdit = hasPermission('finances', 'edit')
   const canDelete = hasPermission('finances', 'delete')
+  // A grade's name is structure; its rates are figures. Without salary access
+  // the list shows names with the rates masked, a grade can be renamed or
+  // retired but not created (a new grade always carries a rate), and the edit
+  // form leaves the rates out. Same rules as the API.
+  const { isViewer } = useSalaryAccess()
 
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -98,7 +104,7 @@ export default function SalaryGradesTab() {
       code: grade.code,
       name: grade.name,
       description: grade.description || '',
-      monthly_rate: grade.monthly_rate,
+      monthly_rate: grade.monthly_rate ?? 0,
       daily_rate: grade.daily_rate ?? null,
       hourly_rate: grade.hourly_rate ?? null,
       sort_order: grade.sort_order,
@@ -110,7 +116,10 @@ export default function SalaryGradesTab() {
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (editingId) {
-      updateMutation.mutate({ id: editingId, data: { ...formData, description: formData.description || null } })
+      const data: Record<string, unknown> = isViewer
+        ? { ...formData, description: formData.description || null }
+        : { name: formData.name, description: formData.description || null, sort_order: formData.sort_order }
+      updateMutation.mutate({ id: editingId, data })
     } else {
       createMutation.mutate(formData)
     }
@@ -122,7 +131,7 @@ export default function SalaryGradesTab() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold text-gray-900">Salary Grades</h2>
-        {!showForm && canCreate && !error && (
+        {!showForm && canCreate && isViewer && !error && (
           <button
             onClick={() => { resetForm(); setShowForm(true) }}
             className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700"
@@ -158,40 +167,48 @@ export default function SalaryGradesTab() {
                 placeholder="e.g. Grade 1 - Entry Level"
               />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Monthly Rate</label>
-              <input
-                type="number"
-                required
-                step="0.01"
-                min="0"
-                value={formData.monthly_rate}
-                onChange={(e) => setFormData({ ...formData, monthly_rate: parseFloat(e.target.value) || 0 })}
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-purple-500 focus:ring-purple-500"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Daily Rate (optional)</label>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={formData.daily_rate ?? ''}
-                onChange={(e) => setFormData({ ...formData, daily_rate: e.target.value ? parseFloat(e.target.value) : null })}
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-purple-500 focus:ring-purple-500"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Hourly Rate (optional)</label>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={formData.hourly_rate ?? ''}
-                onChange={(e) => setFormData({ ...formData, hourly_rate: e.target.value ? parseFloat(e.target.value) : null })}
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-purple-500 focus:ring-purple-500"
-              />
-            </div>
+            {isViewer ? (
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Monthly Rate</label>
+                  <input
+                    type="number"
+                    required
+                    step="0.01"
+                    min="0"
+                    value={formData.monthly_rate}
+                    onChange={(e) => setFormData({ ...formData, monthly_rate: parseFloat(e.target.value) || 0 })}
+                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-purple-500 focus:ring-purple-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Daily Rate (optional)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={formData.daily_rate ?? ''}
+                    onChange={(e) => setFormData({ ...formData, daily_rate: e.target.value ? parseFloat(e.target.value) : null })}
+                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-purple-500 focus:ring-purple-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Hourly Rate (optional)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={formData.hourly_rate ?? ''}
+                    onChange={(e) => setFormData({ ...formData, hourly_rate: e.target.value ? parseFloat(e.target.value) : null })}
+                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-purple-500 focus:ring-purple-500"
+                  />
+                </div>
+              </>
+            ) : (
+              <p className="sm:col-span-2 text-xs text-gray-500">
+                Rates are hidden and left unchanged: setting them needs salary access.
+              </p>
+            )}
             <div>
               <label className="block text-sm font-medium text-gray-700">Sort Order</label>
               <input
@@ -222,6 +239,15 @@ export default function SalaryGradesTab() {
         </form>
       )}
 
+      {!isViewer && !!grades?.length && (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          Rates are hidden. You need salary access to see them.{' '}
+          <Link href="/finances?tab=salary-access" className="font-semibold text-purple-700 underline">
+            Request it
+          </Link>
+        </p>
+      )}
+
       {isLoading ? (
         <div className="text-center py-8 text-gray-500">Loading...</div>
       ) : error ? (
@@ -247,9 +273,19 @@ export default function SalaryGradesTab() {
                 <tr key={g.id} className={!g.is_active ? 'opacity-50' : ''}>
                   <td className="px-4 py-3 text-sm font-mono text-gray-900">{g.code}</td>
                   <td className="px-4 py-3 text-sm text-gray-900">{g.name}</td>
-                  <td className="px-4 py-3 text-sm text-gray-900 text-right">{formatCurrency(g.monthly_rate)}</td>
-                  <td className="px-4 py-3 text-sm text-gray-500 text-right">{g.daily_rate ? formatCurrency(g.daily_rate) : '—'}</td>
-                  <td className="px-4 py-3 text-sm text-gray-500 text-right">{g.hourly_rate ? formatCurrency(g.hourly_rate) : '—'}</td>
+                  {g.rates_hidden ? (
+                    <>
+                      <td className="px-4 py-3 text-sm text-gray-400 text-right" title="Needs salary access">Hidden</td>
+                      <td className="px-4 py-3 text-sm text-gray-400 text-right" title="Needs salary access">Hidden</td>
+                      <td className="px-4 py-3 text-sm text-gray-400 text-right" title="Needs salary access">Hidden</td>
+                    </>
+                  ) : (
+                    <>
+                      <td className="px-4 py-3 text-sm text-gray-900 text-right">{formatCurrency(g.monthly_rate ?? 0)}</td>
+                      <td className="px-4 py-3 text-sm text-gray-500 text-right">{g.daily_rate ? formatCurrency(g.daily_rate) : '—'}</td>
+                      <td className="px-4 py-3 text-sm text-gray-500 text-right">{g.hourly_rate ? formatCurrency(g.hourly_rate) : '—'}</td>
+                    </>
+                  )}
                   <td className="px-4 py-3 text-center">
                     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${g.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
                       {g.is_active ? 'Active' : 'Inactive'}

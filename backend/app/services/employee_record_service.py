@@ -17,7 +17,7 @@ from app.models.org_hierarchy import OrgNode
 from app.models.role import Role
 from app.models.user import User
 from app.schemas.user import UserResponse
-from app.services import employee_access, employee_field_service
+from app.services import access_scope, employee_access, employee_field_service
 from app.services.configurable_type_service import ConfigurableTypeService
 from app.services.role_service import RoleService
 from app.services.user_service import UserService
@@ -97,8 +97,13 @@ def assert_may_revoke(actor: User, codes: Iterable[str]) -> None:
 async def set_roles(db: AsyncSession, actor: User, user: User, role_codes: Sequence[str]) -> Tuple[List[str], List[str]]:
     """Make the user's roles exactly `role_codes` (+ employee). Returns
     (before, after) sorted; equal lists mean nothing changed."""
-    current = set(user.role_codes)
+    # Stored roles, not the ones in force for this request: `user` may be the
+    # caller themselves, whose tenant_admin is dormant in an employee session,
+    # and re-granting a role they already hold would duplicate it.
+    current = set(user.stored_role_codes)
     wanted = set(role_codes) | {"employee"}
+    if wanted != current and user.id == actor.id:
+        access_scope.assert_not_own_record(actor, [user.id], "roles")
     # Authority first: "you may not grant that" is the answer whether or not
     # the role happens to exist.
     assert_may_grant(actor, wanted - current)

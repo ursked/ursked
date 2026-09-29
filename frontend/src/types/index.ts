@@ -812,9 +812,11 @@ export interface SalaryGrade {
   code: string;
   name: string;
   description?: string;
-  monthly_rate: number;
-  daily_rate?: number;
-  hourly_rate?: number;
+  /** Null (with rates_hidden) for anyone who is not a salary viewer. */
+  monthly_rate: number | null;
+  daily_rate?: number | null;
+  hourly_rate?: number | null;
+  rates_hidden?: boolean;
   is_active: boolean;
   sort_order: number;
   created_at?: string;
@@ -871,8 +873,10 @@ export interface PayrollPeriod {
   finalized_by?: number;
   notes?: string;
   item_count?: number;
-  total_gross?: number;
-  total_net?: number;
+  /** Null (with figures_hidden) for anyone who is not a salary viewer. */
+  total_gross?: number | null;
+  total_net?: number | null;
+  figures_hidden?: boolean;
   created_at?: string;
   updated_at?: string;
 }
@@ -947,7 +951,9 @@ export interface OvertimeLog {
   overtime_category_id?: number;
   overtime_category_name?: string;
   pay_multiplier?: number;
-  pay_amount?: number;
+  /** Null (with amount_hidden) for anyone who is not a salary viewer. */
+  pay_amount?: number | null;
+  amount_hidden?: boolean;
   leave_credits_earned?: number;
   status: OvertimeLogStatus;
   approved_by?: number;
@@ -1325,7 +1331,8 @@ export interface OvertimeMonthBreakdown {
   total_hours: number;
   by_category: Record<string, number>;
   log_count: number;
-  total_pay: number;
+  /** Null when the caller is not a salary viewer (see pay_hidden). */
+  total_pay: number | null;
   total_credits: number;
 }
 
@@ -1333,6 +1340,7 @@ export interface OvertimeTrendsResponse {
   year: number;
   categories: AnalyticsCategoryInfo[];
   months: OvertimeMonthBreakdown[];
+  pay_hidden?: boolean;
 }
 
 export interface PaidUnpaidMonth {
@@ -1514,6 +1522,8 @@ export interface SalaryEnrollmentRow {
   kind: SalaryEnrollmentKind;
   status: string;
   granted_by?: number | null;
+  /** Null when granted at setup rather than by a person. */
+  granted_by_name?: string | null;
   granted_at?: string | null;
 }
 
@@ -1528,6 +1538,21 @@ export interface SalaryRequestRow {
   decided_by?: number | null;
   decided_at?: string | null;
   decision_note?: string | null;
+  /** Why the signed-in approver may not approve this one; null if they may. */
+  approval_block?: string | null;
+}
+
+/** One line of the salary access history (who granted what to whom, when). */
+export interface SalaryGrantHistoryRow {
+  id: number;
+  at?: string | null;
+  action: string;
+  label: string;
+  actor_id?: number | null;
+  actor_name?: string | null;
+  subject_id?: number | null;
+  subject_name?: string | null;
+  kind?: SalaryEnrollmentKind | null;
 }
 
 export interface MySalaryStatus {
@@ -2329,4 +2354,28 @@ export interface RetentionReport {
   employees: { id: number; name: string; separation_date: string | null }[];
   counts: { type: string; label: string; count: number }[];
   total: number;
+}
+
+// Admin mode: what the signed-in session is. Present on the user returned by
+// /auth/me and the sign-in responses; absent on other users.
+export type Portal = 'employee' | 'admin';
+
+export interface User {
+  portal?: Portal;
+  admin_eligible?: boolean;
+  has_employee_workspace?: boolean;
+  expires_at?: string | null;
+  admin_expires_at?: string | null;
+  idle_timeout_seconds?: number | null;
+}
+
+// Finances: pay rules, the company-wide rates payroll applies (GET/PUT /payroll/pay-rules).
+export interface PayRules {
+  working_days_per_month: number;
+  night_diff_multiplier: number;
+  /** "HH:MM:SS"; null on either end means no night window, so no night differential. */
+  night_shift_start: string | null;
+  night_shift_end: string | null;
+  holiday_worked_multiplier: number;
+  special_holiday_worked_multiplier: number;
 }

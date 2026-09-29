@@ -5,12 +5,14 @@ import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSidebar } from '@/contexts/SidebarContext';
 import { hasAnyRole } from '@/lib/roles';
+import { ADMIN_LOGIN_PATH, hasEmployeeWorkspace, isAdminEligible, isAdminSession } from '@/lib/workspace';
 import { useInstallPrompt } from '@/hooks/useInstallPrompt';
 import { useToast } from '@/components/ui/Toast';
 import { NotificationsBell } from './NotificationsBell';
 
 export function Header() {
-  const { user, logout } = useAuth();
+  const { user, logout, exitAdmin } = useAuth();
+  const adminSession = isAdminSession(user);
   const { toggle } = useSidebar();
   const { showToast } = useToast();
   const { canInstall, installed, isIOS, promptInstall } = useInstallPrompt();
@@ -34,7 +36,8 @@ export function Header() {
     // viewport-fit=cover lets the page run under a notch / status bar; the
     // header grows by the top inset (0 where there is none) so the menu and
     // account buttons stay tappable.
-    <header className="h-[calc(4rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] flex-shrink-0 bg-white border-b border-gray-200 flex items-center justify-between px-6 pl-[calc(1.5rem+env(safe-area-inset-left))] lg:pl-6">
+    // In an admin session the admin bar sits above and takes the top inset.
+    <header className={`${adminSession ? 'h-16' : 'h-[calc(4rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)]'} flex-shrink-0 bg-white border-b border-gray-200 flex items-center justify-between px-6 pl-[calc(1.5rem+env(safe-area-inset-left))] lg:pl-6`}>
       {/* Left: mobile menu button */}
       <button
         onClick={toggle}
@@ -88,6 +91,36 @@ export function Header() {
                 </svg>
                 Profile
               </Link>
+              {/* Admin mode: the way between the two dashboards. Up is always
+                  the administrator sign-in, which asks for the password; down
+                  from an admin session needs no password. */}
+              {user && isAdminEligible(user) && !adminSession && (
+                <Link
+                  href={ADMIN_LOGIN_PATH}
+                  onClick={() => setDropdownOpen(false)}
+                  className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                  </svg>
+                  Administrator sign-in
+                </Link>
+              )}
+              {user && adminSession && hasEmployeeWorkspace(user) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDropdownOpen(false);
+                    void exitAdmin();
+                  }}
+                  className="flex items-center gap-2 w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                  </svg>
+                  Go to my employee dashboard
+                </button>
+              )}
               {user && hasAnyRole(user, ['tenant_admin']) && (
                 <Link
                   href="/settings"
