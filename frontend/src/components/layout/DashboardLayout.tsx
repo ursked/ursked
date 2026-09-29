@@ -177,9 +177,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }
   }
 
+  // A full navigation, not router.replace. Pages keep their own state and
+  // effects above this layout (it wraps them; it cannot stop them), and some
+  // write their filters into the address on mount — the schedule grid adds
+  // ?date=&range=&view=. That client navigation superseded router.replace, so
+  // an admin session opening /schedules stayed on it. Landing in the wrong
+  // workspace is rare (a deep link), so a real page load is a fair price for a
+  // redirect nothing can override.
   useEffect(() => {
-    if (redirectTo) router.replace(redirectTo);
-  }, [redirectTo, router]);
+    if (redirectTo) window.location.replace(redirectTo);
+  }, [redirectTo]);
 
   if (isLoading) {
     return (
