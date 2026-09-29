@@ -286,6 +286,10 @@ class ApiClient {
 
   private async refreshToken(): Promise<boolean> {
     if (typeof window === 'undefined') return false;
+    // Nothing to refresh without a session on this device (the CSRF cookie is
+    // its readable half; the refresh token itself is httpOnly). Trying anyway
+    // is a guaranteed 401 in the console.
+    if (!readCookie(CSRF_COOKIE)) return false;
 
     if (!this.refreshPromise) {
       this.refreshPromise = (async () => {

@@ -86,7 +86,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // effect body (react-hooks/set-state-in-effect).
     void Promise.resolve().then(async () => {
       if (!active) return;
-      if (!hasSessionMarker()) await clearApiCache();
+      // No session on this device: say so without asking. Asking anyway
+      // meant every signed-out visit (the sign-in page, a reset link) logged
+      // a 401 for /auth/me and another for /auth/refresh in the console,
+      // which reads as a fault to anyone who opens it.
+      if (!hasSessionMarker()) {
+        await clearApiCache();
+        if (!active) return;
+        setUser(null);
+        setIsLoading(false);
+        return;
+      }
       if (!active) return;
       refreshUser().finally(() => {
         if (active) setIsLoading(false);

@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi.responses import JSONResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -641,6 +642,27 @@ async def refresh_token(
     http_request: Request,
     response: Response,
     db: AsyncSession = Depends(get_db),
+):
+    """Refresh, and when the session cannot be refreshed, forget it.
+
+    A refused refresh used to leave the cookies in place, so the browser kept
+    presenting a dead session: the client saw a CSRF cookie, believed it was
+    signed in, and every later visit logged a 401 for /auth/me and another for
+    /auth/refresh. Clearing them on refusal makes that happen once."""
+    try:
+        return await _refresh_session(http_request, response, db)
+    except HTTPException as exc:
+        if exc.status_code != 401:
+            raise
+        refused = JSONResponse(status_code=401, content={"detail": exc.detail})
+        clear_auth_cookies(refused)
+        return refused
+
+
+async def _refresh_session(
+    http_request: Request,
+    response: Response,
+    db: AsyncSession,
 ):
     token = http_request.cookies.get(settings.REFRESH_COOKIE_NAME)
     if not token:
