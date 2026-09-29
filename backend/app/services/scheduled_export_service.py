@@ -270,15 +270,13 @@ class ScheduledExportService:
                 "The person who set up this schedule no longer has an active account, so it "
                 "was not sent. Open it, check it and save it to take it over."
             )
-        if not owner.has_role("tenant_admin"):
-            allowed = await PermissionService.check_permission(
-                db, owner.tenant_id, owner.role_ids, "reports", "create"
+        # Reports are operations: being an administrator does not let the owner
+        # run them (permission_service), only a role with reports:create does.
+        if not await PermissionService.user_can(db, owner, "reports", "create"):
+            raise OwnerUnavailable(
+                "The person who set up this schedule is no longer allowed to run reports, "
+                "so it was not sent."
             )
-            if not allowed:
-                raise OwnerUnavailable(
-                    "The person who set up this schedule is no longer allowed to run reports, "
-                    "so it was not sent."
-                )
         return owner
 
     @staticmethod

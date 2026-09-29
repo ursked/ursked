@@ -37,6 +37,17 @@ ACTION_TYPE = "leave_application"
 TO_APPROVER = "approver"
 TO_EMPLOYEE = "employee"
 
+NOBODY_CAN_APPROVE_EMPLOYEE = (
+    "Nobody in your company can approve leave yet. Your request is waiting, and "
+    "your administrator has been told. It will go to an approver as soon as "
+    "someone is given the role."
+)
+NOBODY_CAN_APPROVE_TITLE = "Nobody can approve leave"
+NOBODY_CAN_APPROVE_ADMIN = (
+    "Nobody can approve leave — give someone the HR or Leave approver role. "
+    "Until then leave requests wait with no approver."
+)
+
 
 def _name(u) -> str:
     return f"{u.first_name} {u.last_name}".strip() if u else ""
@@ -178,6 +189,41 @@ class LeaveNotifier:
         await NotificationService.mark_actioned(self.db, self.tenant_id, ACTION_TYPE, app.id)
 
     # ── Composed messages ───────────────────────────────────────────
+
+    async def nobody_can_approve(self, app: LeaveApplication) -> int:
+        """Tell every active administrator that a request has no approver
+        because nobody in the company can approve leave. Administrators do
+        not approve leave themselves (permission_service), so the message is
+        what to change, not a request to act on: it carries no link to the
+        request, and it is sent whatever the leave notification settings say,
+        since without it the request would wait unseen."""
+        from app.models.role import Role, UserRole
+
+        employee = await self._user(app.employee_id)
+        what = await self.describe(app)
+        body = f"{_name(employee)} requested {what}. " + NOBODY_CAN_APPROVE_ADMIN
+        admins = (
+            await self.db.execute(
+                select(User)
+                .join(UserRole, UserRole.user_id == User.id)
+                .join(Role, Role.id == UserRole.role_id)
+                .where(
+                    User.tenant_id == self.tenant_id,
+                    User.is_active == True,  # noqa: E712
+                    Role.code == "tenant_admin",
+                    Role.is_active == True,  # noqa: E712
+                )
+            )
+        ).scalars().unique().all()
+        for admin in admins:
+            await NotificationService.notify(
+                self.db, self.tenant_id, admin.id,
+                type="leave_nobody_can_approve",
+                title=NOBODY_CAN_APPROVE_TITLE,
+                body=body,
+            )
+            self._email(admin.email, _name(admin), NOBODY_CAN_APPROVE_TITLE, body, None)
+        return len(admins)
 
     async def request_waiting(self, app: LeaveApplication, approver_id: int, *, kind: str = "leave_request", lead: str = "") -> None:
         employee = await self._user(app.employee_id)

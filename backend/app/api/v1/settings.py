@@ -307,3 +307,110 @@ async def get_retention_report(
     from app.services.housekeeping_service import retention_report
 
     return await retention_report(db, current_user.tenant_id)
+
+
+# ── Admin dashboard (administration only, 2026-09-29) ─────────────────
+
+# The jobs of the company and the roles that do them from the regular (or
+# finance) dashboard. An administrator does none of them as an administrator
+# (permission_service), so the admin dashboard's question is "has someone been
+# given each job?", not "what is waiting to be decided?".
+_JOBS = (
+    ("schedules", "Manage schedules", ("manager", "hr", "schedule_editor")),
+    ("leave", "Approve leave", ("hr", "leave_approver", "manager")),
+    ("reports", "Run reports", ("report_viewer", "hr", "manager", "finance")),
+    ("finance", "Run payroll", ("finance",)),
+)
+
+
+@router.get("/admin-overview")
+async def get_admin_overview(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_role(["tenant_admin"])),
+):
+    """What the Admin Dashboard shows besides the setup checklist and the
+    background jobs: accounts without a role, which jobs nobody has been given
+    a role for, leave requests waiting because nobody can approve leave, and
+    salary-access requests waiting for this administrator. It decides nothing
+    and links to no operational screen: those decisions belong to the people
+    with the role for them."""
+    from app.models.leave import LeaveApplication
+    from app.models.role import LeaveApprovalStep, Role, UserRole
+    from app.services.leave_access import leave_editors
+    from app.services.salary_enrollment_service import SalaryEnrollmentService
+
+    tid = current_user.tenant_id
+
+    holders = (await db.execute(
+        sa_select(Role.code, func.count(func.distinct(UserRole.user_id)))
+        .join(UserRole, UserRole.role_id == Role.id)
+        .join(User, User.id == UserRole.user_id)
+        .where(Role.tenant_id == tid, Role.is_active == True, User.is_active == True)  # noqa: E712
+        .group_by(Role.code)
+    )).all()
+    by_role = {code: int(n) for code, n in holders}
+
+    has_role = (
+        sa_select(UserRole.id)
+        .join(Role, Role.id == UserRole.role_id)
+        .where(UserRole.user_id == User.id, Role.is_active == True)  # noqa: E712
+        .exists()
+    )
+    roleless = (await db.execute(
+        sa_select(User.id, User.first_name, User.last_name, User.email)
+        .where(User.tenant_id == tid, User.is_active == True, ~has_role)  # noqa: E712
+        .order_by(User.last_name, User.first_name)
+        .limit(50)
+    )).all()
+
+    has_step = (
+        sa_select(LeaveApprovalStep.id)
+        .where(LeaveApprovalStep.leave_application_id == LeaveApplication.id)
+        .exists()
+    )
+    stuck = (await db.execute(
+        sa_select(LeaveApplication.id, LeaveApplication.start_date, LeaveApplication.end_date,
+                  User.first_name, User.last_name)
+        .join(User, User.id == LeaveApplication.employee_id)
+        .where(LeaveApplication.tenant_id == tid, LeaveApplication.status == "pending", ~has_step)
+        .order_by(LeaveApplication.start_date)
+        .limit(50)
+    )).all()
+    editors = await leave_editors(db, tid)
+
+    salary_pending = None
+    if await SalaryEnrollmentService.is_approver(db, tid, current_user.id):
+        rows = await SalaryEnrollmentService.list_requests(db, tid, "pending")
+        salary_pending = sum(1 for r in rows if r.get("user_id") != current_user.id)
+
+    return {
+        "users_without_roles": [
+            {"id": r.id, "name": f"{r.first_name} {r.last_name}".strip(), "email": r.email}
+            for r in roleless
+        ],
+        "jobs": [
+            {
+                "key": key,
+                "label": label,
+                "roles": list(codes),
+                "holders": sum(by_role.get(c, 0) for c in codes),
+            }
+            for key, label, codes in _JOBS
+        ],
+        # Nobody holds leave:edit outside the administrator role, and nobody
+        # holds a role that approves leave routed to them.
+        "nobody_can_approve_leave": not editors and not any(
+            by_role.get(c, 0) for c in ("leave_approver", "manager")
+        ),
+        "leave_without_approver": [
+            {
+                "id": r.id,
+                "employee_name": f"{r.first_name} {r.last_name}".strip(),
+                "start_date": r.start_date.isoformat(),
+                "end_date": r.end_date.isoformat(),
+            }
+            for r in stuck
+        ],
+        "salary_requests_pending": salary_pending,
+    }

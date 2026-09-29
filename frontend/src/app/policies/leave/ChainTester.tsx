@@ -6,6 +6,7 @@ import { ArrowRight, User as UserIcon } from 'lucide-react'
 import { api } from '@/lib/api'
 import { Card, CardBody, CardHeader, CardTitle, Badge, EmptyState, UserPicker } from '@/components/ui'
 import { CHAIN_SOURCE_LABEL } from '@/lib/copy/policies'
+import { NobodyCanApproveNote } from '@/app/leaves/leaveUi'
 
 export default function ChainTester() {
   const [employeeId, setEmployeeId] = useState<number | null>(null)
@@ -34,6 +35,8 @@ export default function ChainTester() {
           <div className="text-sm text-gray-400">Resolving…</div>
         ) : error ? (
           <p className="text-sm text-red-700">{(error as Error).message}</p>
+        ) : preview?.nobody_can_approve ? (
+          <NobodyCanApproveNote message={preview.message} />
         ) : !preview || preview.chain.length === 0 ? (
           <EmptyState icon={UserIcon} title="No approval chain" description="Could not work out an approver." />
         ) : (

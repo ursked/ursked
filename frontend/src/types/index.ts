@@ -1,4 +1,4 @@
-export type RoleCode = 'employee' | 'tenant_admin' | 'hr' | 'manager' | 'leave_approver' | 'schedule_editor' | 'finance';
+export type RoleCode = 'employee' | 'tenant_admin' | 'hr' | 'manager' | 'leave_approver' | 'schedule_editor' | 'finance' | 'report_viewer';
 
 export interface Role {
   id: number;
@@ -2305,6 +2305,9 @@ export interface SetupStep {
   done: boolean;
   count: number;
   link: string;
+  /** Who does it: 'finance' steps are done from the finance dashboard, so
+   * the admin dashboard lists them without a link. */
+  by?: 'admin' | 'finance';
 }
 
 export interface SetupStatus {
@@ -2358,11 +2361,13 @@ export interface RetentionReport {
 
 // Admin mode: what the signed-in session is. Present on the user returned by
 // /auth/me and the sign-in responses; absent on other users.
-export type Portal = 'employee' | 'admin';
+export type Portal = 'employee' | 'admin' | 'finance';
 
 export interface User {
   portal?: Portal;
   admin_eligible?: boolean;
+  /** Holds the finance role (dormant or not): may use the finance sign-in. */
+  finance_eligible?: boolean;
   has_employee_workspace?: boolean;
   expires_at?: string | null;
   admin_expires_at?: string | null;
@@ -2378,4 +2383,32 @@ export interface PayRules {
   night_shift_end: string | null;
   holiday_worked_multiplier: number;
   special_holiday_worked_multiplier: number;
+}
+
+// Administration is not operations (2026-09-29): the admin dashboard's
+// questions, from GET /settings/admin-overview (admin session only).
+export interface AdminOverviewJob {
+  key: 'schedules' | 'leave' | 'reports' | 'finance';
+  label: string;
+  /** Role codes that do this job. */
+  roles: string[];
+  /** Active people holding any of them. */
+  holders: number;
+}
+
+export interface AdminOverview {
+  users_without_roles: { id: number; name: string; email: string }[];
+  jobs: AdminOverviewJob[];
+  nobody_can_approve_leave: boolean;
+  leave_without_approver: { id: number; employee_name: string; start_date: string; end_date: string }[];
+  /** Null when this administrator is not a salary-access approver. */
+  salary_requests_pending: number | null;
+}
+
+// Who would approve a leave request. Empty with nobody_can_approve when
+// nobody in the company can approve leave; `message` says what to do.
+export interface ApprovalChainPreviewResult {
+  chain: ApprovalChainPreviewItem[];
+  nobody_can_approve?: boolean;
+  message?: string | null;
 }

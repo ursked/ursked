@@ -27,7 +27,6 @@ import {
   LeaveBalance,
   LeaveApplication,
   LeaveApproverAssignment,
-  ApprovalChainPreviewItem,
   TeamStats,
   OvertimeCategory,
   EmployeeTypeConfig,
@@ -109,6 +108,9 @@ import type { BackgroundJobsView, RetentionReport, SetupStatus } from '@/types';
 // Finances: pay rules (moved from General settings).
 import type { PayRules } from '@/types';
 
+// Administration vs operations: admin dashboard overview, approval-chain answers.
+import type { AdminOverview, ApprovalChainPreviewResult } from '@/types';
+
 const CSRF_COOKIE = 'csrf_token';
 const CSRF_HEADER = 'X-CSRF-Token';
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -121,6 +123,7 @@ const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const NO_REFRESH_RETRY_PATHS = [
   '/api/v1/auth/login',
   '/api/v1/auth/admin/login',
+  '/api/v1/auth/finance/login',
   '/api/v1/auth/2fa/verify',
   '/api/v1/auth/refresh',
 ];
@@ -174,6 +177,8 @@ export function isScheduleConflictError(
 // minute refresh, the notification bell) say so; otherwise a screen left open
 // on a desk would keep an admin session alive until its 8-hour cap.
 const IDLE_HEADER = 'X-User-Idle';
+// Sent with the 401 that ends an admin or finance session: which one ended.
+const SESSION_ENDED_HEADER = 'X-Session-Ended';
 const IDLE_AFTER_MS = 60_000;
 let lastInteraction = Date.now();
 if (typeof window !== 'undefined') {
@@ -201,14 +206,18 @@ class ApiClient {
   private baseUrl: string;
   /** De-duplicates concurrent refreshes so a burst of 401s triggers one call. */
   private refreshPromise: Promise<boolean> | null = null;
-  /** Invoked when the session is unrecoverable, so the app can redirect. */
-  private onSessionExpired: (() => void) | null = null;
+  /** Invoked when the session is unrecoverable, so the app can redirect.
+   * Given the portal the server said ended (X-Session-Ended: admin or
+   * finance) when it said one did. */
+  private onSessionExpired: ((endedPortal: string | null) => void) | null = null;
+  /** X-Session-Ended from the last refused refresh, if any. */
+  private lastEndedPortal: string | null = null;
 
   constructor() {
     this.baseUrl = process.env.NEXT_PUBLIC_API_URL ?? '';
   }
 
-  setSessionExpiredHandler(handler: (() => void) | null) {
+  setSessionExpiredHandler(handler: ((endedPortal: string | null) => void) | null) {
     this.onSessionExpired = handler;
   }
 
@@ -292,6 +301,7 @@ class ApiClient {
           // body into its cache: the request stays open until the page is
           // closed, one per signed-out visit, and the page never goes idle.
           await response.text().catch(() => undefined);
+          this.lastEndedPortal = response.ok ? null : response.headers.get(SESSION_ENDED_HEADER);
           return response.ok;
         } catch {
           return false;
@@ -343,11 +353,14 @@ class ApiClient {
       !isRetry &&
       !NO_REFRESH_RETRY_PATHS.some((p) => path.startsWith(p))
     ) {
+      // An admin or finance session that lapsed says so (X-Session-Ended), so
+      // the person goes back to that door's sign-in and is told why.
+      const ended = response.headers.get(SESSION_ENDED_HEADER);
       const refreshed = await this.refreshToken();
       if (refreshed) {
         return this.request(method, path, body, true);
       }
-      this.onSessionExpired?.();
+      this.onSessionExpired?.(ended ?? this.lastEndedPortal);
     }
 
     return this.handleResponse(response);
@@ -402,6 +415,17 @@ class ApiClient {
   // dashboard. Never the other way: the way up is always adminLogin.
   async exitAdminSession(): Promise<LoginResponse> {
     return this.post('/api/v1/auth/admin/exit') as Promise<LoginResponse>;
+  }
+
+  // The finance sign-in door: a finance session for holders of the finance
+  // role, the only session in which Finances works.
+  async financeLogin(credentials: LoginCredentials): Promise<LoginResponse> {
+    return this.post('/api/v1/auth/finance/login', credentials) as Promise<LoginResponse>;
+  }
+
+  // Ends the finance session and continues in the employee dashboard.
+  async exitFinanceSession(): Promise<LoginResponse> {
+    return this.post('/api/v1/auth/finance/exit') as Promise<LoginResponse>;
   }
 
   async verify2FA(code: string): Promise<LoginResponse> {
@@ -900,8 +924,8 @@ class ApiClient {
     return this.post(`/api/v1/leave/policies/${id}/clone`, {}) as Promise<LeavePolicy>;
   }
 
-  async previewApprovalChain(employeeId: number): Promise<{ chain: Array<{ approver_id: number; approver_name: string; step_order: number; source: string }> }> {
-    return this.get(`/api/v1/leave/approval-chain-preview?employee_id=${employeeId}`) as Promise<{ chain: Array<{ approver_id: number; approver_name: string; step_order: number; source: string }> }>;
+  async previewApprovalChain(employeeId: number): Promise<ApprovalChainPreviewResult> {
+    return this.get(`/api/v1/leave/approval-chain-preview?employee_id=${employeeId}`) as Promise<ApprovalChainPreviewResult>;
   }
 
   async precheckLeave(data: { leave_type: string; start_date: string; end_date: string; supporting_documents?: string[] }): Promise<{ allowed: boolean; days_requested: number; violations: Array<{ rule: string; mode: string; message: string }>; warnings: Array<{ rule: string; mode: string; message: string }> }> {
@@ -935,8 +959,8 @@ class ApiClient {
     return this.get('/api/v1/leave/team-stats') as Promise<TeamStats>;
   }
 
-  async getMyApprovalChain(): Promise<{ chain: ApprovalChainPreviewItem[] }> {
-    return this.get('/api/v1/leave/my-approval-chain') as Promise<{ chain: ApprovalChainPreviewItem[] }>;
+  async getMyApprovalChain(): Promise<ApprovalChainPreviewResult> {
+    return this.get('/api/v1/leave/my-approval-chain') as Promise<ApprovalChainPreviewResult>;
   }
 
   async cancelLeaveApplication(id: number): Promise<LeaveApplication> {
@@ -1841,6 +1865,11 @@ class ApiClient {
 
   async updatePayRules(data: PayRules): Promise<PayRules> {
     return this.put('/api/v1/payroll/pay-rules', data) as Promise<PayRules>;
+  }
+
+  // ── Admin dashboard: administration only (admin session) ────────────
+  async getAdminOverview(): Promise<AdminOverview> {
+    return this.get('/api/v1/settings/admin-overview') as Promise<AdminOverview>;
   }
 }
 

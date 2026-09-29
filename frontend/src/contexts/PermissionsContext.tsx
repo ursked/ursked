@@ -3,7 +3,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { api } from '@/lib/api'
-import { hasRole } from '@/lib/roles'
 
 interface PermissionsContextType {
   permissions: Record<string, Record<string, boolean>>
@@ -64,11 +63,12 @@ export function PermissionsProvider({ children }: { children: React.ReactNode })
   const hasPermission = useCallback(
     (module: string, action: string): boolean => {
       if (!user) return false
-      // tenant_admin always has all permissions (client-side shortcut). Only
-      // in an admin session: /auth/me lists the roles in force, and in an
-      // employee session an administrator's role is dormant and absent, so
-      // this answers exactly as the server's require_permission does.
-      if (hasRole(user, 'tenant_admin')) return true
+      // The server's answer for THIS session, and nothing else. There used
+      // to be a tenant_admin shortcut here ("administrators may do
+      // everything"); an administrator now administers and does no
+      // operations (no schedules, leave review, finances or reports), and
+      // /permissions/me already says exactly which modules an admin session
+      // has, so a shortcut would only show buttons the API refuses.
       return permissions[module]?.[action] === true
     },
     [user, permissions]
@@ -77,7 +77,6 @@ export function PermissionsProvider({ children }: { children: React.ReactNode })
   const hasExtraPermission = useCallback(
     (key: string): boolean => {
       if (!user) return false
-      if (hasRole(user, 'tenant_admin')) return true
       return extra[key] === true
     },
     [user, extra]

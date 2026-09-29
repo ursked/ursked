@@ -85,14 +85,19 @@ class User(Base):
 
     # Roles this user holds but may not use in the current request. Set only by
     # get_current_user (app.services.session_portal.apply_portal) on the
-    # request's own user: a tenant_admin signed in at the ordinary sign-in page
-    # has tenant_admin here, so every check below answers as if they did not
-    # hold it. A plain attribute, not a column or a change to user_roles, so the
+    # request's own user: someone signed in at the ordinary sign-in page has
+    # tenant_admin and finance here (and at the admin or finance door, every
+    # role but that door's), so every check below answers as if they did not
+    # hold them. A plain attribute, not a column or a change to user_roles, so the
     # stored roles can never be rewritten by it. Any other User instance keeps
     # the empty default and answers from its stored roles.
     _dormant_role_codes = frozenset()
     # True only on the request's user, and only in an admin session.
     in_admin_portal = False
+    # The door the request's session came through ("employee", "admin",
+    # "finance"); None on any other User instance (a background job acting as
+    # a report's owner), which answers from its stored roles.
+    portal = None
 
     @property
     def stored_role_codes(self) -> List[str]:
@@ -116,6 +121,16 @@ class User(Base):
         dormant = self._dormant_role_codes
         return [ur.role_id for ur in self.user_roles if ur.role.code not in dormant]
 
+    def role_ids_excluding(self, *codes: str) -> List[int]:
+        """role_ids without the given roles, for matrix lookups a role must
+        not answer (tenant_admin on an operational module; permission_service
+        .matrix_role_ids)."""
+        dormant = self._dormant_role_codes
+        return [
+            ur.role_id for ur in self.user_roles
+            if ur.role.code not in dormant and ur.role.code not in codes
+        ]
+
     def has_role(self, role_code: str) -> bool:
         """Check if user has a specific role in force for this request."""
         return role_code in self.role_codes
@@ -129,7 +144,10 @@ class User(Base):
     @property
     def primary_role(self) -> str:
         """Return the highest-priority role for display purposes."""
-        priority = ["tenant_admin", "hr", "finance", "manager", "leave_approver", "schedule_editor", "employee"]
+        priority = [
+            "tenant_admin", "hr", "finance", "manager", "leave_approver",
+            "schedule_editor", "report_viewer", "employee",
+        ]
         codes = self.role_codes
         for p in priority:
             if p in codes:

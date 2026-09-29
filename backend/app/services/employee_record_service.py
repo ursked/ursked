@@ -19,6 +19,7 @@ from app.models.user import User
 from app.schemas.user import UserResponse
 from app.services import access_scope, employee_access, employee_field_service
 from app.services.configurable_type_service import ConfigurableTypeService
+from app.services.permission_service import ADMIN_ROLE, SELF_ASSIGNABLE_ROLES
 from app.services.role_service import RoleService
 from app.services.user_service import UserService
 
@@ -102,8 +103,9 @@ async def set_roles(db: AsyncSession, actor: User, user: User, role_codes: Seque
     # and re-granting a role they already hold would duplicate it.
     current = set(user.stored_role_codes)
     wanted = set(role_codes) | {"employee"}
-    if wanted != current and user.id == actor.id:
-        access_scope.assert_not_own_record(actor, [user.id], "roles")
+    own = user.id == actor.id and wanted != current
+    if own:
+        assert_may_change_own_roles(actor, current, wanted)
     # Authority first: "you may not grant that" is the answer whether or not
     # the role happens to exist.
     assert_may_grant(actor, wanted - current)
@@ -119,7 +121,100 @@ async def set_roles(db: AsyncSession, actor: User, user: User, role_codes: Seque
         # A role change alters what the account may do, so every existing
         # session must re-authenticate to pick it up.
         user.tokens_valid_from = datetime.now(timezone.utc)
+    if own:
+        await announce_own_role_change(db, actor, sorted(current), sorted(wanted))
     return sorted(current), sorted(wanted)
+
+
+# Your own roles (owner, 2026-09-29). Administration and operations are
+# separate (permission_service), so an administrator who also schedules,
+# approves leave or reads reports needs that role as well, and in a one-person
+# company nobody else can give it to them. So an administrator, in the admin
+# dashboard, may give themselves or drop the operational roles; it is never
+# silent (audit log, and every other administrator is told in-app and by
+# email). Their OWN administrator role and active status stay someone else's
+# to change, and nobody changes their own roles from the regular dashboard.
+def assert_may_change_own_roles(actor: User, current: set, wanted: set) -> None:
+    changed = current ^ wanted
+    if ADMIN_ROLE in changed:
+        raise HTTPException(status_code=403, detail=access_scope.OWN_RECORD_MESSAGES["roles"])
+    if not getattr(actor, "in_admin_portal", False) or not actor.has_role(ADMIN_ROLE):
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "You cannot change your own roles here. An administrator can, "
+                "from the admin dashboard."
+            ),
+        )
+    refused = sorted(changed - SELF_ASSIGNABLE_ROLES - {"employee"})
+    if refused:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"You cannot give yourself or remove from yourself: {', '.join(refused)}. "
+                "Another administrator has to."
+            ),
+        )
+
+
+async def announce_own_role_change(db: AsyncSession, actor: User, before: list, after: list) -> None:
+    """Audit an administrator's change to their own roles and tell every other
+    active administrator, in-app and by email."""
+    import html
+
+    from app.services import audit_service
+    from app.services.email_service import EmailService
+    from app.services.email_templates import _base_wrapper
+    from app.services.notification_service import NotificationService
+
+    added = sorted(set(after) - set(before))
+    removed = sorted(set(before) - set(after))
+    audit_service.record(
+        db, actor=actor, action="own_roles_change", resource_type="user", resource_id=actor.id,
+        details={"added": added, "removed": removed, "from": before, "to": after},
+    )
+    name = audit_service.user_label(actor)
+    parts = []
+    if added:
+        parts.append(f"gave themselves {', '.join(_role_label(c) for c in added)}")
+    if removed:
+        parts.append(f"removed {', '.join(_role_label(c) for c in removed)} from themselves")
+    body = f"{name} {' and '.join(parts)}."
+    if "finance" in added:
+        body += " Salary figures still need another person's approval (salary access)."
+    title = "An administrator changed their own roles"
+    others = await employee_access.active_admin_ids(db, actor.tenant_id) - {actor.id}
+    if not others:
+        return
+    rows = (await db.execute(select(User).where(User.id.in_(others)))).scalars().all()
+    for other in rows:
+        await NotificationService.notify(
+            db, actor.tenant_id, other.id, type="own_roles_change", title=title, body=body,
+        )
+        if other.email:
+            page = _base_wrapper(
+                f"<h2 style=\"margin:0 0 12px\">{html.escape(title)}</h2>"
+                f"<p style=\"margin:0\">{html.escape(body)}</p>"
+            )
+            EmailService.fire_and_forget(
+                lambda db, to=other.email, t=title, pg=page: EmailService.send_email(
+                    db, to, t, pg, log_type="own_roles_change"
+                )
+            )
+
+
+_ROLE_LABELS = {
+    "manager": "Manager",
+    "hr": "HR",
+    "schedule_editor": "Schedule Editor",
+    "leave_approver": "Leave Approver",
+    "report_viewer": "Reports & data",
+    "finance": "Finance",
+}
+
+
+def _role_label(code: str) -> str:
+    return _ROLE_LABELS.get(code, code)
 
 
 async def creation_access(db: AsyncSession, actor: User) -> employee_field_service.ViewerAccess:

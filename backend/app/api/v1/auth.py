@@ -163,18 +163,19 @@ async def _password_sign_in(
     """Username/email + password sign-in, for either door.
 
     `portal` is the door: session_portal.EMPLOYEE for /auth/login (everyone,
-    always an employee session) or ADMIN for /auth/admin/login (tenant_admin
-    holders only). Both doors share the account lockout, since guessing a
-    password at one door is guessing it at both; each has its own per-IP
-    limit so the admin door cannot be used to lock people out of the other.
+    always an employee session), ADMIN for /auth/admin/login (tenant_admin
+    holders only) or FINANCE for /auth/finance/login (finance holders only).
+    Every door shares the account lockout, since guessing a password at one
+    door is guessing it at all of them; each has its own per-IP limit so a
+    privileged door cannot be used to lock people out of the others.
     """
     identifier = request.username.strip().lower()
     ip = _client_ip(http_request)
-    is_admin_door = portal == session_portal.ADMIN
-    audit_extra = {"portal": portal} if is_admin_door else {}
+    is_privileged_door = portal in session_portal.PRIVILEGED
+    audit_extra = {"portal": portal} if is_privileged_door else {}
 
     if await RateLimiter.hit(
-        f"{'admin-login' if is_admin_door else 'login'}:ip:{ip}",
+        f"{portal + '-login' if is_privileged_door else 'login'}:ip:{ip}",
         settings.LOGIN_RATE_LIMIT_ATTEMPTS,
         settings.LOGIN_RATE_LIMIT_WINDOW_SECONDS,
     ):
@@ -267,10 +268,11 @@ async def _password_sign_in(
             detail="Invalid username or password",
         )
 
-    if is_admin_door and not session_portal.is_admin_eligible(user):
-        # Only after the password proved who is asking, so the admin door does
-        # not tell a stranger which accounts are administrators. Audited like
-        # a failed sign-in; the IP limit above already counted it.
+    if is_privileged_door and not session_portal.is_eligible(user, portal):
+        # Only after the password proved who is asking, so a privileged door
+        # does not tell a stranger which accounts are administrators or in
+        # Finance. Audited like a failed sign-in; the IP limit above already
+        # counted it.
         db.add(AuditLog(
             tenant_id=user.tenant_id,
             user_id=user.id,
@@ -278,12 +280,12 @@ async def _password_sign_in(
             action="login_failure",
             ip_address=ip,
             user_agent=http_request.headers.get("user-agent", "")[:500],
-            details={"reason": "not_admin", **audit_extra},
+            details={"reason": "not_admin" if portal == session_portal.ADMIN else "not_finance", **audit_extra},
         ))
         await db.commit()
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="This account is not an administrator.",
+            detail=session_portal.NOT_ELIGIBLE_DETAIL[portal],
         )
 
     await AccountLockout.clear(identifier)
@@ -355,19 +357,37 @@ async def admin_login(
     return await _password_sign_in(request, http_request, response, db, session_portal.ADMIN)
 
 
-@router.post("/admin/exit", response_model=LoginResponse)
-async def exit_admin_session(
+@router.post("/finance/login", response_model=LoginResponse)
+async def finance_login(
+    request: LoginRequest,
     http_request: Request,
     response: Response,
-    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """"Go to my employee dashboard": end this admin session and sign the same
-    person into an employee session without asking for the password again.
-    Safe because it only ever lowers what the browser can do; the way up is
-    always the administrator sign-in."""
-    if getattr(http_request.state, "portal", None) != session_portal.ADMIN:
-        raise HTTPException(status_code=400, detail="This is not an admin session.")
+    """The finance sign-in page. Opens a FINANCE session (30 idle minutes, 8
+    hours at most) for holders of the finance role; anyone else is refused
+    after their password is checked. The finance role is dormant in every
+    other session, so this is the only way to manage finances. The admin door
+    never grants finance, nor this door administration."""
+    return await _password_sign_in(request, http_request, response, db, session_portal.FINANCE)
+
+
+async def _exit_privileged(
+    http_request: Request,
+    response: Response,
+    current_user: User,
+    db: AsyncSession,
+    portal: str,
+) -> LoginResponse:
+    """End this admin or finance session and sign the same person into an
+    employee session without asking for the password again. Safe because it
+    only ever lowers what the browser can do; the way up is always that
+    door's sign-in."""
+    if getattr(http_request.state, "portal", None) != portal:
+        raise HTTPException(
+            status_code=400,
+            detail=f"This is not {'an admin' if portal == session_portal.ADMIN else 'a finance'} session.",
+        )
     row = http_request.state.portal_session
     await session_portal.end_session(
         db, row, reason="switched_to_employee", actor=current_user, ip=_client_ip(http_request)
@@ -388,6 +408,28 @@ async def exit_admin_session(
         requires_2fa=False,
         csrf_token=csrf_token,
     )
+
+
+@router.post("/admin/exit", response_model=LoginResponse)
+async def exit_admin_session(
+    http_request: Request,
+    response: Response,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """"Go to my employee dashboard" from the admin dashboard."""
+    return await _exit_privileged(http_request, response, current_user, db, session_portal.ADMIN)
+
+
+@router.post("/finance/exit", response_model=LoginResponse)
+async def exit_finance_session(
+    http_request: Request,
+    response: Response,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """"Go to my employee dashboard" from the finance dashboard."""
+    return await _exit_privileged(http_request, response, current_user, db, session_portal.FINANCE)
 
 
 @router.get("/validate-invite-token", response_model=ValidateTokenResponse)
@@ -575,9 +617,11 @@ async def verify_2fa(
 
     # The door the password was given at (signed into the challenge). A
     # challenge minted before admin mode carries none: employee.
-    portal = session_portal.ADMIN if payload.get("portal") == session_portal.ADMIN else session_portal.EMPLOYEE
-    if portal == session_portal.ADMIN and not session_portal.is_admin_eligible(user):
-        raise HTTPException(status_code=403, detail="This account is not an administrator.")
+    portal = payload.get("portal")
+    if portal not in session_portal.PRIVILEGED:
+        portal = session_portal.EMPLOYEE
+    if portal in session_portal.PRIVILEGED and not session_portal.is_eligible(user, portal):
+        raise HTTPException(status_code=403, detail=session_portal.NOT_ELIGIBLE_DETAIL[portal])
 
     await _retire_presented_session(http_request, db)
     csrf_token = await _issue_session(response, user, db, request=http_request, portal=portal)
@@ -628,14 +672,14 @@ async def refresh_token(
 
     # Admin mode: a refresh continues the SAME session, in the portal its row
     # records. The refresh token's own portal claim is ignored, so no refresh
-    # can turn an employee session into an admin one, and an ended admin
-    # session cannot be revived by refreshing.
+    # can turn an employee session into an admin or finance one, and an ended
+    # privileged session cannot be revived by refreshing.
     sid = payload.get("sid")
     row = await session_portal.session_by_key(db, sid) if sid else None
     if sid and (row is None or row.user_id != user.id or row.revoked_at is not None):
         raise HTTPException(status_code=401, detail="Session expired, please sign in again")
-    if row is not None and row.portal == session_portal.ADMIN:
-        problem = session_portal.admin_session_problem(row, user)
+    if row is not None and row.portal in session_portal.PRIVILEGED:
+        problem = session_portal.session_problem(row, user)
         if problem:
             await session_portal.end_session(
                 db, row, reason=problem, actor=user, ip=_client_ip(http_request)
@@ -643,8 +687,8 @@ async def refresh_token(
             await db.commit()
             raise HTTPException(
                 status_code=401,
-                detail=session_portal.ADMIN_ENDED_DETAIL,
-                headers={"X-Session-Ended": "admin"},
+                detail=session_portal.ENDED_DETAIL[row.portal],
+                headers={"X-Session-Ended": row.portal},
             )
 
     # Rotation: the presented refresh token is single-use.
@@ -696,7 +740,7 @@ async def logout(
             )
             session = result.scalar_one_or_none()
         if session is not None and str(session.user_id) == str(payload.get("sub")):
-            if session.portal == session_portal.ADMIN:
+            if session.portal in session_portal.PRIVILEGED:
                 await session_portal.end_session(
                     db, session, reason="signed_out", ip=_client_ip(http_request)
                 )

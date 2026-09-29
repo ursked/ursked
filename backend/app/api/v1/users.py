@@ -81,17 +81,13 @@ async def lookup_users(
 
     from app.services.permission_service import PermissionService
 
-    if not current_user.has_role("tenant_admin"):
-        role_ids = current_user.role_ids
-        allowed = False
-        for module, action in _LOOKUP_PERMISSIONS:
-            if await PermissionService.check_permission(
-                db, current_user.tenant_id, role_ids, module, action
-            ):
-                allowed = True
-                break
-        if not allowed:
-            raise HTTPException(status_code=403, detail="Insufficient permissions")
+    allowed = False
+    for module, action in _LOOKUP_PERMISSIONS:
+        if await PermissionService.user_can(db, current_user, module, action):
+            allowed = True
+            break
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     stmt = select(User).where(User.tenant_id == current_user.tenant_id)
     if not include_inactive:

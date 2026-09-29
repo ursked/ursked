@@ -30,22 +30,36 @@ from app.models.user import User
 from app.services.permission_service import FULL_SCOPE_ROLES
 
 
-# Conflict of interest in the admin portal (session_portal). An administrator
-# who is also an employee has every power over the company in an admin
-# session, and the owner's rule is that those powers are for other people: in
-# the admin portal nobody changes their own shifts, attendance, overtime, pay
-# or roles, or decides their own leave. The same person does their own things
-# from the employee dashboard, where they are an employee like anyone else,
-# and anything that needs deciding goes to someone else. Other roles (HR,
-# managers, Finance) are unaffected: they have no second portal to move to.
+# Conflict of interest in the admin portal (session_portal). The owner's rule
+# is that an administrator's powers are for other people: in the admin portal
+# nobody changes their own shifts, attendance, overtime or pay, or decides
+# their own leave. Since 2026-09-29 the admin portal does none of those things
+# for anyone (they are operations, done from the regular dashboard; see
+# permission_service), so these remain as a second line should an operational
+# power ever reach the admin portal again. Roles are the exception an
+# administrator does meet: see employee_record_service.set_roles.
 OWN_RECORD_MESSAGES = {
     "shifts": "Someone else has to change your own shifts.",
     "attendance": "Someone else has to change your own attendance.",
     "overtime": "Someone else has to decide your own overtime.",
     "pay": "Someone else has to change your own pay.",
-    "roles": "Someone else has to change your own roles.",
+    "roles": "Another administrator has to change your own administrator role.",
     "leave": "Someone else has to approve your own leave.",
 }
+
+# The answer an admin session gets from anything operational (schedules, leave
+# review, attendance, finances, reports). Readable, and says where to go.
+OPERATIONS_NOT_IN_ADMIN = (
+    "This is done from the regular dashboard by people with that role — sign in normally."
+)
+
+
+def assert_operational_session(user: User) -> None:
+    """Refuse an operational action in an admin session. For endpoints that
+    are not gated by the matrix (deciding a leave step as the named approver,
+    reading the team grid): the matrix already refuses the rest there."""
+    if getattr(user, "in_admin_portal", False):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=OPERATIONS_NOT_IN_ADMIN)
 
 
 def assert_not_own_record(user: User, employee_ids: Iterable[Optional[int]], what: str) -> None:
@@ -59,7 +73,7 @@ def assert_not_own_record(user: User, employee_ids: Iterable[Optional[int]], wha
 
 
 def has_full_scope(user: User, module: str) -> bool:
-    return bool(set(user.role_codes) & FULL_SCOPE_ROLES.get(module, {"tenant_admin"}))
+    return bool(set(user.role_codes) & FULL_SCOPE_ROLES.get(module, set()))
 
 
 async def managed_employee_ids(

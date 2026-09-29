@@ -20,13 +20,17 @@ class MeResponse(UserResponse):
     `roles` lists the roles IN FORCE for this session, so a client deciding
     what to show from it cannot offer admin screens in an employee session.
     `admin_eligible` says whether the account holds tenant_admin at all (the
-    administrator sign-in link is offered on that). For an admin session,
-    `expires_at` is when it ends if nothing else happens (the idle limit or the
-    absolute cap, whichever is sooner) and `admin_expires_at` the cap itself.
+    administrator sign-in link is offered on that); `finance_eligible` the same
+    for the finance role and the finance sign-in. `portal` is "employee",
+    "admin" or "finance". For an admin or finance session, `expires_at` is when
+    it ends if nothing else happens (the idle limit or the absolute cap,
+    whichever is sooner) and `admin_expires_at` the cap itself (the name
+    predates the finance door; it is the cap of either).
     """
 
     portal: str = "employee"
     admin_eligible: bool = False
+    finance_eligible: bool = False
     has_employee_workspace: bool = True
     expires_at: Optional[datetime] = None
     admin_expires_at: Optional[datetime] = None

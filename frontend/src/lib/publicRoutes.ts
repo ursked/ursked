@@ -14,6 +14,9 @@ export const PUBLIC_PATHS = [
   // reachable WITH a session too: signing in there is how an employee
   // session becomes an admin one (proxy.ts must not bounce it).
   '/admin/login',
+  // The finance sign-in page, for the same reason: signing in there is how
+  // an employee session becomes a finance one.
+  '/finance/login',
   // The service worker's offline page: fetched without a session when the
   // worker installs, and shown to whoever is using the device.
   '/offline',

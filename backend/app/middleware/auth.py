@@ -15,6 +15,8 @@ from app.config import settings
 from app.database import get_db
 from app.models.role import UserRole
 from app.models.user import User
+from app.services.access_scope import OPERATIONS_NOT_IN_ADMIN
+from app.services.permission_service import OPERATIONAL_MODULES
 from app.services.token_store import TokenDenylist
 
 logger = logging.getLogger(__name__)
@@ -279,24 +281,24 @@ def require_role(roles: List[str]):
 
 def require_permission(module: str, action: str):
     """Check if current user has a specific module+action permission via role_permissions table.
-    tenant_admin always bypasses, but only in an admin session: role_ids and
-    has_role both answer from the roles in force (session_portal.apply_portal).
     action: 'view', 'create', 'edit', 'delete'
+
+    tenant_admin bypasses the ADMINISTRATION modules (employees, organization,
+    settings) in an admin session, and nothing else: schedules, leave,
+    finances and reports come only from the rows of the operational roles in
+    force (PermissionService.user_can, permission_service.matrix_role_ids).
     """
     async def permission_checker(
         current_user: User = Depends(get_current_user),
         db: AsyncSession = Depends(get_db),
     ):
-        # tenant_admin bypasses all permission checks
-        if current_user.has_role("tenant_admin"):
-            return current_user
-
         from app.services.permission_service import PermissionService
 
-        role_ids = current_user.role_ids
-        allowed = await PermissionService.check_permission(
-            db, current_user.tenant_id, role_ids, module, action
-        )
+        allowed = await PermissionService.user_can(db, current_user, module, action)
+        if not allowed and module in OPERATIONAL_MODULES and current_user.in_admin_portal:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail=OPERATIONS_NOT_IN_ADMIN
+            )
         if not allowed:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -305,6 +307,32 @@ def require_permission(module: str, action: str):
         return current_user
 
     return permission_checker
+
+
+def require_leave_config(action: str):
+    """Leave policies, types and approver rules (the Policies screens): an
+    administrator in an admin session, or anyone holding leave:<action> (HR by
+    default). Deciding on requests is not configuration and is not this; see
+    leave_access."""
+    async def checker(
+        current_user: User = Depends(get_current_user),
+        db: AsyncSession = Depends(get_db),
+    ):
+        from app.services.permission_service import PermissionService
+
+        if not await PermissionService.leave_config_allowed(db, current_user, action):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    "You do not have permission to see the leave settings."
+                    if action == "view"
+                    else "Leave policies, types and approver rules are changed by an "
+                    "administrator or by HR."
+                ),
+            )
+        return current_user
+
+    return checker
 
 
 def require_salary_access():
@@ -372,17 +400,15 @@ def require_salary_approver():
 
 
 def require_extra_permission(permission_key: str):
-    """Check if current user has a specific extra permission.
-    tenant_admin always bypasses. Never use this for salary figures: those are
-    gated by require_salary_access(), which nobody bypasses.
+    """Check if current user has a specific extra permission. No role bypass
+    (nothing uses these today; an administrator's powers are the administration
+    modules, see permission_service). Never use this for salary figures: those
+    are gated by require_salary_access(), which nobody bypasses.
     """
     async def checker(
         current_user: User = Depends(get_current_user),
         db: AsyncSession = Depends(get_db),
     ):
-        if current_user.has_role("tenant_admin"):
-            return current_user
-
         from app.services.permission_service import PermissionService
 
         role_ids = current_user.role_ids

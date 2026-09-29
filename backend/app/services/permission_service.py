@@ -34,6 +34,43 @@ VALID_MODULES = [
 #   FULL_SCOPE_ROLES act on everyone; any other role acts only on the employees
 #   in the org units they head or deputise, and their descendants.
 #
+# ── Administration is not operations (owner, 2026-09-29) ─────────────────
+#
+#   "A manager for graphics is not an administrator of the app." Running the
+#   system and running the company's day are different jobs, done from
+#   different dashboards (session_portal says which door a session came in by):
+#
+#   ADMINISTRATION  what tenant_admin is for, and all it is for. In an admin
+#                   session tenant_admin passes every check on these modules
+#                   without a matrix row:
+#                     employees     accounts, roles, activation
+#                     organization  the org chart
+#                     settings      company settings, the permission matrix,
+#                                   background jobs, backups, email, and the
+#                                   Policies screens: holidays, shift status
+#                                   types, schedule formats, policy rules,
+#                                   work sites
+#                   and, outside the matrix: leave CONFIGURATION (policies,
+#                   types, approver rules; leave_config_allowed), approving
+#                   salary-access requests when the admin is an approver, and
+#                   the audit log.
+#   OPERATIONS      schedules, leave REVIEW, finances, reports (analytics
+#                   included). tenant_admin grants none of it, in any
+#                   session: its matrix rows for these modules are never
+#                   consulted (matrix_role_ids) and it is in none of their
+#                   FULL_SCOPE_ROLES. They are done from the regular dashboard
+#                   by people holding the role for the job (manager, hr,
+#                   schedule_editor, leave_approver, report_viewer), and
+#                   finances from the finance dashboard by finance. An
+#                   administrator who also does one of these jobs holds that
+#                   role too (they may give it to themselves from the admin
+#                   dashboard, and every other administrator is told) and
+#                   does the job signed in normally.
+#
+#   The finances module is in force only in a FINANCE session (the separate
+#   finance sign-in). In the regular dashboard nobody manages payroll, whatever
+#   rows their roles hold; the finance role itself is dormant there.
+#
 #   employees     view   list and read other employees' records
 #                 create add, invite and import employees
 #                 edit   edit other employees' profiles and roles
@@ -49,30 +86,38 @@ VALID_MODULES = [
 #                 edit   edit/move shifts, publish, snapshots, review change
 #                        requests, record attendance
 #                 delete delete and clear shifts
-#                 Holidays are company-wide, so creating, editing or deleting
-#                 one needs the matching schedules action AND full scope
+#                 Holidays are company-wide configuration (Policies): an
+#                 administrator changes them, and so does anyone holding the
+#                 matching schedules action with full scope
 #                 (FULL_SCOPE_ROLES["schedules"]); a team manager cannot change
 #                 everyone's holiday pay.
-#   leave         view   other employees' leave requests and balances
+#   leave         view   other employees' leave requests and balances; read
+#                        the approver rules
 #                 create file leave on someone else's behalf
 #                 edit   leave policies, types, approver rules; override or
 #                        reassign a stuck approval
 #                 delete delete policies, types and approver rules
+#                 Configuration (policies, types, approver rules) is also open
+#                 to an administrator; review (reading others' requests,
+#                 overriding, reassigning, revoking, filing for others) is
+#                 not. tenant_admin's own leave row reads edit/delete: that is
+#                 configuration and nothing more.
 #                 Approving a request is governed by the approver chain, not
-#                 the matrix: the resolved approver may always act on their step.
+#                 the matrix: the resolved approver may always act on their
+#                 step, from the regular dashboard.
 #   finances      view   the STRUCTURE: deduction types and their bracket
 #                        tables, payout schedules, salary grade names, the
 #                        payroll period calendar (names, dates, status)
 #                 create create periods, deduction types, payout schedules
 #                 edit   edit that structure; compute payroll
 #                 delete void and delete
+#                 Only in a finance session (see above).
 #                 FIGURES are not the matrix's to give. Grade rates, salaries,
 #                 raises, bonuses and allowances, payroll results and totals,
 #                 other people's payslips, overtime pay and lateness
 #                 deductions need an active salary-VIEWER enrollment, which
 #                 another person must approve (salary_enrollment_service).
-#                 Nobody bypasses it, tenant_admin included: the owner's rule
-#                 is that an administrator sets payroll up but does not see
+#                 Nobody bypasses it: the owner's rule is that nobody sees
 #                 what anyone earns unless someone else agrees. So anything
 #                 that shows, produces or changes a figure (a grade's rate, a
 #                 salary, a bonus, computing a run) needs the matrix action
@@ -87,16 +132,33 @@ VALID_MODULES = [
 #                 create run, preview and download ad-hoc reports
 #                 edit   save and edit reports and scheduled exports
 #                 delete delete saved reports and schedules
+#                 The report_viewer role ("Reports & data") holds view, create
+#                 and edit and nothing else, so a CEO or anyone who needs the
+#                 numbers can have them without HR's or Finance's powers.
+
+ADMIN_ROLE = "tenant_admin"
+ADMINISTRATION_MODULES = frozenset({"employees", "organization", "settings"})
+OPERATIONAL_MODULES = frozenset({"schedules", "leave", "finances", "reports"})
+
+# Operational roles an administrator may give themselves from the admin
+# dashboard, so a one-person company is never locked out of its own schedules,
+# leave or reports. Every such change is audited and told to every other
+# administrator (employee_record_service.set_roles). finance too: salary
+# figures still need another person's approval (salary-viewer enrollment).
+SELF_ASSIGNABLE_ROLES = frozenset(
+    {"manager", "hr", "schedule_editor", "leave_approver", "report_viewer", "finance"}
+)
 
 # Roles that act on every employee without an org-chart scope, per module.
+# tenant_admin only in the administration modules (see above).
 FULL_SCOPE_ROLES = {
     "employees": {"tenant_admin", "hr", "finance"},
     "organization": {"tenant_admin", "hr"},
-    "schedules": {"tenant_admin", "hr", "schedule_editor"},
-    "leave": {"tenant_admin", "hr"},
-    "finances": {"tenant_admin", "finance"},
+    "schedules": {"hr", "schedule_editor"},
+    "leave": {"hr"},
+    "finances": {"finance"},
     "settings": {"tenant_admin", "hr", "finance"},
-    "reports": {"tenant_admin", "hr", "finance"},
+    "reports": {"hr", "finance", "report_viewer"},
 }
 
 # Default permission matrix: role_code -> {module: (can_view, can_create, can_edit, can_delete, extra)}
@@ -111,14 +173,17 @@ FULL_SCOPE_ROLES = {
 # salary-viewer enrollment decides that. It is no longer seeded or shown.
 # Rows that already hold the key keep it (the column is left alone); it is inert.
 DEFAULT_PERMISSIONS = {
+    # Administration only (see the contract). Its rows for the operational
+    # modules are never read; they are stored as below so the Permissions
+    # screen shows what is true. leave edit/delete = configuring leave.
     "tenant_admin": {
         "employees": (True, True, True, True, {}),
         "organization": (True, True, True, True, {}),
-        "schedules": (True, True, True, True, {}),
-        "leave": (True, True, True, True, {}),
-        "finances": (True, True, True, True, {}),
+        "schedules": (False, False, False, False, {}),
+        "leave": (False, False, True, True, {}),
+        "finances": (False, False, False, False, {}),
         "settings": (True, True, True, True, {}),
-        "reports": (True, True, True, True, {}),
+        "reports": (False, False, False, False, {}),
     },
     "hr": {
         "employees": (True, True, True, False, {}),
@@ -165,6 +230,18 @@ DEFAULT_PERMISSIONS = {
         "settings": (False, False, False, False, {}),
         "reports": (False, False, False, False, {}),
     },
+    # "Reports & data": run and save reports and read the analytics, for
+    # whoever needs the numbers (a CEO, an analyst) without HR's or Finance's
+    # powers. Company-wide (FULL_SCOPE_ROLES["reports"]).
+    "report_viewer": {
+        "employees": (False, False, False, False, {}),
+        "organization": (False, False, False, False, {}),
+        "schedules": (False, False, False, False, {}),
+        "leave": (False, False, False, False, {}),
+        "finances": (False, False, False, False, {}),
+        "settings": (False, False, False, False, {}),
+        "reports": (True, True, True, False, {}),
+    },
     "employee": {
         "employees": (False, False, False, False, {}),
         "organization": (False, False, False, False, {}),
@@ -177,7 +254,82 @@ DEFAULT_PERMISSIONS = {
 }
 
 
+def admin_bypasses(user, module: str) -> bool:
+    """tenant_admin in force (an admin session) passes every administration
+    check without a matrix row, and nothing else."""
+    return module in ADMINISTRATION_MODULES and user.has_role(ADMIN_ROLE)
+
+
+def matrix_role_ids(user, module: str) -> List[int]:
+    """The ids of the user's roles whose rows count for `module` in this
+    request. THE rule behind every matrix check (require_permission,
+    PermissionService.user_can, /permissions/me):
+
+      * roles dormant in this session never count (User.role_ids);
+      * tenant_admin's rows never count for an operational module, whatever
+        they hold, so an administrator cannot be given operations by ticking
+        a box on its locked row or by an old install's stored defaults;
+      * finances counts only in a finance session. `portal` is None on a
+        User that is not the request's (a background job acting as an
+        owner), which answers from the stored roles as before.
+    """
+    if module == "finances" and getattr(user, "portal", None) not in (None, "finance"):
+        return []
+    if module in OPERATIONAL_MODULES:
+        return user.role_ids_excluding(ADMIN_ROLE)
+    return user.role_ids
+
+
+def leave_config_allowed_sync(user) -> bool:
+    """The administration half of leave configuration (no matrix read)."""
+    return user.has_role(ADMIN_ROLE)
+
+
 class PermissionService:
+    @staticmethod
+    async def user_can(db: AsyncSession, user, module: str, action: str) -> bool:
+        """May `user` (as this request sees them) do module:action? Every
+        handler-level check goes through here, so the administration bypass
+        and the operational split are decided in one place."""
+        if admin_bypasses(user, module):
+            return True
+        return await PermissionService.check_permission(
+            db, user.tenant_id, matrix_role_ids(user, module), module, action
+        )
+
+    @staticmethod
+    async def leave_config_allowed(db: AsyncSession, user, action: str) -> bool:
+        """Leave policies, types and approver rules: an administrator (admin
+        session) or anyone holding leave:<action> (HR by default). Reviewing
+        leave is NOT this; see leave_access."""
+        if leave_config_allowed_sync(user):
+            return True
+        return await PermissionService.user_can(db, user, "leave", action)
+
+    @staticmethod
+    async def user_permissions(db: AsyncSession, user) -> Dict[str, Any]:
+        """/permissions/me: what this session may do, module by module,
+        answered by the same rules as user_can."""
+        merged: Dict[str, Dict[str, bool]] = {}
+        extra: Dict[str, bool] = {}
+        for module in VALID_MODULES:
+            if admin_bypasses(user, module):
+                merged[module] = {"view": True, "create": True, "edit": True, "delete": True}
+                continue
+            got = await PermissionService.get_user_permissions(
+                db, user.tenant_id, matrix_role_ids(user, module)
+            )
+            merged[module] = got["permissions"].get(
+                module, {"view": False, "create": False, "edit": False, "delete": False}
+            )
+            for k, v in got["extra"].items():
+                extra[k] = extra.get(k, False) or v
+        if leave_config_allowed_sync(user):
+            # Configuration only: the Policies screens read edit/delete. The
+            # leave REVIEW screens are not in the admin dashboard.
+            merged["leave"] = {**merged["leave"], "edit": True, "delete": True}
+        return {"permissions": merged, "extra": extra}
+
     @staticmethod
     async def seed_default_permissions(db: AsyncSession, tenant_id: UUID) -> None:
         """Idempotently seed default permissions for all system roles in a tenant."""
@@ -300,7 +452,7 @@ class PermissionService:
         if not role_ids:
             return {"permissions": {}, "extra": {}}
 
-        stmt = select(RolePermission).where(RolePermission.role_id.in_(role_ids))
+        stmt = select(RolePermission).where(RolePermission.role_id.in_(list(role_ids)))
         result = await db.execute(stmt)
         all_perms = list(result.scalars().all())
 

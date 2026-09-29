@@ -19,15 +19,20 @@ type Check = (module: string, action: string) => boolean
 // each tab's own buttons follow the matching create/edit/delete permission.
 // The page used to be hard-coded to admin and HR: it hid the tabs from roles
 // the Permissions screen allowed, and showed HR tabs whose saves all 403.
+//
+// Policies are configuration, so every tab opens in an admin session too. An
+// admin session has settings (all) and leave edit/delete (leave
+// CONFIGURATION) but no schedules and no leave view (reviewing other people's
+// leave is not administration), so the leave tabs also open on leave:edit.
 const TABS: { key: string; label: string; visible: (can: Check) => boolean }[] = [
   { key: 'holidays', label: 'Holidays', visible: (can) => can('schedules', 'view') || can('settings', 'view') },
   // The list is readable by every signed-in user (the grid draws with it), so
   // it shows beside Holidays to anyone who works with the schedule or company
   // settings; the tab's own add/edit/delete follow the API's tenant_admin gate.
   { key: 'status-types', label: 'Shift Status Types', visible: (can) => can('schedules', 'view') || can('settings', 'view') },
-  { key: 'leave', label: 'Leave Policies', visible: (can) => can('leave', 'view') },
-  { key: 'approval-rules', label: 'Approval Rules', visible: (can) => can('leave', 'view') },
-  { key: 'overtime', label: 'Overtime', visible: (can) => can('leave', 'view') || can('settings', 'view') },
+  { key: 'leave', label: 'Leave Policies', visible: (can) => can('leave', 'view') || can('leave', 'edit') },
+  { key: 'approval-rules', label: 'Approval Rules', visible: (can) => can('leave', 'view') || can('leave', 'edit') },
+  { key: 'overtime', label: 'Overtime', visible: (can) => can('leave', 'view') || can('leave', 'edit') || can('settings', 'view') },
   { key: 'policy-rules', label: 'Policy Rules', visible: (can) => can('settings', 'view') },
   { key: 'schedule-formats', label: 'Schedule Formats', visible: (can) => can('settings', 'view') },
   { key: 'work-sites', label: 'Work Sites', visible: (can) => can('settings', 'view') },

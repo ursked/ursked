@@ -6,13 +6,21 @@ import { Plus } from 'lucide-react'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import { api } from '@/lib/api'
 import type {
+  ApprovalChainPreviewResult,
   LeaveBalance,
   LeaveTypeConfig,
   LeaveApplication,
   PaginatedResponse,
 } from '@/types'
 import { useToast } from '@/components/ui/Toast'
-import { DayBreakdown, ViolationList, daysLabel, errorViolations, typeLabel } from '@/app/leaves/leaveUi'
+import {
+  DayBreakdown,
+  NobodyCanApproveNote,
+  ViolationList,
+  daysLabel,
+  errorViolations,
+  typeLabel,
+} from '@/app/leaves/leaveUi'
 import {
   Button,
   Card,
@@ -158,6 +166,15 @@ function FileLeaveModal({
     queryFn: () => api.getLeaveTypes(),
   })
 
+  // Who will decide it: the same resolver filing uses. When nobody in the
+  // company can approve leave, the request would wait for nobody, so say so
+  // before it is filed.
+  const { data: chain } = useQuery<ApprovalChainPreviewResult>({
+    queryKey: ['my-approval-chain'],
+    queryFn: () => api.getMyApprovalChain(),
+    enabled: open,
+  })
+
   const [submitErrors, setSubmitErrors] = useState<ReturnType<typeof errorViolations>>([])
   const debouncedForm = useDebounced(form, 400)
   const { data: precheck } = useQuery({
@@ -280,6 +297,18 @@ function FileLeaveModal({
         <ViolationList items={precheck?.violations} tone="block" title="This request cannot be filed:" />
         <ViolationList items={precheck?.warnings} tone="warn" title="Please check before submitting:" />
         <ViolationList items={submitErrors} tone="block" title="This request cannot be filed:" />
+
+        {chain?.nobody_can_approve ? (
+          <NobodyCanApproveNote message={chain.message} />
+        ) : chain && chain.chain.length > 0 ? (
+          <p className="text-sm text-gray-600">
+            Reviewed by{' '}
+            {chain.chain
+              .map((s) => (s.source === 'self_approval' ? 'you (self-approval)' : s.approver_name))
+              .join(', then ')}
+            .
+          </p>
+        ) : null}
       </div>
     </Modal>
   )

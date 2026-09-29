@@ -37,6 +37,10 @@ class Step:
     done: bool
     count: int
     link: str
+    # Who does it (2026-09-29): "admin" from the admin dashboard, "finance"
+    # from the finance dashboard. The admin dashboard shows finance's steps
+    # without a link: an administrator does not open Finances.
+    by: str = "admin"
 
 
 class SetupStatusService:
@@ -96,8 +100,8 @@ class SetupStatusService:
             Step("leave_types", "Define leave types", leave_types > 0, leave_types, "/policies?tab=leave"),
             Step("leave_policy", "Create a leave policy", policies > 0, policies, "/policies?tab=leave"),
             Step("holidays", "Add this year's holidays", holidays > 0, holidays, "/policies?tab=holidays"),
-            Step("salary_grades", "Set up salary grades", grades > 0, grades, "/finances"),
-            Step("deduction_types", "Configure deductions", deductions > 0, deductions, "/finances"),
+            Step("salary_grades", "Set up salary grades", grades > 0, grades, "/finances", "finance"),
+            Step("deduction_types", "Configure deductions", deductions > 0, deductions, "/finances", "finance"),
             Step("email", "Connect email (for notifications)", email_ok, 1 if email_ok else 0, "/settings?tab=email"),
         ]
         payload = [s.__dict__ for s in steps]

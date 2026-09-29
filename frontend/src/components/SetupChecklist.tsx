@@ -48,8 +48,8 @@ export default function SetupChecklist() {
   return (
     <Card>
       <CardBody>
-        <div className="flex items-start justify-between">
-          <div className="flex items-center gap-4">
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-4">
             <div className="relative h-14 w-14 shrink-0">
               <svg className="h-14 w-14 -rotate-90" viewBox="0 0 48 48">
                 <circle cx="24" cy="24" r={radius} fill="none" stroke="#e5e7eb" strokeWidth="4" />
@@ -86,32 +86,51 @@ export default function SetupChecklist() {
         </div>
 
         <ul className="mt-4 divide-y divide-gray-100">
-          {status.steps.map((step) => (
-            <li key={step.key}>
-              <Link
-                href={step.link}
-                className="flex items-center gap-3 py-2.5 hover:bg-gray-50 -mx-2 px-2 rounded-md"
+          {status.steps.map((step) => {
+            const mark = (
+              <span
+                className={
+                  'flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs ' +
+                  (step.done ? 'bg-green-100 text-green-700' : 'border border-gray-300 text-gray-400')
+                }
               >
-                <span
-                  className={
-                    'flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs ' +
-                    (step.done ? 'bg-green-100 text-green-700' : 'border border-gray-300 text-gray-400')
-                  }
+                {step.done ? <Check className="h-3.5 w-3.5" /> : ''}
+              </span>
+            )
+            const label = (
+              <span
+                className={
+                  'min-w-0 flex-1 text-sm ' +
+                  (step.done ? 'text-gray-400 line-through' : 'text-gray-700')
+                }
+              >
+                {step.label}
+              </span>
+            )
+            // Finance's steps (salary grades, deductions) are done from the
+            // finance dashboard; nobody here opens Finances, so no link.
+            if (step.by === 'finance') {
+              return (
+                <li key={step.key} className="flex items-center gap-3 py-2.5">
+                  {mark}
+                  {label}
+                  <span className="shrink-0 text-xs text-gray-500">Done by Finance</span>
+                </li>
+              )
+            }
+            return (
+              <li key={step.key}>
+                <Link
+                  href={step.link}
+                  className="flex items-center gap-3 py-2.5 hover:bg-gray-50 -mx-2 px-2 rounded-md"
                 >
-                  {step.done ? <Check className="h-3.5 w-3.5" /> : ''}
-                </span>
-                <span
-                  className={
-                    'flex-1 text-sm ' +
-                    (step.done ? 'text-gray-400 line-through' : 'text-gray-700')
-                  }
-                >
-                  {step.label}
-                </span>
-                {!step.done && <ChevronRight className="h-4 w-4 text-gray-300" />}
-              </Link>
-            </li>
-          ))}
+                  {mark}
+                  {label}
+                  {!step.done && <ChevronRight className="h-4 w-4 shrink-0 text-gray-300" />}
+                </Link>
+              </li>
+            )
+          })}
         </ul>
       </CardBody>
     </Card>

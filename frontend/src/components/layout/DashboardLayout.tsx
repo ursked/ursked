@@ -6,18 +6,21 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import { SidebarProvider, useSidebar } from '@/contexts/SidebarContext';
-import { Sidebar, inWorkspace, navItemFor } from './Sidebar';
+import { NavItem, Sidebar, inWorkspace, navItemFor } from './Sidebar';
 import { Header } from './Header';
-import { AdminBar } from './AdminBar';
+import { PortalBar } from './PortalBar';
 import { ForcePasswordChange } from '@/components/auth/ForcePasswordChange';
+import { User } from '@/types';
 import {
   ADMIN_LOGIN_PATH,
+  Workspace,
   hasEmployeeWorkspace,
   isAdminEligible,
+  isFinanceEligible,
   workspaceOf,
 } from '@/lib/workspace';
 
-function DashboardContent({ children, adminSession }: { children: React.ReactNode; adminSession: boolean }) {
+function DashboardContent({ children, workspace }: { children: React.ReactNode; workspace: Workspace }) {
   const { isOpen, close, isCollapsed } = useSidebar();
 
   // h-app is 100dvh with a 100vh fallback (globals.css): 100vh is the height
@@ -27,9 +30,10 @@ function DashboardContent({ children, adminSession }: { children: React.ReactNod
   // a phone (sidebar off-canvas) <main> does.
   return (
     <div className="flex flex-col h-app bg-gray-50 pr-[env(safe-area-inset-right)]">
-      {/* Admin mode: the bar spans the whole window, above sidebar and header,
-          so no admin screen can be mistaken for an employee one. */}
-      {adminSession && <AdminBar />}
+      {/* Admin and finance sessions: the bar spans the whole window, above
+          sidebar and header, so no admin or finance screen can be mistaken
+          for an employee one. */}
+      {workspace !== 'employee' && <PortalBar portal={workspace} />}
       <div className="flex flex-1 min-h-0">
         {/* Mobile sidebar overlay */}
         {isOpen && (
@@ -88,6 +92,65 @@ function NoEmployeeWorkspace() {
 // session: its profile (password, two-factor, sessions).
 const ALWAYS_OPEN = ['/profile'];
 
+/**
+ * Where a screen that does not belong to this session's workspace lives, as
+ * the dashboard address that says so (the dashboard reads the query), or null
+ * to let the screen judge for itself. The server refuses regardless; this
+ * keeps people from landing on a screen of 403s and tells them where the
+ * screen is:
+ *   * admin session: operational screens (schedules, leave, attendance,
+ *     finances, reports, analytics) are done from the regular dashboard by
+ *     people with that role (?ops=); the admin's own schedule, leave, time
+ *     clock and payslips are in their employee dashboard (?own=).
+ *   * finance session: administration is the admin dashboard's (?admin=);
+ *     everything else is in the employee dashboard (?own=).
+ *   * employee session: Finances is the finance dashboard's (?finance=);
+ *     administration is the admin dashboard's, said only to administrators
+ *     (?admin=). Other people are not redirected: what they cannot open is
+ *     decided by the screens, as before.
+ */
+function redirectFor(
+  workspace: Workspace,
+  item: NavItem,
+  user: User,
+  can: (module: string, action: string) => boolean,
+  pathname: string,
+): string | null {
+  const here = inWorkspace(item, workspace);
+  if ((here && item.visible({ user, can })) || item.openAnywhere) return null;
+  const q = encodeURIComponent(pathname);
+  if (workspace === 'admin') {
+    if (here) return null;
+    return pathname.startsWith('/my/') ? `/dashboard?own=${q}` : `/dashboard?ops=${q}`;
+  }
+  if (workspace === 'finance') {
+    if (here) return null;
+    if (inWorkspace(item, 'admin') && !inWorkspace(item, 'employee')) return `/dashboard?admin=${q}`;
+    return `/dashboard?own=${q}`;
+  }
+  if (!here) {
+    if (inWorkspace(item, 'finance') && !inWorkspace(item, 'admin')) return `/dashboard?finance=${q}`;
+    return isAdminEligible(user) ? `/dashboard?admin=${q}` : null;
+  }
+  // In the employee workspace but not for this person's roles here. An
+  // administrator has it (Employees, Organization, Policies) in the admin
+  // dashboard; someone in Finance may have it (reports, analytics) in theirs.
+  if (inWorkspace(item, 'admin') && isAdminEligible(user)) return `/dashboard?admin=${q}`;
+  if (inWorkspace(item, 'finance') && isFinanceEligible(user)) return `/dashboard?finance=${q}`;
+  return null;
+}
+
+/** The old address of the salary-access screen (/finances?tab=salary-access),
+ * still in emails already sent. Read from the address bar: only ever
+ * consulted once the session is known, on the client. */
+function isOldSalaryAccessLink(pathname: string): boolean {
+  return (
+    pathname === '/finances' &&
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get('tab') === 'salary-access'
+  );
+}
+
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading, user } = useAuth();
   const { hasPermission, isLoading: permissionsLoading } = usePermissions();
@@ -103,24 +166,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const workspace = workspaceOf(user);
   const navItem = navItemFor(pathname);
 
-  // Admin mode routing. The server refuses regardless; this only keeps people
-  // from landing on a screen of 403s, and says where the screen lives:
-  //   * in an employee session, an administrator opening a screen that only
-  //     their admin role would allow goes to their dashboard, which offers
-  //     the administrator sign-in;
-  //   * in an admin session, the admin's own schedule, leave, time clock and
-  //     payslips are in their employee dashboard, and the admin dashboard
-  //     says so.
-  // Users without the administrator role are not redirected: what they cannot
-  // open is decided by the screens, as before.
+  // Workspace routing (see redirectFor). The dashboard and the profile are in
+  // every workspace.
   let redirectTo: string | null = null;
-  if (user && navItem && navItem.href !== '/dashboard' && !permissionsLoading && !user.must_change_password) {
-    if (workspace === 'employee' && isAdminEligible(user)) {
-      const allowed =
-        inWorkspace(navItem, 'employee') && navItem.visible({ user, can: hasPermission });
-      if (!allowed) redirectTo = `/dashboard?admin=${encodeURIComponent(pathname)}`;
-    } else if (workspace === 'admin' && !inWorkspace(navItem, 'admin') && navItem.href !== '/profile') {
-      redirectTo = `/dashboard?own=${encodeURIComponent(pathname)}`;
+  if (user && !permissionsLoading && !user.must_change_password) {
+    if (isOldSalaryAccessLink(pathname)) {
+      redirectTo = '/salary-access';
+    } else if (navItem && navItem.href !== '/dashboard' && !ALWAYS_OPEN.includes(navItem.href)) {
+      redirectTo = redirectFor(workspace, navItem, user, hasPermission, pathname);
     }
   }
 
@@ -155,7 +208,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <SidebarProvider>
-      <DashboardContent adminSession={workspace === 'admin'}>
+      <DashboardContent workspace={workspace}>
         {pureAdminInEmployeeSession ? <NoEmployeeWorkspace /> : redirectTo ? null : children}
       </DashboardContent>
     </SidebarProvider>

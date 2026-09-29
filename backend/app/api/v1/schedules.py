@@ -51,7 +51,7 @@ from app.schemas.schedule import (
 )
 from app.services import access_scope
 from app.services.email_service import EmailService
-from app.services.permission_service import PermissionService
+from app.services.permission_service import ADMIN_ROLE, PermissionService
 from app.services.schedule_change_service import ScheduleChangeService
 from app.services.schedule_service import ScheduleConflictError, ScheduleService
 
@@ -67,22 +67,25 @@ router = APIRouter(prefix="/schedules", tags=["Schedules"])
 async def _can(db: AsyncSession, user: User, module: str, action: str) -> bool:
     """The check `require_permission` makes, for decisions taken inside a
     handler (a query flag that needs more than the endpoint itself does)."""
-    if user.has_role("tenant_admin"):
-        return True
-    role_ids = user.role_ids
-    return await PermissionService.check_permission(
-        db, user.tenant_id, role_ids, module, action
-    )
+    return await PermissionService.user_can(db, user, module, action)
 
 
 def _require_holiday_admin(action: str):
-    """Holidays and date remarks apply to the whole company, so changing one
-    needs the matching schedules action AND full scope. A team manager may
+    """Holidays and date remarks apply to the whole company. They are
+    configuration (Policies): an administrator changes them from the admin
+    dashboard, and so may anyone holding the matching schedules action with
+    full scope (HR, schedule editors) from the regular one. A team manager may
     schedule their team but must not change everyone's holiday pay."""
-    checker_dep = require_permission("schedules", action)
 
-    async def checker(current_user: User = Depends(checker_dep)):
-        if not access_scope.has_full_scope(current_user, "schedules"):
+    async def checker(
+        current_user: User = Depends(get_current_user),
+        db: AsyncSession = Depends(get_db),
+    ):
+        if current_user.has_role(ADMIN_ROLE):
+            return current_user
+        if not await _can(db, current_user, "schedules", action):
+            raise HTTPException(status_code=403, detail=f"No {action} permission on schedules")
+        if action != "view" and not access_scope.has_full_scope(current_user, "schedules"):
             raise HTTPException(
                 status_code=403,
                 detail=(
@@ -217,6 +220,9 @@ async def get_schedule_grid(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    # Schedules are operations: the admin dashboard has no grid, and an
+    # administrator's own shifts are in their employee dashboard.
+    access_scope.assert_operational_session(current_user)
     # Seeing other people's drafts, attendance and overtime is schedules:view.
     # Without it the grid is still readable (teammates' published shifts) but
     # actuals are refused outright: they were the way an employee could read a
@@ -611,7 +617,7 @@ async def _source_response(db: AsyncSession, user: User, source) -> dict:
 
 @router.get("/holidays/source", response_model=HolidaySourceResponse)
 async def get_holiday_source(
-    current_user: User = Depends(require_permission("schedules", "view")),
+    current_user: User = Depends(_require_holiday_admin("view")),
     db: AsyncSession = Depends(get_db),
 ):
     """Where holidays come from and how the last sync went."""

@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.middleware.auth import get_current_user, require_permission
+from app.middleware.auth import get_current_user, require_leave_config
 from app.models.leave import (
     LeaveApplication,
     LeaveApprovalEvent,
@@ -73,7 +73,8 @@ from app.schemas.leave import (
     PolicyCompleteness,
     TeamStatsResponse,
 )
-from app.services.access_scope import assert_manages
+from app.services.access_scope import assert_manages, assert_operational_session
+from app.services.permission_service import ADMIN_ROLE, PermissionService
 from app.services.leave_access import (
     LeaveViewer,
     approver_check,
@@ -93,7 +94,12 @@ from app.services.leave_approval_service import (
     set_status,
 )
 from app.services.leave_days_service import count_leave_days, days_by_year
-from app.services.leave_notify_service import TO_APPROVER, TO_EMPLOYEE, LeaveNotifier
+from app.services.leave_notify_service import (
+    NOBODY_CAN_APPROVE_EMPLOYEE,
+    TO_APPROVER,
+    TO_EMPLOYEE,
+    LeaveNotifier,
+)
 from app.services.leave_rule_service import LeaveRuleService, violations_message
 from app.services.leave_service import LeaveService
 from app.services.schedule_service import ScheduleService
@@ -522,7 +528,7 @@ async def create_leave_type(
     data: LeaveTypeCreate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_permission("leave", "edit")),
+    _=Depends(require_leave_config("edit")),
 ):
     existing = await db.execute(
         select(LeaveType).where(
@@ -565,7 +571,7 @@ async def update_leave_type(
     data: LeaveTypeUpdate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_permission("leave", "edit")),
+    _=Depends(require_leave_config("edit")),
 ):
     result = await db.execute(
         select(LeaveType).where(
@@ -590,7 +596,7 @@ async def delete_leave_type(
     type_id: int,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_permission("leave", "delete")),
+    _=Depends(require_leave_config("delete")),
 ):
     result = await db.execute(
         select(LeaveType).where(
@@ -652,7 +658,7 @@ async def create_leave_policy(
     data: LeavePolicyCreate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_permission("leave", "edit")),
+    _=Depends(require_leave_config("edit")),
 ):
     tenant_id = current_user.tenant_id
 
@@ -722,7 +728,7 @@ async def update_leave_policy(
     data: LeavePolicyUpdate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_permission("leave", "edit")),
+    _=Depends(require_leave_config("edit")),
 ):
     tenant_id = current_user.tenant_id
     result = await db.execute(
@@ -783,7 +789,7 @@ async def delete_leave_policy(
     policy_id: int,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_permission("leave", "delete")),
+    _=Depends(require_leave_config("delete")),
 ):
     result = await db.execute(
         select(LeavePolicy).where(
@@ -804,7 +810,7 @@ async def clone_leave_policy(
     policy_id: int,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_permission("leave", "edit")),
+    _=Depends(require_leave_config("edit")),
 ):
     """Duplicate a policy (with its entitlements and enforcement) as an
     inactive, non-default '(copy)'. Lets admins start from an existing policy
@@ -889,7 +895,7 @@ async def add_policy_entitlement(
     data: LeavePolicyEntitlementCreate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_permission("leave", "edit")),
+    _=Depends(require_leave_config("edit")),
 ):
     tenant_id = current_user.tenant_id
 
@@ -941,7 +947,7 @@ async def update_policy_entitlement(
     data: LeavePolicyEntitlementUpdate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_permission("leave", "edit")),
+    _=Depends(require_leave_config("edit")),
 ):
     stmt = (
         select(LeavePolicyEntitlement)
@@ -970,7 +976,7 @@ async def delete_policy_entitlement(
     entitlement_id: int,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_permission("leave", "edit")),
+    _=Depends(require_leave_config("edit")),
 ):
     stmt = (
         select(LeavePolicyEntitlement)
@@ -995,7 +1001,7 @@ async def bulk_replace_entitlements(
     data: BulkEntitlementsRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_permission("leave", "edit")),
+    _=Depends(require_leave_config("edit")),
 ):
     tenant_id = current_user.tenant_id
 
@@ -1087,7 +1093,7 @@ async def create_overtime_category(
     data: OvertimeCategoryCreate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_permission("leave", "edit")),
+    _=Depends(require_leave_config("edit")),
 ):
     existing = await db.execute(
         select(OvertimeCategory).where(
@@ -1127,7 +1133,7 @@ async def update_overtime_category(
     data: OvertimeCategoryUpdate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_permission("leave", "edit")),
+    _=Depends(require_leave_config("edit")),
 ):
     category = (
         await db.execute(
@@ -1160,7 +1166,7 @@ async def delete_overtime_category(
     category_id: int,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_permission("leave", "delete")),
+    _=Depends(require_leave_config("delete")),
 ):
     category = (
         await db.execute(
@@ -1225,6 +1231,9 @@ async def list_leave_applications(
     db: AsyncSession = Depends(get_db),
 ):
     tenant_id = current_user.tenant_id
+    if scope != "mine":
+        # Other people's leave is review, done from the regular dashboard.
+        assert_operational_session(current_user)
     ctx = await _ctx(db, current_user)
 
     cond = and_(LeaveApplication.tenant_id == tenant_id, _scope_filter(ctx.viewer, scope))
@@ -1264,6 +1273,7 @@ async def _subject_for(db: AsyncSession, current_user: User, employee_id: Option
     employee must be inside the caller's scope."""
     if employee_id is None or employee_id == current_user.id:
         return current_user
+    assert_operational_session(current_user)
     if not await has_permission(db, current_user, "leave", "create"):
         raise HTTPException(status_code=403, detail="You can only file leave for yourself.")
     await assert_manages(db, current_user, [employee_id], "leave")
@@ -1364,8 +1374,18 @@ async def create_leave_application(
 
     app = await _load_app(db, tenant_id, app.id)
     notifier = LeaveNotifier(db, tenant_id)
-    first = chain[0]
-    if first["source"] == SOURCE_SELF:
+    first = chain[0] if chain else None
+    if first is None:
+        # Nobody can approve leave in this company: the request waits, the
+        # employee is told why, and the administrators what to do about it.
+        await notifier.send(
+            [subject.id], audience=TO_EMPLOYEE, kind="leave_no_approver",
+            title="Nobody can approve your leave yet",
+            body=NOBODY_CAN_APPROVE_EMPLOYEE,
+            app=app,
+        )
+        await notifier.nobody_can_approve(app)
+    elif first["source"] == SOURCE_SELF:
         await notifier.send(
             [subject.id], audience=TO_EMPLOYEE, kind="leave_self_approval",
             title="Nobody else can approve your leave",
@@ -1565,7 +1585,9 @@ async def review_leave_application(
     Governed by the approver chain, not by a role: whoever the current step
     names may act on it, and nobody else may (an admin who needs to step in
     uses override, which asks for a reason). Nobody approves their own leave.
+    Decided from the regular dashboard, never an admin session.
     """
+    assert_operational_session(current_user)
     tenant_id = current_user.tenant_id
     app = await _load_app(db, tenant_id, application_id)
     if app.status != "pending":
@@ -1696,11 +1718,13 @@ async def override_leave_application(
 ):
     """Approve or reject a pending request without waiting for its approver.
 
-    For leave:edit holders over the employee (tenant admin and HR by default)
-    when an approver is away, has left, or is simply stuck. The remaining
-    steps are closed, the reason is shown on the request and audit-logged, and
-    both the employee and the bypassed approver are told.
+    For leave:edit holders over the employee (HR by default; not
+    administrators, who configure leave but do not review it) when an approver
+    is away, has left, or is simply stuck. The remaining steps are closed, the
+    reason is shown on the request and audit-logged, and both the employee and
+    the bypassed approver are told.
     """
+    assert_operational_session(current_user)
     tenant_id = current_user.tenant_id
     app = await _load_app(db, tenant_id, application_id)
     ctx = await _ctx(db, current_user)
@@ -1709,7 +1733,7 @@ async def override_leave_application(
     if not ctx.viewer.can_edit:
         raise HTTPException(
             status_code=403,
-            detail="Only people who can edit leave settings can override an approval.",
+            detail="Only HR, or someone with leave edit rights over this employee, can override an approval.",
         )
     await assert_manages(db, current_user, [app.employee_id], "leave")
     if app.status != "pending":
@@ -1774,6 +1798,7 @@ async def reassign_leave_approver(
     no reviewer role they are given Leave Approver, so the request never lands
     with someone who cannot open it.
     """
+    assert_operational_session(current_user)
     tenant_id = current_user.tenant_id
     app = await _load_app(db, tenant_id, application_id)
     if app.employee_id == current_user.id:
@@ -1781,7 +1806,7 @@ async def reassign_leave_approver(
     if not await has_permission(db, current_user, "leave", "edit"):
         raise HTTPException(
             status_code=403,
-            detail="Only people who can edit leave settings can reassign an approver.",
+            detail="Only HR, or someone with leave edit rights over this employee, can reassign an approver.",
         )
     await assert_manages(db, current_user, [app.employee_id], "leave")
     if app.status != "pending":
@@ -1899,6 +1924,7 @@ async def revoke_leave_application(
     days are released by the status change itself — there is no credit ledger to
     adjust and therefore no double-refund to guard against.
     """
+    assert_operational_session(current_user)
     tenant_id = current_user.tenant_id
     app = await _load_app(db, tenant_id, application_id)
     if app.status != "approved":
@@ -2010,6 +2036,8 @@ async def revoke_leave_application(
 
 def _chain_response(chain: list) -> ApprovalChainPreviewResponse:
     return ApprovalChainPreviewResponse(
+        nobody_can_approve=not chain,
+        message=NOBODY_CAN_APPROVE_EMPLOYEE if not chain else None,
         chain=[
             ApprovalChainPreviewItem(
                 approver_id=item["approver_id"],
@@ -2042,11 +2070,13 @@ async def preview_approval_chain(
     employee_id: int,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_permission("leave", "view")),
+    _=Depends(require_leave_config("view")),
 ):
     """Admin-facing chain tester: resolve the approval chain for any employee
-    in the caller's scope, the same way filing does."""
-    await assert_manages(db, current_user, [employee_id], "leave")
+    in the caller's scope, the same way filing does. Configuration, so an
+    administrator tests any employee; anyone else within their leave scope."""
+    if not current_user.has_role(ADMIN_ROLE):
+        await assert_manages(db, current_user, [employee_id], "leave")
     employee = (await db.execute(
         select(User).where(User.id == employee_id, User.tenant_id == current_user.tenant_id)
     )).scalar_one_or_none()
@@ -2067,7 +2097,7 @@ async def check_approver(
     """What naming `user_id` as an approver will do, so the screen can say so
     before the admin saves (inactive: refused; no reviewer role: granted)."""
     if not (
-        await has_permission(db, current_user, "leave", "edit")
+        await PermissionService.leave_config_allowed(db, current_user, "edit")
         or await has_permission(db, current_user, "organization", "edit")
     ):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
@@ -2082,7 +2112,9 @@ async def get_pending_approvals(
     db: AsyncSession = Depends(get_db),
 ):
     """Requests waiting for the caller's decision. Open to everyone: whoever a
-    step names may act on it (it is empty for anyone who approves nothing)."""
+    step names may act on it (it is empty for anyone who approves nothing).
+    Not in an admin session: approving is done from the regular dashboard."""
+    assert_operational_session(current_user)
     applications, total = await LeaveApprovalService.get_pending_for_approver(
         db, current_user.tenant_id, current_user.id, page, per_page
     )
@@ -2105,6 +2137,7 @@ async def get_team_stats(
 ):
     """A year's statistics (default: this year) over exactly the requests Team
     Overview lists."""
+    assert_operational_session(current_user)
     viewer = await LeaveViewer.build(db, current_user)
     stats = await LeaveApprovalService.get_team_stats(
         db, current_user.tenant_id, _scope_filter(viewer, "team"), year=year
@@ -2245,7 +2278,7 @@ async def _check_scope_targets(db: AsyncSession, tenant_id, employee_id, org_nod
 async def list_approver_assignments(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_permission("leave", "view")),
+    _=Depends(require_leave_config("view")),
 ):
     rows = (
         await db.execute(
@@ -2263,7 +2296,7 @@ async def create_approver_assignment(
     data: LeaveApproverAssignmentCreate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_permission("leave", "edit")),
+    _=Depends(require_leave_config("edit")),
 ):
     tenant_id = current_user.tenant_id
     steps = _steps_from_payload(data)
@@ -2308,7 +2341,7 @@ async def update_approver_assignment(
     data: LeaveApproverAssignmentUpdate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_permission("leave", "edit")),
+    _=Depends(require_leave_config("edit")),
 ):
     """Edit a rule. Scope changes are applied (they used to be ignored), and
     the rule keeps its place in the list unless `priority` is sent — editing a
@@ -2388,7 +2421,7 @@ async def delete_approver_assignment(
     assignment_id: int,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_permission("leave", "delete")),
+    _=Depends(require_leave_config("delete")),
 ):
     a = (
         await db.execute(
@@ -2409,7 +2442,7 @@ async def reorder_approver_assignments(
     ordered_ids: List[int],
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_permission("leave", "edit")),
+    _=Depends(require_leave_config("edit")),
 ):
     """Reorder approval rules by setting priority based on list position.
     Accepts an ordered list of assignment IDs (top = highest priority)."""

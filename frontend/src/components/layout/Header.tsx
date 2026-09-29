@@ -5,14 +5,24 @@ import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSidebar } from '@/contexts/SidebarContext';
 import { hasAnyRole } from '@/lib/roles';
-import { ADMIN_LOGIN_PATH, hasEmployeeWorkspace, isAdminEligible, isAdminSession } from '@/lib/workspace';
+import {
+  ADMIN_LOGIN_PATH,
+  FINANCE_LOGIN_PATH,
+  hasEmployeeWorkspace,
+  isAdminEligible,
+  isAdminSession,
+  isFinanceEligible,
+  isFinanceSession,
+} from '@/lib/workspace';
 import { useInstallPrompt } from '@/hooks/useInstallPrompt';
 import { useToast } from '@/components/ui/Toast';
 import { NotificationsBell } from './NotificationsBell';
 
 export function Header() {
-  const { user, logout, exitAdmin } = useAuth();
+  const { user, logout, exitAdmin, exitFinance } = useAuth();
   const adminSession = isAdminSession(user);
+  const financeSession = isFinanceSession(user);
+  const privilegedSession = adminSession || financeSession;
   const { toggle } = useSidebar();
   const { showToast } = useToast();
   const { canInstall, installed, isIOS, promptInstall } = useInstallPrompt();
@@ -36,8 +46,8 @@ export function Header() {
     // viewport-fit=cover lets the page run under a notch / status bar; the
     // header grows by the top inset (0 where there is none) so the menu and
     // account buttons stay tappable.
-    // In an admin session the admin bar sits above and takes the top inset.
-    <header className={`${adminSession ? 'h-16' : 'h-[calc(4rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)]'} flex-shrink-0 bg-white border-b border-gray-200 flex items-center justify-between px-6 pl-[calc(1.5rem+env(safe-area-inset-left))] lg:pl-6`}>
+    // In an admin or finance session its bar sits above and takes the top inset.
+    <header className={`${privilegedSession ? 'h-16' : 'h-[calc(4rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)]'} flex-shrink-0 bg-white border-b border-gray-200 flex items-center justify-between px-6 pl-[calc(1.5rem+env(safe-area-inset-left))] lg:pl-6`}>
       {/* Left: mobile menu button */}
       <button
         onClick={toggle}
@@ -106,12 +116,26 @@ export function Header() {
                   Administrator sign-in
                 </Link>
               )}
-              {user && adminSession && hasEmployeeWorkspace(user) && (
+              {/* The finance dashboard works the same way: up through the
+                  finance sign-in, down without a password. */}
+              {user && isFinanceEligible(user) && !financeSession && (
+                <Link
+                  href={FINANCE_LOGIN_PATH}
+                  onClick={() => setDropdownOpen(false)}
+                  className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Finance sign-in
+                </Link>
+              )}
+              {user && privilegedSession && hasEmployeeWorkspace(user) && (
                 <button
                   type="button"
                   onClick={() => {
                     setDropdownOpen(false);
-                    void exitAdmin();
+                    void (adminSession ? exitAdmin() : exitFinance());
                   }}
                   className="flex items-center gap-2 w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
                 >

@@ -10,8 +10,10 @@ import ApprovalsTab from './ApprovalsTab'
 import TeamOverviewTab from './TeamOverviewTab'
 
 // Anyone named as an approver is given one of these roles by the server, so
-// this is exactly the set of people who can have requests to act on.
-const REVIEWER_ROLES = ['tenant_admin', 'hr', 'manager', 'leave_approver'] as const
+// this is exactly the set of people who can have requests to act on. Not the
+// administrator: deciding leave is not administration, and this screen is
+// not in the admin dashboard.
+const REVIEWER_ROLES = ['hr', 'manager', 'leave_approver'] as const
 
 type TabKey = 'my-leave' | 'approvals' | 'team'
 

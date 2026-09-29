@@ -114,6 +114,11 @@ async def seed() -> None:
         db.add(tenant)
         await db.flush()
 
+        # Every system role with its default permissions, "Reports & data"
+        # (report_viewer) included. The administrator gets tenant_admin only:
+        # administration is not operations, so whoever schedules, approves
+        # leave or runs reports (the administrator too, if they do) is given
+        # that role from the admin dashboard.
         await RoleService.seed_system_roles(db, tenant.id)
 
         admin = User(

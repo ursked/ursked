@@ -7,6 +7,7 @@ const ROLE_DISPLAY_NAMES: Record<string, string> = {
   manager: 'Manager',
   leave_approver: 'Leave Approver',
   schedule_editor: 'Schedule Editor',
+  report_viewer: 'Reports & data',
   employee: 'Employee',
 };
 
@@ -17,6 +18,7 @@ const ROLE_PRIORITY: string[] = [
   'manager',
   'leave_approver',
   'schedule_editor',
+  'report_viewer',
   'employee',
 ];
 

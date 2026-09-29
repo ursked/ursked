@@ -281,14 +281,18 @@ function LoginPageInner() {
           )}
         </div>
 
-        {/* Admin mode: this page always opens the employee dashboard, for
-            administrators too. The admin dashboard has its own door. The
-            page cannot know who is an administrator before sign-in, so the
-            link is small and for everyone; non-administrators are told no
-            there, after their password is checked. */}
+        {/* This page always opens the employee dashboard, for administrators
+            and Finance too. The admin and finance dashboards have their own
+            doors. The page cannot know who is which before sign-in, so the
+            links are small and for everyone; anyone else is told no there,
+            after their password is checked. */}
         <p className="text-center mt-6 text-xs">
           <Link href="/admin/login" className="text-gray-500 hover:text-gray-700">
             Administrator sign-in
+          </Link>
+          <span className="mx-2 text-gray-300" aria-hidden="true">·</span>
+          <Link href="/finance/login" className="text-gray-500 hover:text-gray-700">
+            Finance sign-in
           </Link>
         </p>
 

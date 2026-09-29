@@ -17,14 +17,30 @@ interface EmployeeModalProps {
   onSaved: () => void;
 }
 
+// Administration and operations are separate roles (2026-09-29). The
+// administrator runs the system and does none of the day-to-day work;
+// schedules, leave, reports and payroll come with the roles below.
 const ROLE_OPTIONS: { code: RoleCode; label: string; description: string }[] = [
-  { code: 'tenant_admin', label: 'Administrator', description: 'Full tenant access, settings, and billing' },
-  { code: 'hr', label: 'HR', description: 'Payroll, onboarding, employee records access' },
-  { code: 'finance', label: 'Finance', description: 'Payroll management, salary grades, deductions, and payroll processing' },
-  { code: 'manager', label: 'Manager', description: 'Manage direct and indirect reports' },
+  {
+    code: 'tenant_admin',
+    label: 'Administrator',
+    description: 'Runs the system from the admin sign-in: accounts, roles, organization, settings and policies. Not schedules, leave approvals, finances or reports',
+  },
+  { code: 'hr', label: 'HR', description: 'Employee records, schedules and leave for the whole company' },
+  { code: 'finance', label: 'Finance', description: 'Payroll, salary grades, deductions and pay rules, from the finance sign-in' },
+  { code: 'manager', label: 'Manager', description: 'Schedules, leave and attendance for the teams they head' },
   { code: 'leave_approver', label: 'Leave Approver', description: 'Approve leave applications in their chain' },
   { code: 'schedule_editor', label: 'Schedule Editor', description: 'Create and edit schedules' },
+  { code: 'report_viewer', label: 'Reports & data', description: 'Runs and saves reports and reads the analytics' },
 ];
+
+// The administrator role's matrix row counts only for administration, and of
+// Leave only for configuration (edit, delete); see the Permissions screen.
+const ADMIN_MODULES = new Set(['employees', 'organization', 'settings']);
+function adminHas(module: string, action: string): boolean {
+  if (ADMIN_MODULES.has(module)) return true;
+  return module === 'leave' && (action === 'can_edit' || action === 'can_delete');
+}
 
 const MODULES: { key: string; label: string }[] = [
   { key: 'employees', label: 'Employees' },
@@ -57,6 +73,13 @@ export default function EmployeeModal({ employee, onClose, onSaved }: EmployeeMo
   // An administrator's sign-in details are an account-takeover path, so the
   // API only lets another administrator change them.
   const signInLocked = isEdit && !isAdmin && hasRole(employee, 'tenant_admin');
+  // Your own roles. In the admin dashboard an administrator may give
+  // themselves (or drop) the operational roles, so a one-person company can
+  // still schedule and approve leave; never their own administrator role, and
+  // every other administrator is told. Anywhere else nobody changes their own
+  // roles (the API refuses), so they are shown, not offered.
+  const editingSelf = isEdit && !!currentUser && employee?.id === currentUser.id;
+  const ownRolesLocked = editingSelf && !isAdmin;
 
   // Basic info
   const [firstName, setFirstName] = useState(employee?.first_name ?? '');
@@ -146,7 +169,15 @@ export default function EmployeeModal({ employee, onClose, onSaved }: EmployeeMo
       const roleModules = permsByRole[roleCode];
       if (!roleModules) continue;
       for (const mod of MODULES) {
-        const p = roleModules[mod.key];
+        const stored = roleModules[mod.key];
+        const p = roleCode === 'tenant_admin'
+          ? {
+              can_view: adminHas(mod.key, 'can_view'),
+              can_create: adminHas(mod.key, 'can_create'),
+              can_edit: adminHas(mod.key, 'can_edit'),
+              can_delete: adminHas(mod.key, 'can_delete'),
+            }
+          : stored;
         if (!p) continue;
         merged[mod.key].can_view = merged[mod.key].can_view || p.can_view;
         merged[mod.key].can_create = merged[mod.key].can_create || p.can_create;
@@ -201,7 +232,9 @@ export default function EmployeeModal({ employee, onClose, onSaved }: EmployeeMo
         schedule_format: scheduleFormat || null,
         org_node_id: orgNodeId,
         reports_to_id: reportsToId,
-        role_codes: ['employee', ...selectedRoles],
+        // Omitted when the person may not change them (their own roles
+        // outside the admin dashboard), so saving a profile never touches them.
+        ...(ownRolesLocked ? {} : { role_codes: ['employee', ...selectedRoles] }),
       };
       if (Object.keys(customChanges).length > 0) data.custom_fields = customChanges;
 
@@ -513,14 +546,36 @@ export default function EmployeeModal({ employee, onClose, onSaved }: EmployeeMo
                   Every employee automatically has the base &quot;Employee&quot; role.
                   Select additional roles below to grant specific permissions.
                 </p>
-                {!isAdmin && (
+                {ownRolesLocked && (
+                  <p className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700" role="note">
+                    These are your own roles. An administrator can change your roles from the admin dashboard.
+                  </p>
+                )}
+                {editingSelf && isAdmin && (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900" role="note">
+                    <p>Other administrators will be told about changes to your own roles.</p>
+                    {selectedRoles.includes('finance') && (
+                      <p className="mt-1">Salary figures still need another person&apos;s approval.</p>
+                    )}
+                  </div>
+                )}
+                {!isAdmin && !ownRolesLocked && (
                   <p className="text-xs text-gray-500">Only an administrator can grant or remove the Administrator role.</p>
                 )}
                 <div className="space-y-2">
-                  {ROLE_OPTIONS.filter((role) => isAdmin || role.code !== 'tenant_admin').map((role) => {
+                  {ROLE_OPTIONS.filter((role) => isAdmin || ownRolesLocked || role.code !== 'tenant_admin')
+                    .filter((role) => !ownRolesLocked || selectedRoles.includes(role.code))
+                    .map((role) => {
                     const isSelected = selectedRoles.includes(role.code);
                     const rolePerms = permsByRole[role.code];
                     const isTenantAdmin = role.code === 'tenant_admin';
+                    // Your own administrator role is another administrator's
+                    // to change; every role, outside the admin dashboard.
+                    const lockReason = ownRolesLocked
+                      ? 'An administrator can change your roles from the admin dashboard.'
+                      : editingSelf && isTenantAdmin
+                        ? 'Another administrator has to change your own administrator role.'
+                        : null;
 
                     return (
                       <div
@@ -529,16 +584,20 @@ export default function EmployeeModal({ employee, onClose, onSaved }: EmployeeMo
                           isSelected ? 'border-purple-300 bg-purple-50/50' : 'border-gray-200 hover:bg-gray-50'
                         }`}
                       >
-                        <label className="flex items-center gap-3 p-3 cursor-pointer">
+                        <label className={`flex items-center gap-3 p-3 ${lockReason ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
                           <input
                             type="checkbox"
                             checked={isSelected}
+                            disabled={!!lockReason}
                             onChange={() => toggleRole(role.code)}
-                            className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                            className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500 disabled:opacity-50"
                           />
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium text-gray-900">{role.label}</p>
                             <p className="text-xs text-gray-500">{role.description}</p>
+                            {lockReason && !ownRolesLocked && (
+                              <p className="mt-0.5 text-xs text-amber-700">{lockReason}</p>
+                            )}
                           </div>
                         </label>
 
@@ -560,7 +619,7 @@ export default function EmployeeModal({ employee, onClose, onSaved }: EmployeeMo
                                     <tr key={action.key} className="border-t border-gray-50">
                                       <td className="px-1.5 py-0.5 font-medium text-gray-500">{action.name}</td>
                                       {MODULES.map(m => {
-                                        const granted = isTenantAdmin || rolePerms[m.key]?.[action.key];
+                                        const granted = isTenantAdmin ? adminHas(m.key, action.key) : rolePerms[m.key]?.[action.key];
                                         return (
                                           <td key={m.key} className="px-1 py-0.5 text-center">
                                             <span className={`inline-block w-3.5 h-3.5 rounded-full text-[8px] leading-[14px] ${granted ? 'bg-green-500 text-white font-bold' : 'bg-gray-200 text-gray-400'}`}>{action.label}</span>
@@ -616,8 +675,9 @@ export default function EmployeeModal({ employee, onClose, onSaved }: EmployeeMo
                       </table>
                     </div>
                     <p className="mt-2 text-xs text-purple-700">
-                      No role shows salary figures. Each person needs salary access, approved by someone else under
-                      Finances, Salary Access.
+                      Administrator works only from the administrator sign-in, and Finance only from the finance
+                      sign-in. No role shows salary figures: each person needs salary access, approved by someone
+                      else under Salary access.
                     </p>
                   </div>
                 )}

@@ -56,12 +56,9 @@ async def _scope(db: AsyncSession, user: User) -> Optional[Set[int]]:
 
 
 async def _can_view_reports(db: AsyncSession, user: User) -> bool:
-    if user.has_role("tenant_admin"):
-        return True
-    role_ids = user.role_ids
-    return await PermissionService.check_permission(
-        db, user.tenant_id, role_ids, "reports", "view"
-    )
+    # Analytics is reports:view, like Reports & Data: an operation, which
+    # tenant_admin does not grant in any session (permission_service).
+    return await PermissionService.user_can(db, user, "reports", "view")
 
 
 @router.get("/overtime/trends", response_model=OvertimeTrendsResponse)

@@ -30,7 +30,7 @@ export function LoadProblem({ error, what }: { error: unknown; what: string }) {
         <p className="font-medium">You need salary access to see {what}.</p>
         <p className="mt-1">
           Salary figures are shown only to people with an approved salary-viewer enrollment, whatever their role.{' '}
-          <Link href="/finances?tab=salary-access" className="font-semibold text-purple-700 underline">
+          <Link href="/salary-access" className="font-semibold text-purple-700 underline">
             Request salary access
           </Link>
         </p>

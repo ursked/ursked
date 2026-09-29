@@ -11,7 +11,6 @@ import CompensationTab from './CompensationTab'
 import PayoutScheduleTab from './PayoutScheduleTab'
 import PayRulesTab from './PayRulesTab'
 import PayrollTab from './PayrollTab'
-import SalaryAccessTab from './SalaryAccessTab'
 import { FiguresOnly } from './financeUi'
 
 const TABS = [
@@ -22,7 +21,6 @@ const TABS = [
   { key: 'payout-schedule', label: 'Payout Schedule' },
   { key: 'pay-rules', label: 'Pay rules' },
   { key: 'payroll', label: 'Payroll' },
-  { key: 'salary-access', label: 'Salary Access' },
 ] as const
 
 type TabKey = (typeof TABS)[number]['key']
@@ -36,9 +34,10 @@ function FinancesContent() {
   const params = useSearchParams()
   const router = useRouter()
   const pathname = usePathname()
-  // The tab lives in the URL, so a link such as /finances?tab=salary-access
-  // (the salary-access notification, the "request it" prompts) opens the
-  // right tab instead of always landing on Payroll.
+  // The tab lives in the URL, so a link such as /finances?tab=pay-rules opens
+  // the right tab instead of always landing on Payroll. Salary access has
+  // its own screen now (/salary-access); DashboardLayout forwards the old
+  // /finances?tab=salary-access links there.
   const requested = params.get('tab')
   const activeTab: TabKey = isTab(requested) ? requested : 'payroll'
   const setActiveTab = (key: TabKey) => {
@@ -64,7 +63,8 @@ function FinancesContent() {
           </div>
           <h3 className="mt-4 text-lg font-semibold text-gray-900">Access Denied</h3>
           <p className="mt-2 text-sm text-gray-500">
-            Your role does not include Finances. Ask an administrator to grant it on the Permissions screen.
+            Finances are managed from the finance dashboard, by people with the Finance role. If that is
+            you, use the finance sign-in.
           </p>
         </div>
       </div>
@@ -115,7 +115,6 @@ function FinancesContent() {
       {activeTab === 'payout-schedule' && <PayoutScheduleTab />}
       {activeTab === 'pay-rules' && <PayRulesTab />}
       {activeTab === 'payroll' && <PayrollTab />}
-      {activeTab === 'salary-access' && <SalaryAccessTab />}
     </div>
   )
 }

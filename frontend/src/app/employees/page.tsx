@@ -82,6 +82,19 @@ export default function EmployeesPage() {
       } catch { /* ignore a corrupt preference */ }
     });
   }, []);
+  // /employees?open=<id> opens that person's record (the admin dashboard
+  // links people who have no role yet here). Read after mount, like the
+  // column preference above.
+  useEffect(() => {
+    const id = Number(new URLSearchParams(window.location.search).get('open'));
+    if (!Number.isInteger(id) || id <= 0) return;
+    let active = true;
+    api.getUser(id)
+      .then((u) => { if (active) setViewingEmployee(u); })
+      .catch(() => { /* not visible to this user, or gone: stay on the list */ });
+    return () => { active = false; };
+  }, []);
+
   const [showColumnPicker, setShowColumnPicker] = useState(false);
   const visibleColumns = columnDefs.filter((d) => shownColumns.includes(d.key));
   const toggleColumn = (key: string) => {
@@ -396,6 +409,7 @@ export default function EmployeesPage() {
               <option value="manager">Manager</option>
               <option value="leave_approver">Leave Approver</option>
               <option value="schedule_editor">Schedule Editor</option>
+              <option value="report_viewer">Reports &amp; data</option>
               <option value="employee">Employee</option>
             </select>
 

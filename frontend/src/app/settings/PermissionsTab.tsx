@@ -52,6 +52,24 @@ const ACTIONS = [
 
 type ActionKey = (typeof ACTIONS)[number]['key']
 
+// The administrator's row is fixed, and is administration only (owner,
+// 2026-09-29: "a manager for graphics is not an administrator of the app").
+// Accounts, the org chart and settings are all ticked; of Leave, only edit
+// and delete, which are leave CONFIGURATION (policies, types, approver
+// rules). Schedules, leave review, finances and reports are never the
+// administrator's: the server ignores that row for them, so the screen shows
+// them as not granted rather than as whatever an old install stored.
+const ADMIN_MODULES = new Set<string>(['employees', 'organization', 'settings'])
+function adminHas(module: string, action: ActionKey): boolean {
+  if (ADMIN_MODULES.has(module)) return true
+  return module === 'leave' && (action === 'can_edit' || action === 'can_delete')
+}
+
+// Names as the Employees role picker shows them, where the stored name differs.
+const ROLE_LABEL: Record<string, string> = {
+  report_viewer: 'Reports & data',
+}
+
 interface LocalPermission {
   can_view: boolean
   can_create: boolean
@@ -234,8 +252,19 @@ export default function PermissionsTab() {
                   return (
                     <tr key={entry.role_id} className="hover:bg-gray-50 transition-colors">
                       <td className="px-4 py-3">
-                        <div className="text-sm font-medium text-gray-900">{entry.role_name}</div>
+                        <div className="text-sm font-medium text-gray-900">{ROLE_LABEL[entry.role_code] ?? entry.role_name}</div>
                         <div className="text-xs text-gray-500 font-mono">{entry.role_code}</div>
+                        {isTenantAdmin && (
+                          <p className="mt-1 max-w-[12rem] text-[11px] leading-snug text-gray-500">
+                            Administrators run the system. Schedules, leave approvals, finances and reports are given
+                            with the other roles.
+                          </p>
+                        )}
+                        {entry.role_code === 'finance' && (
+                          <p className="mt-1 max-w-[12rem] text-[11px] leading-snug text-gray-500">
+                            Works from the finance sign-in only.
+                          </p>
+                        )}
                       </td>
                       {MODULES.map((mod) => {
                         const perm = local?.modules[mod.key]
@@ -243,7 +272,9 @@ export default function PermissionsTab() {
                           <td key={mod.key} className="px-3 py-3">
                             <div className="flex items-center justify-center gap-1">
                               {ACTIONS.map((action) => {
-                                const checked = isTenantAdmin ? true : perm?.[action.key] ?? false
+                                const checked = isTenantAdmin
+                                  ? adminHas(mod.key, action.key)
+                                  : perm?.[action.key] ?? false
                                 return (
                                   <label
                                     key={action.key}
@@ -264,11 +295,10 @@ export default function PermissionsTab() {
                                 )
                               })}
                             </div>
-                            {/* The boxes are all ticked for the administrator,
-                                but Finances is the one module where that is not
-                                the whole story: figures are decided by salary
-                                access, which someone else must approve. */}
-                            {isTenantAdmin && mod.key === 'finances' && (
+                            {/* Finances here is the structure; figures are
+                                decided by salary access, which someone else
+                                must approve, whatever the role. */}
+                            {entry.role_code === 'finance' && mod.key === 'finances' && (
                               <p className="mt-1 max-w-[11rem] mx-auto text-center text-[11px] leading-snug text-gray-500">
                                 Structure only. Salary figures need salary access approved by another person.
                               </p>
@@ -292,7 +322,7 @@ export default function PermissionsTab() {
                           </button>
                         )}
                         {isTenantAdmin && (
-                          <span className="text-xs text-gray-400 italic">All permissions</span>
+                          <span className="text-xs text-gray-400 italic">Fixed</span>
                         )}
                       </td>
                     </tr>
@@ -304,12 +334,14 @@ export default function PermissionsTab() {
 
           <div className="mt-4 rounded-md bg-blue-50 p-3">
             <p className="text-xs text-blue-700">
-              <span className="font-semibold">Note:</span> Tenant administrators always have every permission on
-              this screen and cannot be restricted. Permissions are merged across roles -- if a user has multiple roles,
-              they receive the union of all granted permissions. Finances here covers the structure (deduction types,
-              payout schedules, salary grade names, payroll periods). Salary figures are not set here, for any role:
-              each person needs salary access, approved by someone else under{' '}
-              <span className="font-semibold">Finances &rarr; Salary Access</span>.
+              <span className="font-semibold">Note:</span> The administrator row is fixed: administrators manage
+              accounts, the organization, settings and leave configuration, from the admin dashboard, and nothing
+              else. Someone who also schedules, approves leave or runs reports holds that role as well. Permissions are
+              merged across roles -- if a user has multiple roles, they receive the union of all granted permissions.
+              Finance&apos;s permissions apply only from the finance sign-in. Finances here covers the structure
+              (deduction types, payout schedules, salary grade names, payroll periods). Salary figures are not set
+              here, for any role: each person needs salary access, approved by someone else under{' '}
+              <span className="font-semibold">Salary access</span>.
             </p>
           </div>
         </div>

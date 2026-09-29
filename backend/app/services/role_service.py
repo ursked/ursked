@@ -8,12 +8,18 @@ from app.models.role import Role, UserRole
 
 SYSTEM_ROLES = [
     ("employee", "Employee", "Base role assigned to every user"),
-    ("tenant_admin", "Tenant Administrator", "Full tenant access, settings, and billing"),
-    ("hr", "HR", "Payroll computations, onboarding, employee records access"),
-    ("manager", "Manager", "Employee management for direct and indirect reports"),
+    ("tenant_admin", "Tenant Administrator",
+     "System administration: accounts, roles, organization, settings and policies. "
+     "Not schedules, leave approvals, finances or reports"),
+    ("hr", "HR", "Employee records, schedules and leave for the whole company"),
+    ("manager", "Manager", "Schedules, leave and attendance for the teams they head"),
     ("leave_approver", "Leave Approver", "Can approve leave applications for reports in their chain"),
     ("schedule_editor", "Schedule Editor", "Can create and edit schedules"),
-    ("finance", "Finance", "Payroll management, salary grades, deductions, and payroll processing"),
+    ("finance", "Finance",
+     "Payroll, salary grades, deductions and pay rules, from the separate finance sign-in"),
+    # Reports & Data and Analytics without HR's or Finance's powers (a CEO, an
+    # analyst). Added 2026-09-29 (migration 068 seeds it for existing tenants).
+    ("report_viewer", "Reports & data", "Runs and saves reports and reads the analytics"),
 ]
 
 

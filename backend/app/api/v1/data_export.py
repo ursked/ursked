@@ -67,11 +67,8 @@ REPORTS_DELETE = require_permission("reports", "delete")
 
 
 async def _can(db: AsyncSession, user: User, module: str, action: str) -> bool:
-    if user.has_role("tenant_admin"):
-        return True
-    return await PermissionService.check_permission(
-        db, user.tenant_id, user.role_ids, module, action
-    )
+    # Reports are operations: tenant_admin grants none (permission_service).
+    return await PermissionService.user_can(db, user, module, action)
 
 
 async def _assert_salary_access_if_needed(db: AsyncSession, user: User, spec: Dict[str, Any]) -> None:

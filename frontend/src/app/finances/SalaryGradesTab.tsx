@@ -242,7 +242,7 @@ export default function SalaryGradesTab() {
       {!isViewer && !!grades?.length && (
         <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
           Rates are hidden. You need salary access to see them.{' '}
-          <Link href="/finances?tab=salary-access" className="font-semibold text-purple-700 underline">
+          <Link href="/salary-access" className="font-semibold text-purple-700 underline">
             Request it
           </Link>
         </p>

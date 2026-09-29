@@ -21,13 +21,15 @@ const TITLES: [string, string][] = [
   ['/organization', 'Organization'],
   ['/finances', 'Finances'],
   ['/policies', 'Policies'],
-  ['/data-management', 'Data Management'],
+  ['/data-management', 'Reports & Data'],
+  ['/salary-access', 'Salary access'],
   ['/audit-log', 'Audit Log'],
   ['/settings', 'Settings'],
   ['/profile', 'Profile'],
   ['/superadmin', 'Platform'],
   ['/auth/login', 'Sign in'],
   ['/admin/login', 'Administrator sign-in'],
+  ['/finance/login', 'Finance sign-in'],
   ['/auth/forgot-password', 'Forgot password'],
   ['/auth/reset-password', 'Reset password'],
   ['/auth/activate', 'Activate your account'],
@@ -49,10 +51,11 @@ export function titleFor(pathname: string): string | null {
 // through Next metadata (it would differ from all of these) is left alone.
 const written = new Set<string>([APP_NAME, '']);
 
-// Admin mode marks every tab of an admin session ("Admin · Employees ·
-// ursked"), so an admin tab is told apart from an employee one at a glance in
-// the tab strip and the task switcher. Set by the admin bar; this component
-// sits outside the auth providers, so the marker comes in through here.
+// Admin and finance sessions mark every tab ("Admin · Employees · ursked",
+// "Finance · Finances · ursked"), so such a tab is told apart from an
+// employee one at a glance in the tab strip and the task switcher. Set by the
+// session's bar (PortalBar); this component sits outside the auth providers,
+// so the marker comes in through here.
 let marker: string | null = null;
 const MARKER_EVENT = 'routetitle:marker';
 

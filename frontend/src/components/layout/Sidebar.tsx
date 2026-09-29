@@ -9,7 +9,7 @@ import { useSidebar } from '@/contexts/SidebarContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import { User } from '@/types';
 import { hasAnyRole, hasRole, getPrimaryRole } from '@/lib/roles';
-import { Workspace, isAdminEligible, workspaceOf } from '@/lib/workspace';
+import { Workspace, hasOtherDashboard, workspaceOf } from '@/lib/workspace';
 
 // An entry is shown only when the user can open the page behind it, judged the
 // same way that page judges it: the permission matrix where the page checks the
@@ -17,11 +17,18 @@ import { Workspace, isAdminEligible, workspaceOf } from '@/lib/workspace';
 // carry its own role lists, so Settings was shown to everyone and bounced them,
 // HR could not find Policies, and My Schedule / My Leave had no entry at all.
 //
-// Admin mode: the employee and admin workspaces are separate dashboards. An
-// entry names the workspaces it belongs to (both when omitted). The employee
-// workspace is the person's own things plus whatever their other roles (HR,
-// manager...) allow; the admin workspace is running the company, without the
-// admin's own schedule, leave and payslips, which live in their employee one.
+// Three workspaces, three dashboards (lib/workspace.ts). An entry names the
+// workspaces it belongs to (all of them when omitted):
+//   * employee: the person's own things, plus the day-to-day work their roles
+//     give them: schedules, leave approvals and attendance for a manager or
+//     HR, reports and analytics for whoever needs the numbers. "Schedules are
+//     managed by managers under their node"; none of this is administration.
+//   * admin: running the system and nothing else: accounts, the org chart,
+//     policies, settings, salary-access approvals, the audit log. No
+//     schedules, leave, attendance, finances, reports or analytics, whoever
+//     the administrator is.
+//   * finance: Finances, salary access, and the reports and analytics the
+//     finance role gives (that role is dormant in the employee session).
 export interface NavContext {
   user: User;
   can: (module: string, action: string) => boolean;
@@ -31,19 +38,25 @@ export interface NavItem {
   name: string;
   /** Label in the admin workspace, when it differs. */
   adminName?: string;
-  /** Label in an administrator's employee workspace, when it differs. Only
-   * administrators have two dashboards to tell apart; everyone else keeps
-   * the labels they know. */
+  /** Label in the finance workspace, when it differs. */
+  financeName?: string;
+  /** Label in the employee workspace of someone who also has an admin or
+   * finance dashboard, when it differs. Only they have two dashboards to
+   * tell apart; everyone else keeps the labels they know. */
   employeeName?: string;
   href: string;
   icon: React.ReactNode;
   visible: (ctx: NavContext) => boolean;
   workspaces?: Workspace[];
+  /** May be opened from any workspace, though listed only in `workspaces`. */
+  openAnywhere?: boolean;
 }
 
 export function labelFor(item: NavItem, user: User): string {
-  if (workspaceOf(user) === 'admin') return item.adminName ?? item.name;
-  return isAdminEligible(user) ? item.employeeName ?? item.name : item.name;
+  const workspace = workspaceOf(user);
+  if (workspace === 'admin') return item.adminName ?? item.name;
+  if (workspace === 'finance') return item.financeName ?? item.name;
+  return hasOtherDashboard(user) ? item.employeeName ?? item.name : item.name;
 }
 
 export function inWorkspace(item: NavItem, workspace: Workspace): boolean {
@@ -61,21 +74,27 @@ export function navItemFor(pathname: string): NavItem | undefined {
   return best;
 }
 
-// Admin workspace order: what an administrator runs, most-used first.
-const ADMIN_ORDER = [
-  '/dashboard', '/employees', '/schedules', '/leaves', '/attendance', '/organization',
-  '/policies', '/finances', '/data-management', '/analytics', '/settings', '/audit-log',
-];
+// Menu order per workspace, most-used first. The employee workspace follows
+// the order of navItems.
+const ORDER: Partial<Record<Workspace, string[]>> = {
+  admin: [
+    '/dashboard', '/employees', '/organization', '/policies', '/settings', '/salary-access', '/audit-log',
+  ],
+  finance: ['/dashboard', '/finances', '/salary-access', '/data-management', '/analytics'],
+};
 
 // Who has a place to review leave on /leaves (Approvals / Team Overview tabs).
-// Everyone else files and follows their own leave from My Leave.
-const REVIEWER_ROLES = ['tenant_admin', 'hr', 'manager', 'leave_approver'];
+// Everyone else files and follows their own leave from My Leave. Not the
+// administrator: approving leave is a manager's, HR's or a leave approver's
+// job, done from the regular dashboard.
+const REVIEWER_ROLES = ['hr', 'manager', 'leave_approver'];
 
 export const navItems: NavItem[] = [
   {
     name: 'Dashboard',
     employeeName: 'My Dashboard',
     adminName: 'Admin Dashboard',
+    financeName: 'Finance Dashboard',
     href: '/dashboard',
     icon: (
       <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -116,11 +135,16 @@ export const navItems: NavItem[] = [
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
       </svg>
     ),
+    workspaces: ['employee', 'admin'],
     visible: ({ can }) => can('employees', 'view'),
   },
   {
+    // Everyone in the employee workspace: a plain employee sees their team's
+    // published schedule here, a manager edits their node's. Never in the
+    // admin or finance workspace.
     name: 'Schedules',
     href: '/schedules',
+    workspaces: ['employee'],
     icon: (
       <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -130,8 +154,8 @@ export const navItems: NavItem[] = [
   },
   {
     name: 'Leave',
-    adminName: 'Leave & Approvals',
     href: '/leaves',
+    workspaces: ['employee'],
     icon: (
       <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
@@ -166,8 +190,8 @@ export const navItems: NavItem[] = [
     visible: () => true,
   },
   {
-    // In the account menu too. Listed here for administrators, so their
-    // employee workspace shows everything that is their own in one place.
+    // In the account menu too. Listed here so the employee workspace shows
+    // everything that is the person's own in one place.
     name: 'Profile',
     href: '/profile',
     workspaces: ['employee'],
@@ -176,11 +200,12 @@ export const navItems: NavItem[] = [
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
       </svg>
     ),
-    visible: ({ user }) => isAdminEligible(user),
+    visible: () => true,
   },
   {
     name: 'Attendance',
     href: '/attendance',
+    workspaces: ['employee'],
     icon: (
       <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
@@ -189,8 +214,12 @@ export const navItems: NavItem[] = [
     visible: ({ can }) => can('schedules', 'view'),
   },
   {
+    // Same rule as Reports & Data: for whoever holds reports:view (a manager,
+    // HR, the CEO, anyone given "Reports & data"), never in the admin
+    // workspace. Finance holds it in its own session.
     name: 'Analytics',
     href: '/analytics',
+    workspaces: ['employee', 'finance'],
     icon: (
       <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
@@ -206,11 +235,15 @@ export const navItems: NavItem[] = [
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
       </svg>
     ),
+    workspaces: ['employee', 'admin'],
     visible: ({ can }) => can('organization', 'view'),
   },
   {
+    // Only in a finance session (the finance sign-in): the finances module is
+    // switched off everywhere else, for everyone.
     name: 'Finances',
     href: '/finances',
+    workspaces: ['finance'],
     icon: (
       <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -227,18 +260,39 @@ export const navItems: NavItem[] = [
       </svg>
     ),
     // Same rule as the page: shown when at least one of its tabs is readable.
-    visible: ({ can }) => can('schedules', 'view') || can('leave', 'view') || can('settings', 'view'),
+    // leave:edit alone is an administrator's leave configuration.
+    workspaces: ['employee', 'admin'],
+    visible: ({ can }) =>
+      can('schedules', 'view') || can('leave', 'view') || can('leave', 'edit') || can('settings', 'view'),
   },
   {
-    name: 'Data Management',
-    adminName: 'Reports & Data',
+    // Reports are for whoever needs the data (a manager, the CEO, finance),
+    // from their own dashboard; never an administrator's as such.
+    name: 'Reports & Data',
     href: '/data-management',
+    workspaces: ['employee', 'finance'],
     icon: (
       <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75m-16.5-3.75v3.75m16.5 0v3.75C20.25 16.153 16.556 18 12 18s-8.25-1.847-8.25-4.125v-3.75m16.5 0c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125" />
       </svg>
     ),
     visible: ({ can }) => can('reports', 'create'),
+  },
+  {
+    // Salary-access approvals (administrators who are approvers) and the
+    // grant history; in the finance workspace also the person's own request.
+    name: 'Salary access',
+    href: '/salary-access',
+    workspaces: ['admin', 'finance'],
+    // Approving is per person, not per role: an approver who is neither an
+    // administrator nor in Finance still reaches it from the email link.
+    openAnywhere: true,
+    icon: (
+      <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+      </svg>
+    ),
+    visible: () => true,
   },
   {
     name: 'Audit Log',
@@ -277,10 +331,11 @@ export function Sidebar() {
         (item) => inWorkspace(item, workspace) && item.visible({ user, can: hasPermission }),
       )
     : [];
-  if (workspace === 'admin') {
+  const order = ORDER[workspace];
+  if (order) {
     const rank = (href: string) => {
-      const i = ADMIN_ORDER.indexOf(href);
-      return i === -1 ? ADMIN_ORDER.length : i;
+      const i = order.indexOf(href);
+      return i === -1 ? order.length : i;
     };
     filteredItems.sort((a, b) => rank(a.href) - rank(b.href));
   }
@@ -339,10 +394,18 @@ export function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto" aria-label={workspace === 'admin' ? 'Admin navigation' : 'Main navigation'}>
+      <nav
+        className="flex-1 px-3 py-4 space-y-1 overflow-y-auto"
+        aria-label={workspace === 'admin' ? 'Admin navigation' : workspace === 'finance' ? 'Finance navigation' : 'Main navigation'}
+      >
         {workspace === 'admin' && (
           <p className={`px-3 pb-2 text-xs font-semibold uppercase tracking-wider text-amber-300 ${blockLabelCls}`}>
             Administration
+          </p>
+        )}
+        {workspace === 'finance' && (
+          <p className={`px-3 pb-2 text-xs font-semibold uppercase tracking-wider text-emerald-300 ${blockLabelCls}`}>
+            Finance
           </p>
         )}
         {filteredItems.map((item) => {
@@ -398,7 +461,7 @@ export function Sidebar() {
                 {user.first_name} {user.last_name}
               </p>
               <p className="text-xs text-gray-400 truncate capitalize">
-                {workspace === 'admin' ? 'Administrator' : getPrimaryRole(user)}
+                {workspace === 'admin' ? 'Administrator' : workspace === 'finance' ? 'Finance' : getPrimaryRole(user)}
               </p>
             </div>
           </div>

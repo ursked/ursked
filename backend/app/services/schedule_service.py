@@ -168,8 +168,11 @@ class ScheduleService:
         Returns None if the user can see ALL employees (admin roles).
         Returns a list of visible employee IDs otherwise.
         """
-        admin_roles = {"tenant_admin", "hr", "schedule_editor"}
-        if admin_roles.intersection(set(user_roles)):
+        # The roles that schedule everyone (FULL_SCOPE_ROLES["schedules"]).
+        # tenant_admin is not one: schedules are operations (permission_service).
+        from app.services.permission_service import FULL_SCOPE_ROLES
+
+        if FULL_SCOPE_ROLES["schedules"].intersection(set(user_roles)):
             return None  # No filter — see everyone
 
         # Load tenant visibility setting

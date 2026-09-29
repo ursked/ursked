@@ -44,7 +44,7 @@ export default function AnalyticsPage() {
   // The API checks reports:view (the Permissions screen), not role codes.
   const hasAccess = !!user && hasPermission('reports', 'view');
   // Roles outside FULL_SCOPE_ROLES["reports"] get figures for their own teams.
-  const teamScoped = !!user && !hasAnyRole(user, ['tenant_admin', 'hr', 'finance']);
+  const teamScoped = !!user && !hasAnyRole(user, ['hr', 'finance', 'report_viewer']);
 
   if (permissionsLoading) {
     return <DashboardLayout><div /></DashboardLayout>;

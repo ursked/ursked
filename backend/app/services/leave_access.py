@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from typing import Iterable, List, Optional, Set
 from uuid import UUID
 
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.permission import RolePermission
@@ -27,44 +27,29 @@ from app.models.role import Role, UserRole
 from app.models.user import User
 from app.services.access_scope import has_full_scope, managed_employee_ids
 from app.services.permission_service import (
+    ADMIN_ROLE,
     DEFAULT_PERMISSIONS,
     FULL_SCOPE_ROLES,
+    PermissionService,
 )
 
 # Roles that give a person a place to review leave in the app (the Approvals
 # tab). Someone named as an approver without one of these could be routed a
 # request they had no screen to act on, which is how the audit's deadlock began.
-REVIEWER_ROLE_CODES = {"tenant_admin", "hr", "manager", "leave_approver"}
+#
+# tenant_admin is not one of them (2026-09-29): administrators configure leave
+# from the admin dashboard but do not review it. An administrator who does
+# approve leave holds one of these roles as well and approves signed in
+# normally.
+REVIEWER_ROLE_CODES = {"hr", "manager", "leave_approver"}
 
 
 async def has_permission(db: AsyncSession, user: User, module: str, action: str) -> bool:
-    """The matrix check `require_permission` makes, usable inside a handler."""
-    if user.has_role("tenant_admin"):
-        return True
-    role_ids = user.role_ids
-    col = {
-        "view": RolePermission.can_view,
-        "create": RolePermission.can_create,
-        "edit": RolePermission.can_edit,
-        "delete": RolePermission.can_delete,
-    }.get(action)
-    if not role_ids or col is None:
-        return False
-    # Not PermissionService.check_permission: it uses scalar_one_or_none and
-    # raises when two of the user's roles both grant the action (e.g. manager +
-    # leave_approver both have leave:view). Reported to area E.
-    hit = (
-        await db.execute(
-            select(RolePermission.id)
-            .where(
-                RolePermission.role_id.in_(role_ids),
-                RolePermission.module == module,
-                col == True,  # noqa: E712
-            )
-            .limit(1)
-        )
-    ).scalar_one_or_none()
-    return hit is not None
+    """The matrix check `require_permission` makes, usable inside a handler.
+    For leave this is REVIEW: tenant_admin's rows never count (see
+    permission_service.matrix_role_ids); configuration is
+    PermissionService.leave_config_allowed."""
+    return await PermissionService.user_can(db, user, module, action)
 
 
 def full_name(u) -> str:
@@ -78,10 +63,12 @@ async def leave_editors(
     full_scope_only: bool = False,
     exclude: Iterable[int] = (),
 ) -> List[tuple]:
-    """Active users who hold leave:edit, as (id, first, last, role_code) rows.
+    """Active users who hold leave:edit, as (id, first, last, role_code) rows:
+    the people who can act on a request from the regular dashboard.
 
-    tenant_admin always has every permission, so it is included without a
-    matrix row. Ordered admins first, then HR, then anyone else, then by id, so
+    tenant_admin never counts, whatever its leave row says (its edit there is
+    configuration, not review), and neither does finance, which is dormant in
+    the regular dashboard. Ordered HR first, then anyone else, then by id, so
     "the first one" is stable and predictable in the UI copy.
     """
     excluded = {e for e in exclude if e is not None}
@@ -99,13 +86,14 @@ async def leave_editors(
             User.is_active == True,  # noqa: E712
             Role.tenant_id == tenant_id,
             Role.is_active == True,  # noqa: E712
-            or_(Role.code == "tenant_admin", Role.id.in_(edit_role_ids)),
+            Role.id.in_(edit_role_ids),
+            Role.code.notin_((ADMIN_ROLE, "finance")),
         )
     )
     if full_scope_only:
         stmt = stmt.where(Role.code.in_(FULL_SCOPE_ROLES["leave"]))
     rows = (await db.execute(stmt)).all()
-    rank = {"tenant_admin": 0, "hr": 1}
+    rank = {"hr": 1}
     best: dict[int, tuple] = {}
     for r in rows:
         if r.id in excluded:

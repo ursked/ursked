@@ -70,7 +70,7 @@ export default function SalaryAccessTab() {
   return (
     <div className="space-y-6">
       <div className="rounded-lg border border-gray-200 bg-white p-4">
-        <h3 className="text-sm font-semibold text-gray-900">Salary Access</h3>
+        <h3 className="text-sm font-semibold text-gray-900">Your salary access</h3>
         <p className="mt-0.5 text-xs text-gray-500">
           Salary visibility is granted per user — being an admin, HR or Finance is not enough.
           A request must be approved by another approver: never yourself, and never someone you made an
@@ -270,6 +270,7 @@ function RequestsCard({
       ) : requests.length === 0 ? (
         <p className="px-4 py-3 text-xs text-gray-400">No pending requests.</p>
       ) : (
+        <div className="overflow-x-auto">
         <table className="w-full text-xs">
           <thead className="bg-gray-50 text-gray-500">
             <tr>
@@ -319,6 +320,7 @@ function RequestsCard({
             })}
           </tbody>
         </table>
+        </div>
       )}
     </div>
   )
@@ -346,6 +348,7 @@ function EnrollmentCard({
       ) : rows.length === 0 ? (
         <p className="px-4 py-3 text-xs text-gray-400">None enrolled.</p>
       ) : (
+        <div className="overflow-x-auto">
         <table className="w-full text-xs">
           <thead className="bg-gray-50 text-gray-500">
             <tr>
@@ -379,6 +382,7 @@ function EnrollmentCard({
             })}
           </tbody>
         </table>
+        </div>
       )}
     </div>
   )

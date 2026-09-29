@@ -457,6 +457,10 @@ class ApprovalChainPreviewItem(BaseModel):
 
 class ApprovalChainPreviewResponse(BaseModel):
     chain: List[ApprovalChainPreviewItem]
+    # True when the chain is empty because nobody in the company can approve
+    # leave (no HR, no leave approver, no manager); `message` says what to do.
+    nobody_can_approve: bool = False
+    message: Optional[str] = None
 
 
 # ── Approver Assignment Schemas ───────────────────────────────────

@@ -7,7 +7,7 @@ import {
   LeaveApplication,
   LeaveBalance,
   LeaveTypeConfig,
-  ApprovalChainPreviewItem,
+  ApprovalChainPreviewResult,
   LeavePrecheckResult,
   LeaveRuleViolation,
   PaginatedResponse,
@@ -18,6 +18,7 @@ import { usePermissions } from '@/contexts/PermissionsContext'
 import {
   DayBreakdown,
   EventList,
+  NobodyCanApproveNote,
   STATUS_COLORS,
   STATUS_FILTERS,
   StepDots,
@@ -84,7 +85,7 @@ export default function MyLeaveTab() {
     queryFn: () => api.getLeaveTypes(),
   })
 
-  const { data: chainPreview } = useQuery<{ chain: ApprovalChainPreviewItem[] }>({
+  const { data: chainPreview } = useQuery<ApprovalChainPreviewResult>({
     queryKey: ['my-approval-chain'],
     queryFn: () => api.getMyApprovalChain(),
   })
@@ -331,6 +332,9 @@ export default function MyLeaveTab() {
             <ViolationList items={submitErrors} tone="block" title="This request cannot be filed:" />
 
             {/* Approval chain preview (own requests only) */}
+            {!onBehalfOf && chainPreview?.nobody_can_approve && (
+              <NobodyCanApproveNote message={chainPreview.message} />
+            )}
             {!onBehalfOf && chainPreview && chainPreview.chain.length > 0 && (
               <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
                 <p className="text-xs font-medium text-purple-700 mb-2">Your request will be reviewed by:</p>

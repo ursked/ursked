@@ -42,10 +42,7 @@ _ACTION_WORDS = {
 
 
 async def has_permission(db: AsyncSession, user: User, module: str, action: str) -> bool:
-    if user.has_role("tenant_admin"):
-        return True
-    role_ids = user.role_ids
-    return await PermissionService.check_permission(db, user.tenant_id, role_ids, module, action)
+    return await PermissionService.user_can(db, user, module, action)
 
 
 async def require(db: AsyncSession, user: User, module: str, action: str) -> None:

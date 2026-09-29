@@ -3,48 +3,60 @@
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { format, parseISO } from 'date-fns';
-import { AlertTriangle, CheckCircle2, Inbox, Server } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, KeyRound, Server, UserX, Users } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { api } from '@/lib/api';
-import { BackgroundJobsView, HomeDashboard, LeaveApplication, ScheduleChangeRequest } from '@/types';
+import { AdminOverview, AdminOverviewJob, BackgroundJobsView } from '@/types';
 import SetupChecklist from '@/components/SetupChecklist';
 import { titleFor } from '@/components/layout/RouteTitle';
 import { hasEmployeeWorkspace } from '@/lib/workspace';
-import { MetricsSection } from './MetricsSection';
 
-// The admin dashboard (admin mode): running the company, not the admin's own
-// week. Their own shifts, leave and payslips are on their employee dashboard.
-// Everything here is read with the admin session's full access; figures that
-// need salary access are not shown.
+// The admin dashboard: ADMINISTRATION, nothing operational. "A manager for
+// graphics is not an administrator of the app": schedules, leave decisions,
+// attendance, finances and reports are done from the regular (or finance)
+// dashboard by the people holding the role for each. So this screen decides
+// nothing and links into none of those screens. Its questions are the
+// administrator's: is the system set up, is it running, does every account
+// have a role, and has someone been given each job? When nobody has, the
+// fix is on Employees (give someone, or yourself, the role).
 
-interface LeaveList {
-  items: LeaveApplication[];
-  total: number;
+// Read like the Employees role picker names them.
+const ROLE_LABEL: Record<string, string> = {
+  manager: 'Manager',
+  hr: 'HR',
+  schedule_editor: 'Schedule editor',
+  leave_approver: 'Leave approver',
+  report_viewer: 'Reports & data',
+  finance: 'Finance',
+};
+
+const JOB_VERB: Record<AdminOverviewJob['key'], string> = {
+  schedules: 'manage schedules',
+  leave: 'approve leave',
+  reports: 'run reports',
+  finance: 'run payroll',
+};
+
+function orList(items: string[]): string {
+  if (items.length <= 1) return items.join('');
+  return `${items.slice(0, -1).join(', ')} or ${items[items.length - 1]}`;
 }
 
-export default function AdminDashboard({ ownPath }: { ownPath: string | null }) {
+const rolesOf = (job: AdminOverviewJob) => orList(job.roles.map((r) => ROLE_LABEL[r] ?? r));
+
+function dateRange(start: string, end: string): string {
+  const from = format(parseISO(start), 'd MMM');
+  return end !== start ? `${from} – ${format(parseISO(end), 'd MMM')}` : from;
+}
+
+export default function AdminDashboard({ ownPath, opsPath }: { ownPath: string | null; opsPath: string | null }) {
   const { user, exitAdmin } = useAuth();
 
-  const dashboard = useQuery<HomeDashboard>({
-    queryKey: ['dashboard', 'admin', user?.id],
-    queryFn: () => api.getHomeDashboard(),
+  const overview = useQuery<AdminOverview>({
+    queryKey: ['admin-dashboard', 'overview'],
+    queryFn: () => api.getAdminOverview(),
     refetchInterval: 60000,
     enabled: !!user,
-    meta: { handlesErrors: true },
-  });
-
-  const pendingLeave = useQuery<LeaveList>({
-    queryKey: ['admin-dashboard', 'pending-leave'],
-    queryFn: () =>
-      api.getLeaveApplications({ status: 'pending', scope: 'team', per_page: '5' }) as Promise<LeaveList>,
-    refetchInterval: 60000,
-    meta: { handlesErrors: true },
-  });
-
-  const pendingSchedule = useQuery<ScheduleChangeRequest[]>({
-    queryKey: ['admin-dashboard', 'pending-schedule'],
-    queryFn: () => api.getPendingScheduleApprovals(),
-    refetchInterval: 60000,
     meta: { handlesErrors: true },
   });
 
@@ -55,61 +67,78 @@ export default function AdminDashboard({ ownPath }: { ownPath: string | null }) 
     meta: { handlesErrors: true },
   });
 
-  const metrics = dashboard.data?.metrics ?? null;
   const ownScreen = ownPath ? titleFor(ownPath) ?? 'That screen' : null;
+  const opsScreen = opsPath ? titleFor(opsPath) ?? 'That screen' : null;
+  const data = overview.data;
+  const stuckLeave = data?.leave_without_approver ?? [];
+  const nobodyApproves = !!data && (data.nobody_can_approve_leave || stuckLeave.length > 0);
+
+  const exitButton = hasEmployeeWorkspace(user) && (
+    <button
+      type="button"
+      onClick={() => void exitAdmin()}
+      className="mt-3 inline-flex min-h-[44px] flex-shrink-0 items-center justify-center rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800 sm:mt-0"
+    >
+      Go to my employee dashboard
+    </button>
+  );
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Admin Dashboard</h1>
-        <p className="mt-1 text-gray-500">Company overview and what needs attention.</p>
+        <p className="mt-1 text-gray-500">Setting up and running the system: accounts, roles, settings and policies.</p>
       </div>
 
       {ownScreen && (
         <div role="status" className="rounded-xl border border-amber-300 bg-amber-50 p-4 sm:flex sm:items-center sm:justify-between sm:gap-4">
-          <div>
+          <div className="min-w-0">
             <p className="text-sm font-medium text-amber-900">{ownScreen} is on your employee dashboard.</p>
             <p className="mt-0.5 text-sm text-amber-800">
               Your own schedule, leave, time clock and payslips are kept out of admin mode.
             </p>
           </div>
-          {hasEmployeeWorkspace(user) && (
-            <button
-              type="button"
-              onClick={() => void exitAdmin()}
-              className="mt-3 inline-flex min-h-[44px] flex-shrink-0 items-center justify-center rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800 sm:mt-0"
-            >
-              Go to my employee dashboard
-            </button>
-          )}
+          {exitButton}
         </div>
       )}
 
-      <SetupChecklist />
+      {opsScreen && (
+        <div role="status" className="rounded-xl border border-amber-300 bg-amber-50 p-4 sm:flex sm:items-center sm:justify-between sm:gap-4">
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-amber-900">{opsScreen} is not part of the admin dashboard.</p>
+            <p className="mt-0.5 text-sm text-amber-800">
+              This is done from the regular dashboard by people with that role — sign in normally.
+            </p>
+          </div>
+          {exitButton}
+        </div>
+      )}
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <ApprovalsQueue
-          leave={pendingLeave.data}
-          leaveError={pendingLeave.isError}
-          scheduleCount={pendingSchedule.data?.length ?? null}
-          overtimeCount={metrics?.pending_overtime ?? null}
-        />
-        <JobsStatus view={jobs.data} error={jobs.isError} />
-      </div>
+      {nobodyApproves && <NobodyApprovesLeave stuck={stuckLeave} />}
 
-      {dashboard.isError && !dashboard.data && (
+      {overview.isError && !data && (
         <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-center" role="alert">
-          <p className="text-sm font-medium text-red-800">Could not load the company figures.</p>
+          <p className="text-sm font-medium text-red-800">Could not load the overview.</p>
           <button
             type="button"
-            onClick={() => dashboard.refetch()}
+            onClick={() => overview.refetch()}
             className="mt-3 rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
           >
             Retry
           </button>
         </div>
       )}
-      {metrics && dashboard.data && <MetricsSection metrics={metrics} view={dashboard.data.view} />}
+
+      <SetupChecklist />
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        {data && <JobCoverage jobs={data.jobs} />}
+        <JobsStatus view={jobs.data} error={jobs.isError} />
+        {data && data.salary_requests_pending !== null && (
+          <SalaryRequests pending={data.salary_requests_pending} />
+        )}
+        {data && <UsersWithoutRoles users={data.users_without_roles} />}
+      </div>
     </div>
   );
 }
@@ -132,55 +161,134 @@ function Card({ title, icon, children, footer }: {
   );
 }
 
-function ApprovalsQueue({ leave, leaveError, scheduleCount, overtimeCount }: {
-  leave?: LeaveList;
-  leaveError: boolean;
-  scheduleCount: number | null;
-  overtimeCount: number | null;
-}) {
+const linkCls = 'text-sm font-medium text-purple-600 hover:text-purple-700';
+
+/** Leave requests are waiting and nobody can decide them. The administrator
+ * cannot either (approving is not administration); the fix is a role. Plain
+ * text on purpose: there is no leave screen in the admin dashboard. */
+function NobodyApprovesLeave({ stuck }: { stuck: AdminOverview['leave_without_approver'] }) {
+  return (
+    <div role="alert" className="rounded-xl border border-red-300 bg-red-50 p-4">
+      <div className="flex items-start gap-3">
+        <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0 text-red-600" aria-hidden="true" />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-red-900">
+            Nobody can approve leave — give someone the HR or Leave approver role.
+          </p>
+          <p className="mt-0.5 text-sm text-red-800">
+            Leave requests wait until someone with that role decides them. If that should be you, give yourself the
+            role on your own employee record and approve from your regular dashboard.
+          </p>
+          {stuck.length > 0 && (
+            <>
+              <p className="mt-3 text-sm font-medium text-red-900">
+                {stuck.length} {stuck.length === 1 ? 'request is' : 'requests are'} waiting:
+              </p>
+              <ul className="mt-1 space-y-0.5 text-sm text-red-800">
+                {stuck.map((r) => (
+                  <li key={r.id} className="flex flex-wrap items-baseline justify-between gap-x-3">
+                    <span className="min-w-0 truncate">{r.employee_name}</span>
+                    <span className="whitespace-nowrap">{dateRange(r.start_date, r.end_date)}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+          <Link
+            href="/employees"
+            className="mt-3 inline-flex min-h-[44px] items-center rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
+          >
+            Give someone the role
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Has someone been given each of the company's jobs? */
+function JobCoverage({ jobs }: { jobs: AdminOverviewJob[] }) {
+  const missing = jobs.filter((j) => j.holders === 0);
   return (
     <Card
-      title="Waiting for a decision"
-      icon={<Inbox className="h-5 w-5" />}
-      footer={
-        <Link href="/leaves" className="text-sm font-medium text-purple-600 hover:text-purple-700">
-          Open Leave &amp; Approvals
-        </Link>
-      }
+      title="Who does the work"
+      icon={<Users className="h-5 w-5" />}
+      footer={<Link href="/employees" className={linkCls}>Give roles on Employees</Link>}
     >
-      {leaveError && <p className="text-sm text-red-700">Could not load pending leave requests.</p>}
-      {leave && leave.total === 0 && <p className="text-sm text-gray-500">No leave requests are waiting.</p>}
-      {leave && leave.total > 0 && (
+      <p className="mb-3 text-sm text-gray-600">
+        Schedules, leave, reports and payroll are done by the people holding the role for each, from their own
+        dashboard. Administrators give the roles.
+      </p>
+      <ul className="space-y-2 text-sm">
+        {jobs.map((job) =>
+          job.holders === 0 ? (
+            <li key={job.key} className="flex items-start gap-2 text-gray-900">
+              <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-600" aria-hidden="true" />
+              <span className="min-w-0">
+                Nobody has been given a role to {JOB_VERB[job.key]} — give someone (or yourself) {rolesOf(job)}.
+              </span>
+            </li>
+          ) : (
+            <li key={job.key} className="flex items-start gap-2 text-gray-700">
+              <CheckCircle2 className="mt-0.5 h-4 w-4 flex-shrink-0 text-green-600" aria-hidden="true" />
+              <span className="min-w-0">
+                {job.label}: {job.holders} {job.holders === 1 ? 'person' : 'people'}
+                <span className="text-gray-500"> ({rolesOf(job)})</span>
+              </span>
+            </li>
+          ),
+        )}
+      </ul>
+      {missing.length === 0 && (
+        <p className="mt-3 text-xs text-gray-500">Every job has someone to do it.</p>
+      )}
+    </Card>
+  );
+}
+
+function SalaryRequests({ pending }: { pending: number }) {
+  return (
+    <Card
+      title="Salary access requests"
+      icon={<KeyRound className="h-5 w-5" />}
+      footer={<Link href="/salary-access" className={linkCls}>Open Salary access</Link>}
+    >
+      {pending === 0 ? (
+        <p className="text-sm text-gray-500">No requests are waiting for you.</p>
+      ) : (
+        <p className="text-sm text-gray-900">
+          {pending} {pending === 1 ? 'request is' : 'requests are'} waiting for your decision.
+        </p>
+      )}
+    </Card>
+  );
+}
+
+function UsersWithoutRoles({ users }: { users: AdminOverview['users_without_roles'] }) {
+  return (
+    <Card title="Accounts without a role" icon={<UserX className="h-5 w-5" />}>
+      {users.length === 0 ? (
+        <p className="flex items-center gap-2 text-sm text-gray-700">
+          <CheckCircle2 className="h-4 w-4 text-green-600" aria-hidden="true" />
+          Every active account has a role.
+        </p>
+      ) : (
         <>
-          <p className="mb-2 text-sm text-gray-700">
-            {leave.total} leave {leave.total === 1 ? 'request is' : 'requests are'} waiting.
+          <p className="mb-2 text-sm text-gray-600">
+            These accounts cannot do anything yet, not even see their own schedule. Open each one and give it a role.
           </p>
           <ul className="divide-y divide-gray-50 text-sm">
-            {leave.items.map((la) => (
-              <li key={la.id} className="flex items-baseline justify-between gap-3 py-1.5">
-                <span className="truncate font-medium text-gray-900">{la.employee_name}</span>
-                <span className="whitespace-nowrap text-gray-600">
-                  {format(parseISO(la.start_date), 'd MMM')}
-                  {la.end_date !== la.start_date ? ` – ${format(parseISO(la.end_date), 'd MMM')}` : ''}
-                </span>
+            {users.map((u) => (
+              <li key={u.id} className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-3 py-1.5">
+                <Link href={`/employees?open=${u.id}`} className="min-w-0 truncate font-medium text-purple-600 hover:text-purple-700">
+                  {u.name || u.email}
+                </Link>
+                <span className="min-w-0 truncate text-gray-500">{u.email}</span>
               </li>
             ))}
           </ul>
         </>
       )}
-      <ul className="mt-3 space-y-1 text-sm text-gray-700">
-        {scheduleCount !== null && scheduleCount > 0 && (
-          <li>
-            {scheduleCount} schedule change {scheduleCount === 1 ? 'request' : 'requests'} waiting for you
-          </li>
-        )}
-        {overtimeCount !== null && overtimeCount > 0 && (
-          <li>
-            {overtimeCount} overtime {overtimeCount === 1 ? 'entry' : 'entries'} to review on{' '}
-            <Link href="/attendance" className="font-medium text-purple-600 hover:text-purple-700">Attendance</Link>
-          </li>
-        )}
-      </ul>
     </Card>
   );
 }
@@ -201,7 +309,7 @@ function JobsStatus({ view, error }: { view?: BackgroundJobsView; error: boolean
       title="Background jobs"
       icon={<Server className="h-5 w-5" />}
       footer={
-        <Link href="/settings?tab=jobs" className="text-sm font-medium text-purple-600 hover:text-purple-700">
+        <Link href="/settings?tab=jobs" className={linkCls}>
           See all jobs
         </Link>
       }

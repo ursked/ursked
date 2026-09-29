@@ -19,14 +19,24 @@ approval-chain view, so they can never disagree):
      deputy when there is one.
   3. The list is cut to the policy's required approval levels.
   4. If nobody is left: the employee's line manager, else a full-scope user
-     with leave:edit (admin, then HR), else anyone else with leave:edit.
-  5. If there is still nobody (a company whose only admin files leave), the
-     single step is the requester's own, and it can only be completed through
-     the explicit, audit-logged self-approval action.
+     with leave:edit (HR), else anyone else with leave:edit. Only people who
+     can act from the regular dashboard: never an administrator as such
+     (administrators configure leave, they do not review it; 2026-09-29), and
+     never Finance, which is dormant there.
+  5. If there is still nobody and the requester is themselves the only person
+     with leave:edit (a sole HR person), the single step is the requester's
+     own, and it can only be completed through the explicit, audit-logged
+     self-approval action.
+  6. Otherwise NOBODY can approve: the chain is empty, the request stays
+     pending with no step, and the administrators are told to give someone
+     the HR or Leave approver role (nobody_can_approve). It is routed as soon
+     as someone can take it (ensure_steps, run by the reminder job and
+     whenever the request is opened). There is no administrator fallback.
 
-Every request therefore has at least one step. The legacy "no steps, any
-reviewer may approve" path is gone: it let any manager approve any request
-company-wide, and let the only admin approve their own leave unrecorded.
+The legacy "no steps, any reviewer may approve" path is gone: it let any
+manager approve any request company-wide, and let the only admin approve their
+own leave unrecorded. A request without steps now means only "waiting for the
+company to have an approver".
 """
 
 from datetime import date
@@ -181,7 +191,8 @@ class LeaveApprovalService:
         """Resolve the approval chain (see the module docstring).
 
         Returns [{"approver_id", "approver_name", "step_order", "source",
-        "is_deputy", "node_name"}], never empty.
+        "is_deputy", "node_name"}]; empty only when nobody at all can approve
+        (step 6 of the module docstring).
         """
         today = on_date or await company_today(db, tenant_id)
         excluded = {e for e in exclude_ids if e is not None}
@@ -216,6 +227,10 @@ class LeaveApprovalService:
                 db, tenant_id, employee_id, exclude=excluded
             )
         if not chain:
+            from app.services.leave_access import leave_editors
+
+            if not any(e[0] == employee_id for e in await leave_editors(db, tenant_id)):
+                return []
             me = (
                 await db.execute(
                     select(User.first_name, User.last_name).where(
@@ -395,7 +410,8 @@ class LeaveApprovalService:
         """Last-resort approver when the policy's chain is empty.
 
         1. The employee's line manager (users.reports_to_id), if active.
-        2. A full-scope user with leave:edit: an admin, then HR.
+        2. A full-scope user with leave:edit: HR (never an administrator as
+           such; see leave_access.leave_editors).
 
         Never includes the employee themselves. Returns at most one approver so
         a fallback approval is a single, unambiguous step.
@@ -699,11 +715,11 @@ class LeaveApprovalService:
 
     @staticmethod
     async def ensure_steps(db: AsyncSession, application: LeaveApplication) -> bool:
-        """Give a pending request filed before 2026-09 with no steps a chain.
-
-        Those requests relied on the removed "any reviewer may approve" path;
-        without steps nobody could act on them now. Returns True if steps were
-        created (the caller should reload the request)."""
+        """Give a pending request with no steps a chain, if anyone can now
+        approve it: one filed when nobody could (see the module docstring), or
+        one filed before 2026-09 that relied on the removed "any reviewer may
+        approve" path. Returns True if steps were created (the caller should
+        reload the request)."""
         if application.status != "pending" or application.approval_steps:
             return False
         employee = (
@@ -714,6 +730,8 @@ class LeaveApprovalService:
         chain = await LeaveApprovalService.resolve_chain_for_employee(
             db, application.tenant_id, employee
         )
+        if not chain:
+            return False
         await LeaveApprovalService.create_approval_steps(
             db, application.id, chain,
             tenant_id=application.tenant_id, employee_id=employee.id,

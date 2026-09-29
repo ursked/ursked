@@ -31,6 +31,8 @@ const PUBLIC_PATHS = [
   // Never redirected away when a session exists: signing in there is how an
   // employee session is replaced by an admin one.
   '/admin/login',
+  // The finance sign-in page: the same rule, for the finance dashboard.
+  '/finance/login',
   // The service worker's offline page, precached without a session.
   '/offline',
 ];

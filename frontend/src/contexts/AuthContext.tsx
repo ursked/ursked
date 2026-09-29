@@ -7,19 +7,21 @@ import { User, LoginCredentials } from '@/types';
 import { api } from '@/lib/api';
 import { clearApiCache, keepApiCacheFor } from '@/components/PWARegistrar';
 import { isPublicPath } from '@/lib/publicRoutes';
-import { ADMIN_LOGIN_PATH, Workspace, signInPathFor, workspaceOf } from '@/lib/workspace';
+import { Workspace, signInPathFor, workspaceOf } from '@/lib/workspace';
 
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   isAuthenticated: boolean;
   /** `portal` picks the door: 'employee' is the ordinary sign-in page,
-   * 'admin' the administrator sign-in page (admin mode). */
+   * 'admin' the administrator sign-in page, 'finance' the finance one. */
   login: (credentials: LoginCredentials, portal?: Workspace) => Promise<{ requires2FA: boolean }>;
   verify2FA: (code: string) => Promise<void>;
   logout: () => Promise<void>;
   /** End the admin session and continue in the employee dashboard. */
   exitAdmin: () => Promise<void>;
+  /** End the finance session and continue in the employee dashboard. */
+  exitFinance: () => Promise<void>;
   refreshUser: () => Promise<void>;
 }
 
@@ -101,19 +103,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // is the NORMAL state for a logged-out visitor — the initial /auth/me probe
   // 401s — so we must not bounce them off those pages.
   //
-  // An admin session goes back to the administrator sign-in, saying why: it
-  // ends on its own after 30 idle minutes or 8 hours.
+  // An admin or finance session goes back to its own sign-in page, saying
+  // why: both end on their own after 30 idle minutes or 8 hours. The server
+  // names the one that ended (X-Session-Ended); the door this tab came
+  // through answers when it does not.
   //
   // Either way the expired session's cached data goes with it.
   useEffect(() => {
-    api.setSessionExpiredHandler(() => {
-      const wasAdmin = workspaceRef.current === 'admin';
+    api.setSessionExpiredHandler((endedPortal) => {
+      const ended: Workspace =
+        endedPortal === 'admin' || endedPortal === 'finance' ? endedPortal : workspaceRef.current;
       workspaceRef.current = 'employee';
       queryClient.clear();
       void clearApiCache();
       setUser(null);
       if (!isPublicPath(window.location.pathname)) {
-        router.replace(wasAdmin ? `${ADMIN_LOGIN_PATH}?ended=1` : '/auth/login');
+        router.replace(ended === 'employee' ? signInPathFor('employee') : `${signInPathFor(ended)}?ended=1`);
       }
     });
     return () => api.setSessionExpiredHandler(null);
@@ -121,7 +126,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = async (credentials: LoginCredentials, portal: Workspace = 'employee') => {
     const response =
-      portal === 'admin' ? await api.adminLogin(credentials) : await api.login(credentials);
+      portal === 'admin'
+        ? await api.adminLogin(credentials)
+        : portal === 'finance'
+          ? await api.financeLogin(credentials)
+          : await api.login(credentials);
     if (response.requires_2fa) {
       return { requires2FA: true };
     }
@@ -144,6 +153,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     router.replace('/dashboard');
   };
 
+  const exitFinance = async () => {
+    const response = await api.exitFinanceSession();
+    await startFresh();
+    signedIn(response.user);
+    router.replace('/dashboard');
+  };
+
   const logout = async () => {
     const workspace = workspaceRef.current;
     await api.logout();
@@ -157,7 +173,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, isLoading, isAuthenticated, login, verify2FA, logout, exitAdmin, refreshUser }}
+      value={{ user, isLoading, isAuthenticated, login, verify2FA, logout, exitAdmin, exitFinance, refreshUser }}
     >
       {children}
     </AuthContext.Provider>

@@ -612,7 +612,7 @@ class SalaryEnrollmentService:
             base = await SalaryEnrollmentService._frontend_base(db)
             html = (
                 f"<p>{html_escape(body)}</p>"
-                f"<p><a href=\"{base}/finances?tab=salary-access\">Open Salary Access</a></p>"
+                f"<p><a href=\"{base}/salary-access\">Open Salary Access</a></p>"
             )
             emails = [r[0] for r in (await db.execute(
                 select(User.email).where(User.id.in_(recipients), User.email.isnot(None))
@@ -642,7 +642,7 @@ class SalaryEnrollmentService:
             from app.services.email_service import EmailService
 
             base = await SalaryEnrollmentService._frontend_base(db)
-            link = f"{base}/finances/salary-access/review?token={req.token}"
+            link = f"{base}/salary-access/review?token={req.token}"
             emails = [r[0] for r in (await db.execute(
                 select(User.email).where(User.id.in_(approver_ids), User.email.isnot(None))
             )).all()]

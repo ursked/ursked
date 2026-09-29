@@ -25,11 +25,14 @@ const EMPTY_FORM: HolidayFormData = {
   is_special: false,
 }
 
-// Holidays apply to the whole company, so the API lets only people who
-// schedule everyone change them (the schedules permission AND one of these
-// roles, FULL_SCOPE_ROLES["schedules"] in permission_service). The buttons
-// follow the same rule, so nobody is offered an action that will be refused.
-const FULL_SCOPE_SCHEDULE_ROLES = ['tenant_admin', 'hr', 'schedule_editor']
+// Holidays apply to the whole company. They are configuration: an
+// administrator changes them from the admin dashboard (the role is in force
+// only in an admin session, which has no schedules permission at all), and so
+// may people who schedule everyone, from the regular one (the schedules
+// permission AND one of these roles, FULL_SCOPE_ROLES["schedules"] in
+// permission_service). The buttons follow the same rule, so nobody is offered
+// an action that will be refused.
+const FULL_SCOPE_SCHEDULE_ROLES = ['hr', 'schedule_editor']
 
 function formatDate(dateStr: string): string {
   const d = new Date(dateStr + 'T00:00:00')
@@ -49,11 +52,12 @@ export default function HolidaysTab() {
   const { showToast } = useToast()
   const { user } = useAuth()
   const { hasPermission } = usePermissions()
+  const isAdmin = user ? hasAnyRole(user, ['tenant_admin']) : false
   const fullScope = user ? hasAnyRole(user, FULL_SCOPE_SCHEDULE_ROLES) : false
-  const canCreate = fullScope && hasPermission('schedules', 'create')
-  const canEdit = fullScope && hasPermission('schedules', 'edit')
-  const canDelete = fullScope && hasPermission('schedules', 'delete')
-  const canViewSource = hasPermission('schedules', 'view')
+  const canCreate = isAdmin || (fullScope && hasPermission('schedules', 'create'))
+  const canEdit = isAdmin || (fullScope && hasPermission('schedules', 'edit'))
+  const canDelete = isAdmin || (fullScope && hasPermission('schedules', 'delete'))
+  const canViewSource = isAdmin || hasPermission('schedules', 'view')
 
   const currentYear = new Date().getFullYear()
   const [selectedYear, setSelectedYear] = useState<number>(currentYear)

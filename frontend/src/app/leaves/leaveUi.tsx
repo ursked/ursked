@@ -192,3 +192,14 @@ export function ApproverCheckNote({ userId }: { userId: number | null | undefine
     </p>
   )
 }
+
+/** When nobody in the company can approve leave, the approval chain comes back
+ *  empty with `nobody_can_approve` and a message saying what to do. Shown in
+ *  place of the chain, wherever a chain would be. */
+export function NobodyCanApproveNote({ message }: { message?: string | null }) {
+  return (
+    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900" role="status">
+      {message || 'Nobody in your company can approve leave yet. An administrator has to give someone the HR or Leave approver role.'}
+    </div>
+  )
+}

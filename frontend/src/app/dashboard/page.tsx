@@ -13,15 +13,25 @@ import { api } from '@/lib/api';
 import { HomeDashboard, PersonalDashboard } from '@/types';
 import SetupChecklist from '@/components/SetupChecklist';
 import { titleFor } from '@/components/layout/RouteTitle';
-import { ADMIN_LOGIN_PATH, isAdminEligible, isAdminSession } from '@/lib/workspace';
+import {
+  ADMIN_LOGIN_PATH,
+  FINANCE_LOGIN_PATH,
+  hasOtherDashboard,
+  isAdminEligible,
+  isFinanceEligible,
+  workspaceOf,
+} from '@/lib/workspace';
 import AdminDashboard from './AdminDashboard';
+import FinanceDashboard from './FinanceDashboard';
 import { MetricsSection } from './MetricsSection';
 
-// Admin mode: one person, two dashboards. An admin session gets the admin
-// dashboard (company figures, setup, what is waiting, background jobs); every
-// other session gets the employee dashboard below, an administrator's
-// included. `?admin=` / `?own=` are set by DashboardLayout when it turned
-// someone away from a screen that lives in the other dashboard.
+// One person, up to three dashboards. An admin session gets the admin
+// dashboard (setup, accounts and roles, background jobs: administration
+// only), a finance session the finance dashboard (payroll), and every other
+// session the employee dashboard below, an administrator's or finance
+// person's included. `?admin=` / `?own=` / `?ops=` / `?finance=` are set by
+// DashboardLayout when it turned someone away from a screen that lives in
+// another dashboard.
 export default function DashboardPage() {
   return (
     <DashboardLayout>
@@ -35,8 +45,10 @@ export default function DashboardPage() {
 function DashboardSwitch() {
   const { user } = useAuth();
   const params = useSearchParams();
-  if (isAdminSession(user)) return <AdminDashboard ownPath={params.get('own')} />;
-  return <EmployeeDashboard adminPath={params.get('admin')} />;
+  const workspace = workspaceOf(user);
+  if (workspace === 'admin') return <AdminDashboard ownPath={params.get('own')} opsPath={params.get('ops')} />;
+  if (workspace === 'finance') return <FinanceDashboard ownPath={params.get('own')} adminPath={params.get('admin')} />;
+  return <EmployeeDashboard adminPath={params.get('admin')} financePath={params.get('finance')} />;
 }
 
 /** Shown in an employee session when an administrator opened an admin screen. */
@@ -44,7 +56,7 @@ function AdminScreenNotice({ path }: { path: string }) {
   const screen = titleFor(path) ?? 'That screen';
   return (
     <div role="status" className="rounded-xl border border-amber-300 bg-amber-50 p-4 sm:flex sm:items-center sm:justify-between sm:gap-4">
-      <div>
+      <div className="min-w-0">
         <p className="text-sm font-medium text-amber-900">{screen} is part of the admin dashboard.</p>
         <p className="mt-0.5 text-sm text-amber-800">
           You are signed in to your employee dashboard, where your administrator role is switched off.
@@ -60,11 +72,40 @@ function AdminScreenNotice({ path }: { path: string }) {
   );
 }
 
+/** Shown in an employee session when someone opened a finance screen. Only
+ * the finance role opens Finances, and only from the finance sign-in. */
+function FinanceScreenNotice({ path, eligible }: { path: string; eligible: boolean }) {
+  const screen = titleFor(path) ?? 'That screen';
+  if (!eligible) {
+    return (
+      <div role="status" className="rounded-xl border border-gray-200 bg-white p-4">
+        <p className="text-sm font-medium text-gray-900">Finances are managed by the finance team.</p>
+      </div>
+    );
+  }
+  return (
+    <div role="status" className="rounded-xl border border-emerald-300 bg-emerald-50 p-4 sm:flex sm:items-center sm:justify-between sm:gap-4">
+      <div className="min-w-0">
+        <p className="text-sm font-medium text-emerald-900">{screen} is part of the finance dashboard.</p>
+        <p className="mt-0.5 text-sm text-emerald-800">
+          You are signed in to your employee dashboard, where your finance role is switched off.
+        </p>
+      </div>
+      <Link
+        href={FINANCE_LOGIN_PATH}
+        className="mt-3 inline-flex min-h-[44px] flex-shrink-0 items-center justify-center rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800 sm:mt-0"
+      >
+        Finance sign-in
+      </Link>
+    </div>
+  );
+}
+
 // The dashboard used to ask for company metrics only, which three roles could
 // read; everyone else got a 403 on load and on every 60-second refresh and saw
 // a page of dashes. The endpoint now answers everyone: a personal block for all,
 // plus metrics (company-wide or team-scoped) for reports:view holders.
-function EmployeeDashboard({ adminPath }: { adminPath: string | null }) {
+function EmployeeDashboard({ adminPath, financePath }: { adminPath: string | null; financePath: string | null }) {
   const { user } = useAuth();
 
   const { data, isLoading, isError, refetch } = useQuery<HomeDashboard>({
@@ -82,15 +123,17 @@ function EmployeeDashboard({ adminPath }: { adminPath: string | null }) {
   return (
       <div className="space-y-6">
         <div>
-          {/* "My" only where there is an admin dashboard to tell it from. */}
-          <h1 className="text-2xl font-bold text-gray-900">{isAdminEligible(user) ? 'My Dashboard' : 'Dashboard'}</h1>
+          {/* "My" only where there is an admin or finance dashboard to tell it from. */}
+          <h1 className="text-2xl font-bold text-gray-900">{hasOtherDashboard(user) ? 'My Dashboard' : 'Dashboard'}</h1>
           <p className="text-gray-500 mt-1">Welcome back, {user?.first_name}!</p>
         </div>
 
         {adminPath && isAdminEligible(user) && <AdminScreenNotice path={adminPath} />}
+        {financePath && <FinanceScreenNotice path={financePath} eligible={isFinanceEligible(user)} />}
 
-        {/* Onboarding checklist (admins only; self-hides when complete/dismissed) */}
-        {user && hasAnyRole(user, ['tenant_admin', 'hr']) && <SetupChecklist />}
+        {/* Onboarding checklist (HR here; administrators see it on the admin
+            dashboard; self-hides when complete/dismissed) */}
+        {user && hasAnyRole(user, ['hr']) && <SetupChecklist />}
 
         {isError && !data && (
           <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-center" role="alert">

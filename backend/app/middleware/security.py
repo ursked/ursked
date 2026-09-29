@@ -19,7 +19,7 @@ CSP_EXEMPT_PATHS = {"/docs", "/redoc", "/openapi.json"}
 # again. The residual risk is "login CSRF" (forcing a victim into the
 # attacker's session), which SameSite=Lax already blocks by withholding cookies
 # from cross-site POSTs.
-CSRF_EXEMPT_PATHS = {"/api/v1/auth/login", "/api/v1/auth/admin/login"}
+CSRF_EXEMPT_PATHS = {"/api/v1/auth/login", "/api/v1/auth/admin/login", "/api/v1/auth/finance/login"}
 
 
 def generate_csrf_token() -> str:

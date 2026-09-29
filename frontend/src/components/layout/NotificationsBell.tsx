@@ -99,7 +99,7 @@ export function NotificationsBell() {
                   onApprove={() => n.action_ref_id && approveMut.mutate(n.action_ref_id)}
                   onDecline={() => n.action_ref_id && declineMut.mutate(n.action_ref_id)}
                   onRead={() => readMut.mutate(n.id)}
-                  onOpen={() => { setOpen(false); router.push('/finances?tab=salary-access') }}
+                  onOpen={() => { setOpen(false); router.push('/salary-access') }}
                   busy={approveMut.isPending || declineMut.isPending}
                 />
               ))

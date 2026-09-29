@@ -1,37 +1,49 @@
 """Which door a session came through, and what that lets it do.
 
-The owner's decision (2026-09): "I am admin and also an employee. If I want to
+The owner's decisions (2026-09): "I am admin and also an employee. If I want to
 manage the system, I log in to a separate dashboard. If I want to act as an
-employee, I access the employee dashboard." Keeping the two apart means an
-administrator doing their everyday things (checking a shift, filing leave)
-is not carrying the power to change the whole company while they do it, and a
-session left open on a phone is an employee session, not an admin one.
+employee, I access the employee dashboard." And a day later: "A manager for
+graphics is not an administrator of the app ... Finance employees manage
+finances on a separate dashboard too." Keeping the doors apart means someone
+doing their everyday things (checking a shift, approving their team's leave)
+is not carrying the power to change the whole company or its payroll while
+they do it, and a session left open on a phone is an employee session.
 
 So every sign-in session belongs to one PORTAL, recorded on its user_sessions
 row and carried in both tokens:
 
   employee  The ordinary sign-in page (/auth/login). Always this, for everyone.
-            The tenant_admin role is DORMANT: every check in the request
-            answers as if the user did not hold it. HR, Finance, managers and
-            the rest keep their roles; only tenant_admin is split out, because
-            it is the one role that can change everything including who holds
-            which role.
+            tenant_admin and finance are DORMANT: every check in the request
+            answers as if the user did not hold them. Everything else (HR,
+            managers, schedule editors, leave approvers, reports & data) is
+            in force: the day-to-day work of the company is done here.
   admin     The administrator sign-in page (/admin/login), for tenant_admin
-            holders only. Lapses after ADMIN_IDLE without activity and after
-            ADMIN_MAX whatever happens. Never reached by refreshing an employee
-            session: the portal comes from the row, which only the admin
-            sign-in writes.
+            holders only. tenant_admin is in force and every other role but
+            the base employee role is dormant, so an admin session
+            administers the system (permission_service: accounts, org chart,
+            settings, policies, leave configuration, salary-access approvals,
+            audit log) and does nothing operational, whoever holds it.
+  finance   The finance sign-in page (/finance/login), for finance holders
+            only. finance is in force, every other role but employee dormant;
+            the finances module works only here.
+
+The admin and finance sessions are PRIVILEGED: they lapse after
+PRIVILEGED_IDLE without activity and after PRIVILEGED_MAX whatever happens,
+every sign-in, refusal and ending is audited, and neither is ever reached by
+refreshing an employee session: the portal comes from the row, which only
+that door's sign-in writes. One door never grants the other's role; a person
+who holds both signs in at each separately.
 
 The choke point is apply_portal(): get_current_user calls it on the request's
 user before any endpoint sees it, and User.role_codes / has_role / role_ids all
 read the dormant set it leaves. Nothing re-derives roles from user_roles, so
-require_role, require_permission (including its tenant_admin bypass),
-access_scope, employee_access, leave_access and every inline has_role check get
-the same answer without being edited. Stored roles are never touched.
+require_role, require_permission, access_scope, employee_access, leave_access
+and every inline has_role check get the same answer without being edited.
+Stored roles are never touched.
 
-A token that merely CLAIMS the admin portal proves nothing on its own: an
-ended admin session's access token stays signed and unexpired for up to 15
-minutes. The claim only says "look the row up"; the row decides.
+A token that merely CLAIMS a privileged portal proves nothing on its own: an
+ended session's access token stays signed and unexpired for up to 15 minutes.
+The claim only says "look the row up"; the row decides.
 """
 
 from __future__ import annotations
@@ -46,13 +58,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 EMPLOYEE = "employee"
 ADMIN = "admin"
-PORTALS = (EMPLOYEE, ADMIN)
+FINANCE = "finance"
+PORTALS = (EMPLOYEE, ADMIN, FINANCE)
+PRIVILEGED = (ADMIN, FINANCE)
 
-# The one role split out of the everyday session.
 ADMIN_ROLE = "tenant_admin"
+FINANCE_ROLE = "finance"
+BASE_ROLE = "employee"
 
-ADMIN_IDLE = timedelta(minutes=30)
-ADMIN_MAX = timedelta(hours=8)
+# The role each privileged door is for. It is dormant everywhere else.
+PORTAL_ROLE = {ADMIN: ADMIN_ROLE, FINANCE: FINANCE_ROLE}
+DOOR_ROLES = frozenset(PORTAL_ROLE.values())
+
+PRIVILEGED_IDLE = timedelta(minutes=30)
+PRIVILEGED_MAX = timedelta(hours=8)
+# The names the admin door shipped with (5.19); the finance door has the same.
+ADMIN_IDLE = PRIVILEGED_IDLE
+ADMIN_MAX = PRIVILEGED_MAX
 # Writing last_activity_at on every request of a busy screen would be one
 # UPDATE per API call for no gain; a minute's resolution is plenty for a
 # 30-minute limit.
@@ -60,12 +82,20 @@ SLIDE_EVERY = timedelta(seconds=60)
 
 # Sent by the web client on requests it makes while the person is not using
 # the app (background polling after a minute without input). Those must not
-# keep an unattended admin session alive, or a dashboard left open on a desk
-# would never time out. A client that lies only keeps its own session alive.
+# keep an unattended privileged session alive, or a dashboard left open on a
+# desk would never time out. A client that lies only keeps its own session
+# alive.
 IDLE_HEADER = "x-user-idle"
 
 ADMIN_ENDED_DETAIL = "Your admin session ended. Sign in again to continue."
+FINANCE_ENDED_DETAIL = "Your finance session ended. Sign in again to continue."
+ENDED_DETAIL = {ADMIN: ADMIN_ENDED_DETAIL, FINANCE: FINANCE_ENDED_DETAIL}
 ENDED_HEADER = "X-Session-Ended"
+
+NOT_ELIGIBLE_DETAIL = {
+    ADMIN: "This account is not an administrator.",
+    FINANCE: "This account does not have the Finance role.",
+}
 
 
 def utcnow() -> datetime:
@@ -79,9 +109,22 @@ def _aware(dt: Optional[datetime]) -> Optional[datetime]:
     return dt
 
 
+def is_eligible(user, portal: str) -> bool:
+    """May use this door: holds its role, dormant or not. Everyone may use
+    the employee door."""
+    if portal == EMPLOYEE:
+        return True
+    return user.holds_role(PORTAL_ROLE[portal])
+
+
 def is_admin_eligible(user) -> bool:
     """Holds tenant_admin, dormant or not: may use the administrator sign-in."""
-    return user.holds_role(ADMIN_ROLE)
+    return is_eligible(user, ADMIN)
+
+
+def is_finance_eligible(user) -> bool:
+    """Holds finance, dormant or not: may use the finance sign-in."""
+    return is_eligible(user, FINANCE)
 
 
 def has_employee_workspace(user) -> bool:
@@ -90,29 +133,41 @@ def has_employee_workspace(user) -> bool:
     return bool(set(user.stored_role_codes) - {ADMIN_ROLE})
 
 
+def roles_in_force(stored, portal: str) -> set:
+    """Of the stored role codes, the ones a session in `portal` may use."""
+    stored = set(stored)
+    if portal in PRIVILEGED:
+        return stored & {PORTAL_ROLE[portal], BASE_ROLE}
+    return stored - DOOR_ROLES
+
+
 def apply_portal(user, portal: str) -> None:
     """Set the roles in force for this request. THE choke point; see above."""
-    if portal == ADMIN:
-        user._dormant_role_codes = frozenset()
-        user.in_admin_portal = True
-    else:
-        user._dormant_role_codes = frozenset({ADMIN_ROLE})
-        user.in_admin_portal = False
+    if portal not in PORTALS:
+        portal = EMPLOYEE
+    stored = set(user.stored_role_codes)
+    user._dormant_role_codes = frozenset(stored - roles_in_force(stored, portal)) | (
+        frozenset() if portal in PRIVILEGED else DOOR_ROLES
+    )
+    user.portal = portal
+    user.in_admin_portal = portal == ADMIN
 
 
 def idle_expires_at(row) -> Optional[datetime]:
-    if row is None or row.portal != ADMIN:
+    if row is None or row.portal not in PRIVILEGED:
         return None
     last = _aware(row.last_activity_at) or _aware(row.login_at)
-    return min(last + ADMIN_IDLE, _aware(row.admin_expires_at))
+    return min(last + PRIVILEGED_IDLE, _aware(row.admin_expires_at))
 
 
-def admin_session_problem(row, user, now: Optional[datetime] = None) -> Optional[str]:
-    """Why this row no longer grants admin, or None while it does."""
+def session_problem(row, user, now: Optional[datetime] = None, portal: Optional[str] = None) -> Optional[str]:
+    """Why this row no longer grants its privileged portal, or None while it
+    does. `portal` is the one the token claims (the row's when omitted)."""
     now = now or utcnow()
     if row is None:
         return "missing"
-    if row.user_id != user.id or row.portal != ADMIN:
+    portal = portal or row.portal
+    if row.user_id != user.id or row.portal != portal or portal not in PRIVILEGED:
         return "mismatch"
     if row.revoked_at is not None:
         return "revoked"
@@ -120,11 +175,16 @@ def admin_session_problem(row, user, now: Optional[datetime] = None) -> Optional
         return "max_age"
     if now >= idle_expires_at(row):
         return "idle"
-    if not is_admin_eligible(user):
+    if not is_eligible(user, portal):
         # Role removals also invalidate every token (tokens_valid_from); this
         # is the belt to that pair of braces.
-        return "not_admin"
+        return "not_admin" if portal == ADMIN else "not_finance"
     return None
+
+
+def admin_session_problem(row, user, now: Optional[datetime] = None) -> Optional[str]:
+    """session_problem for a row claimed as an admin session."""
+    return session_problem(row, user, now, ADMIN)
 
 
 async def session_by_key(db: AsyncSession, sid: Optional[str]):
@@ -140,7 +200,8 @@ async def session_by_key(db: AsyncSession, sid: Optional[str]):
 def _claims(user, sid: str, portal: str) -> dict:
     # `roles` is informational (nothing authorizes from it); it lists the
     # roles in force for the portal so a decoded token does not overstate.
-    roles = [c for c in user.stored_role_codes if portal == ADMIN or c != ADMIN_ROLE]
+    in_force = roles_in_force(user.stored_role_codes, portal)
+    roles = [c for c in user.stored_role_codes if c in in_force]
     return {
         "sub": str(user.id),
         "tenant_id": str(user.tenant_id),
@@ -171,8 +232,8 @@ def _mint(user, sid: str, portal: str) -> Tuple[str, str, dict, dict]:
 
 def _session_end(portal: str, now: datetime, refresh_payload: dict) -> datetime:
     end = datetime.fromtimestamp(refresh_payload["exp"], tz=timezone.utc)
-    if portal == ADMIN:
-        end = min(end, now + ADMIN_MAX)
+    if portal in PRIVILEGED:
+        end = min(end, now + PRIVILEGED_MAX)
     return end
 
 
@@ -187,17 +248,18 @@ async def open_session(
     """Start a sign-in session in `portal`. Returns (access, refresh, row).
 
     The caller has already authenticated the person (password, and the second
-    factor when they have one) and, for the admin portal, checked eligibility;
-    this re-checks eligibility because an admin session for a non-admin must be
+    factor when they have one) and, for a privileged portal, checked
+    eligibility; this re-checks eligibility because an admin session for a
+    non-admin (or a finance session for someone without finance) must be
     impossible whatever the caller forgot."""
     from app.models.user import UserSession
 
     if portal not in PORTALS:
         raise ValueError(f"unknown portal {portal!r}")
-    if portal == ADMIN and not is_admin_eligible(user):
+    if portal in PRIVILEGED and not is_eligible(user, portal):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="This account is not an administrator.",
+            detail=NOT_ELIGIBLE_DETAIL[portal],
         )
     now = utcnow()
     sid = uuid.uuid4().hex
@@ -213,7 +275,7 @@ async def open_session(
         login_at=now,
         last_activity_at=now,
         expires_at=_session_end(portal, now, refresh_payload),
-        admin_expires_at=(now + ADMIN_MAX) if portal == ADMIN else None,
+        admin_expires_at=(now + PRIVILEGED_MAX) if portal in PRIVILEGED else None,
     )
     db.add(row)
     await db.flush()
@@ -227,7 +289,7 @@ async def rotate_session(db: AsyncSession, user, row) -> Tuple[str, str]:
     access, refresh, access_payload, refresh_payload = _mint(user, row.session_key, row.portal)
     row.jti = access_payload["jti"]
     new_end = _session_end(row.portal, now, refresh_payload)
-    if row.portal == ADMIN and row.admin_expires_at is not None:
+    if row.portal in PRIVILEGED and row.admin_expires_at is not None:
         new_end = min(new_end, _aware(row.admin_expires_at))
     row.expires_at = new_end
     await db.flush()
@@ -236,7 +298,7 @@ async def rotate_session(db: AsyncSession, user, row) -> Tuple[str, str]:
 
 async def end_session(db: AsyncSession, row, *, reason: str, actor=None, ip: Optional[str] = None) -> None:
     """Revoke a session row and deny-list its current access token. Audits the
-    end of admin sessions, which is what a reviewer wants to find."""
+    end of privileged sessions, which is what a reviewer wants to find."""
     from app.models.site_settings import AuditLog
     from app.services.token_store import TokenDenylist
 
@@ -246,12 +308,12 @@ async def end_session(db: AsyncSession, row, *, reason: str, actor=None, ip: Opt
         row.revoked_at = utcnow()
         exp = int(_aware(row.expires_at).timestamp()) if row.expires_at else None
         await TokenDenylist.revoke(row.jti, exp)
-        if row.portal == ADMIN:
+        if row.portal in PRIVILEGED:
             db.add(AuditLog(
                 tenant_id=row.tenant_id,
                 user_id=row.user_id,
                 user_email=getattr(actor, "email", None),
-                action="admin_session_ended",
+                action=f"{row.portal}_session_ended",
                 resource_type="user_session",
                 resource_id=str(row.id),
                 ip_address=ip,
@@ -286,39 +348,35 @@ async def resolve_request(db: AsyncSession, user, payload: dict, request: Reques
 
     Called by get_current_user on every request. An employee claim (or no
     claim: tokens minted before admin mode, API clients) needs no lookup,
-    because the employee portal is the least a session can be. An admin claim
-    is honoured only while its row is live; otherwise the admin session is
+    because the employee portal is the least a session can be. A privileged
+    claim is honoured only while its row is live; otherwise that session is
     over and the request is refused, so the client can send the person back to
-    the administrator sign-in instead of silently carrying on with less.
+    that door's sign-in instead of silently carrying on with less.
     """
     request.state.portal_session = None
-    if payload.get("portal") != ADMIN or not is_admin_eligible(user):
-        if payload.get("portal") == ADMIN:
-            # Claims admin but no longer holds the role: end it like any other
-            # lapsed admin session.
-            row = await session_by_key(db, payload.get("sid"))
-            await _refuse_ended(db, row, user, "not_admin", request)
+    claimed = payload.get("portal")
+    if claimed not in PRIVILEGED:
         apply_portal(user, EMPLOYEE)
         request.state.portal = EMPLOYEE
         return EMPLOYEE
 
     row = await session_by_key(db, payload.get("sid"))
     now = utcnow()
-    problem = admin_session_problem(row, user, now)
+    problem = session_problem(row, user, now, claimed)
     if problem:
-        await _refuse_ended(db, row, user, problem, request)
+        await _refuse_ended(db, row, user, problem, request, claimed)
 
     if request.headers.get(IDLE_HEADER) != "1":
         last = _aware(row.last_activity_at)
         if last is None or now - last >= SLIDE_EVERY:
             row.last_activity_at = now
-    apply_portal(user, ADMIN)
-    request.state.portal = ADMIN
+    apply_portal(user, claimed)
+    request.state.portal = claimed
     request.state.portal_session = row
-    return ADMIN
+    return claimed
 
 
-async def _refuse_ended(db: AsyncSession, row, user, reason: str, request: Request):
+async def _refuse_ended(db: AsyncSession, row, user, reason: str, request: Request, portal: str = ADMIN):
     if row is not None and row.user_id == user.id and row.revoked_at is None:
         await end_session(db, row, reason=reason, actor=user, ip=_ip(request))
         # Commit before refusing: the 401 rolls the request back, which would
@@ -326,8 +384,8 @@ async def _refuse_ended(db: AsyncSession, row, user, reason: str, request: Reque
         await db.commit()
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail=ADMIN_ENDED_DETAIL,
-        headers={ENDED_HEADER: "admin", "WWW-Authenticate": "Bearer"},
+        detail=ENDED_DETAIL.get(portal, ADMIN_ENDED_DETAIL),
+        headers={ENDED_HEADER: portal, "WWW-Authenticate": "Bearer"},
     )
 
 
@@ -347,15 +405,16 @@ def describe(user, request: Request) -> dict:
     out = {
         "portal": portal,
         "admin_eligible": is_admin_eligible(user),
+        "finance_eligible": is_finance_eligible(user),
         "has_employee_workspace": has_employee_workspace(user),
         "expires_at": None,
         "admin_expires_at": None,
         "idle_timeout_seconds": None,
     }
-    if portal == ADMIN and row is not None:
+    if portal in PRIVILEGED and row is not None:
         out["expires_at"] = idle_expires_at(row)
         out["admin_expires_at"] = _aware(row.admin_expires_at)
-        out["idle_timeout_seconds"] = int(ADMIN_IDLE.total_seconds())
+        out["idle_timeout_seconds"] = int(PRIVILEGED_IDLE.total_seconds())
     return out
 
 
@@ -366,7 +425,11 @@ __all__ = [
     "ADMIN_MAX",
     "ADMIN_ROLE",
     "EMPLOYEE",
+    "FINANCE",
+    "FINANCE_ENDED_DETAIL",
+    "FINANCE_ROLE",
     "IDLE_HEADER",
+    "PRIVILEGED",
     "admin_session_problem",
     "apply_portal",
     "describe",
@@ -374,8 +437,12 @@ __all__ = [
     "end_session",
     "has_employee_workspace",
     "is_admin_eligible",
+    "is_eligible",
+    "is_finance_eligible",
     "open_session",
     "resolve_request",
+    "roles_in_force",
     "rotate_session",
     "session_by_key",
+    "session_problem",
 ]

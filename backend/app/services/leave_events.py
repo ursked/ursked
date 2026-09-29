@@ -130,7 +130,14 @@ async def release_separated_approver(db, tenant_id, actor, user, **_):
     if units:
         parts.append("they were removed as " + ", ".join(units) + "; choose a replacement on the Organization page")
     body = f"{who} has left the company. " + "; ".join(parts) + "."
-    for uid, *_rest in await leave_editors(db, tenant_id, full_scope_only=True, exclude={user.id}):
+    # Told to HR (who review leave) and to the administrators, who fix what
+    # this names: approver rules and unit heads are configuration, and since
+    # 2026-09-29 administrators no longer count as leave editors.
+    from app.services.employee_access import active_admin_ids
+
+    recipients = {r[0] for r in await leave_editors(db, tenant_id, full_scope_only=True, exclude={user.id})}
+    recipients |= await active_admin_ids(db, tenant_id) - {user.id}
+    for uid in sorted(recipients):
         await NotificationService.notify(
             db, tenant_id, uid, type="approver_separated",
             title=f"{who} no longer approves leave",
