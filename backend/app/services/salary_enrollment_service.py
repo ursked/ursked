@@ -15,6 +15,16 @@ Separation-of-duties gate on salary visibility.
   approves them (owner's decision, 2026-09; migration 066 applied it to
   existing installs).
 - Grants are permanent until revoked. The last active approver cannot be revoked.
+- Nobody else can approve (owner's decision, 2026-10-05): on a fresh install, or
+  in a company whose only approver is its administrator, every rule above
+  leaves the request waiting forever, so an honest sole owner could never see
+  their own payroll. Then, and only then, an approver may approve their OWN
+  request, with a written reason. "Nobody else" means no other active approver
+  who could approve it under the rules above (approvers they appointed do not
+  count). The grant is recorded as self-approved (granted_by = the person),
+  announced like any grant, flagged on the Salary Access page, and every
+  approver appointed later is told about it and can revoke it. Leave works
+  the same way when nobody else can approve.
 
 Every grant, decline and revoke is audit-logged and announced (in-app and by
 email) to every other active approver and every tenant administrator, as well
@@ -48,11 +58,13 @@ logger = logging.getLogger(__name__)
 
 TOKEN_EXPIRY_DAYS = 7
 VALID_KINDS = ("viewer", "approver")
+SELF_APPROVAL_MIN_REASON = 10
 
 # Plain-English verbs for the grant history on the Salary Access tab.
 _HISTORY_LABELS = {
     "salary_enrollment.request_created": "asked for",
     "salary_enrollment.request_approved": "approved",
+    "salary_enrollment.self_approved": "approved their own, as nobody else could,",
     "salary_enrollment.request_declined": "declined",
     "salary_enrollment.revoked": "revoked",
     "salary_enrollment.seeded": "granted at setup",
@@ -93,6 +105,30 @@ class SalaryEnrollmentService:
         )
         return [r[0] for r in (await db.execute(stmt)).all()]
 
+    @staticmethod
+    async def other_possible_approvers(db: AsyncSession, tenant_id: UUID, subject_id: int) -> List[int]:
+        """Active approvers, on active accounts, who could approve a request
+        from `subject_id`: not the subject, and not appointed by the subject."""
+        rows = (await db.execute(
+            select(SalaryEnrollment.user_id, SalaryEnrollment.granted_by)
+            .join(User, User.id == SalaryEnrollment.user_id)
+            .where(
+                SalaryEnrollment.tenant_id == tenant_id,
+                SalaryEnrollment.kind == "approver",
+                SalaryEnrollment.status == "active",
+                User.is_active.is_(True),
+            )
+        )).all()
+        return [uid for uid, by in rows if uid != subject_id and by != subject_id]
+
+    @staticmethod
+    async def can_self_approve(db: AsyncSession, tenant_id: UUID, subject_id: int) -> bool:
+        """True when `subject_id` is an approver and nobody else could approve
+        their request (see the module docstring)."""
+        if not await SalaryEnrollmentService.is_approver(db, tenant_id, subject_id):
+            return False
+        return not await SalaryEnrollmentService.other_possible_approvers(db, tenant_id, subject_id)
+
     # ── Listings (for the admin page) ─────────────────────────────────
     @staticmethod
     async def list_enrollments(db: AsyncSession, tenant_id: UUID) -> List[Dict[str, Any]]:
@@ -121,6 +157,8 @@ class SalaryEnrollmentService:
                 # None = granted at setup, not by a person.
                 "granted_by_name": names.get(enr.granted_by) if enr.granted_by else None,
                 "granted_at": enr.granted_at,
+                # Approved by the person themselves, when nobody else could.
+                "self_approved": enr.granted_by is not None and enr.granted_by == enr.user_id,
             })
         return out
 
@@ -213,10 +251,14 @@ class SalaryEnrollmentService:
             SalaryEnrollmentRequest.status == "pending",
         )
         pending = list((await db.execute(pending_stmt)).scalars().all())
+        viewer = await SalaryEnrollmentService.is_viewer(db, tenant_id, user_id)
         return {
-            "is_viewer": await SalaryEnrollmentService.is_viewer(db, tenant_id, user_id),
+            "is_viewer": viewer,
             "is_approver": await SalaryEnrollmentService.is_approver(db, tenant_id, user_id),
             "pending_kinds": [p.kind for p in pending],
+            # Nobody else could approve this person's request: the screen
+            # offers "approve my own access" with a reason instead of a wait.
+            "can_self_approve": not viewer and await SalaryEnrollmentService.can_self_approve(db, tenant_id, user_id),
             # Ids too, so the requester can withdraw their own request.
             "pending_requests": [{"id": p.id, "kind": p.kind} for p in pending],
         }
@@ -286,10 +328,17 @@ class SalaryEnrollmentService:
             raise SalaryEnrollmentError(f"Request is already {req.status}.")
         if not await SalaryEnrollmentService.is_approver(db, tenant_id, approver_id):
             raise SalaryEnrollmentError("Only an active approver can decide this request.")
+        self_approval = approve and approver_id == req.user_id
         if approve:
             block = await SalaryEnrollmentService.approval_block(db, tenant_id, req.user_id, approver_id)
             if block:
                 raise SalaryEnrollmentError(block)
+            if self_approval and len((note or "").strip()) < SELF_APPROVAL_MIN_REASON:
+                raise SalaryEnrollmentError(
+                    "Nobody else can approve this, so you may approve it yourself, but write why "
+                    f"(at least {SELF_APPROVAL_MIN_REASON} characters). The reason is recorded and "
+                    "shown to every approver and administrator."
+                )
         elif approver_id == req.user_id:
             # Declining your own request is withdrawing it; keep one path for that.
             raise SalaryEnrollmentError("You cannot decide your own request. Withdraw it instead.")
@@ -303,7 +352,7 @@ class SalaryEnrollmentService:
         if approve:
             req.status = "approved"
             await SalaryEnrollmentService._grant(db, tenant_id, req.user_id, req.kind, approver_id)
-            action = "salary_enrollment.request_approved"
+            action = "salary_enrollment.self_approved" if self_approval else "salary_enrollment.request_approved"
             title = "Salary access approved"
             body = f"Your request for {req.kind} access was approved."
         else:
@@ -318,8 +367,21 @@ class SalaryEnrollmentService:
         await SalaryEnrollmentService._audit(
             db, tenant_id, actor_id=approver_id, subject_id=req.user_id,
             action=action, req_id=req.id, kind=req.kind,
+            extra={"reason": note.strip()} if self_approval else None,
         )
         await NotificationService.mark_actioned(db, tenant_id, "approve_salary_request", req.id)
+        if self_approval:
+            await SalaryEnrollmentService._announce(
+                db, tenant_id, actor_id=approver_id, subject_id=req.user_id,
+                title="Salary access self-approved",
+                what=(
+                    f"approved their own {req.kind} access to salary figures, because nobody else "
+                    f"could approve it. Their reason: \"{note.strip()}\""
+                ),
+            )
+            return req
+        if approve and req.kind == "approver":
+            await SalaryEnrollmentService._tell_new_approver(db, tenant_id, req.user_id)
         await NotificationService.notify(
             db, tenant_id, req.user_id, "salary_enrollment_decided", title, body,
         )
@@ -344,6 +406,8 @@ class SalaryEnrollmentService:
         could make a puppet account an approver and have it approve the admin,
         which is granting yourself access with one extra click."""
         if approver_id == subject_id:
+            if await SalaryEnrollmentService.can_self_approve(db, tenant_id, subject_id):
+                return None
             return "You cannot approve your own request; another approver must decide."
         own = (await db.execute(
             select(SalaryEnrollment).where(
@@ -526,7 +590,7 @@ class SalaryEnrollmentService:
     @staticmethod
     async def _audit(
         db: AsyncSession, tenant_id: UUID, *, actor_id: Optional[int], subject_id: Optional[int],
-        action: str, req_id: int, kind: str,
+        action: str, req_id: int, kind: str, extra: Optional[Dict[str, Any]] = None,
     ) -> None:
         from app.models.site_settings import AuditLog
 
@@ -536,9 +600,33 @@ class SalaryEnrollmentService:
             action=action,
             resource_type="salary_enrollment",
             resource_id=str(req_id),
-            details={"kind": kind, "subject_id": subject_id},
+            details={"kind": kind, "subject_id": subject_id, **(extra or {})},
         ))
         await db.flush()
+
+    @staticmethod
+    async def _tell_new_approver(db: AsyncSession, tenant_id: UUID, approver_id: int) -> None:
+        """A new approver is told about every self-approved grant still
+        standing, so access nobody else agreed to gets a second look."""
+        rows = (await db.execute(
+            select(SalaryEnrollment, User)
+            .join(User, User.id == SalaryEnrollment.user_id)
+            .where(
+                SalaryEnrollment.tenant_id == tenant_id,
+                SalaryEnrollment.status == "active",
+                SalaryEnrollment.granted_by == SalaryEnrollment.user_id,
+                SalaryEnrollment.user_id != approver_id,
+            )
+        )).all()
+        for enr, user in rows:
+            when = enr.granted_at.strftime("%d %b %Y") if enr.granted_at else "earlier"
+            await NotificationService.notify(
+                db, tenant_id, approver_id, "salary_enrollment_changed",
+                "Self-approved salary access to review",
+                f"{user.full_name} approved their own {enr.kind} access to salary figures on {when}, "
+                "when nobody else could approve it. As an approver you can review it under "
+                "Salary Access and revoke it if it should not stand.",
+            )
 
     @staticmethod
     async def _notify_approvers(

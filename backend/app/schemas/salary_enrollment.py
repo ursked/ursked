@@ -14,6 +14,8 @@ class EnrollmentRow(BaseModel):
     # None when granted_by is None: granted at setup, not by a person.
     granted_by_name: Optional[str] = None
     granted_at: Optional[datetime] = None
+    # The person approved it themselves, when nobody else could.
+    self_approved: bool = False
 
 
 class RequestRow(BaseModel):
@@ -55,6 +57,8 @@ class MyStatusResponse(BaseModel):
     is_approver: bool
     pending_kinds: List[str] = []
     pending_requests: List[PendingRequestRef] = []
+    # An approver nobody else could approve may approve their own request.
+    can_self_approve: bool = False
 
 
 class CreateRequestBody(BaseModel):

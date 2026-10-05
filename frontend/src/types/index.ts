@@ -1525,6 +1525,8 @@ export interface SalaryEnrollmentRow {
   /** Null when granted at setup rather than by a person. */
   granted_by_name?: string | null;
   granted_at?: string | null;
+  /** Approved by the person themselves, when nobody else could. */
+  self_approved?: boolean;
 }
 
 export interface SalaryRequestRow {
@@ -2281,6 +2283,9 @@ export interface TimePunch {
 
 export interface MySalaryStatus {
   pending_requests?: { id: number; kind: string }[];
+  /** Nobody else could approve this person's request, so they may approve
+   *  their own, with a reason (owner's decision, 2026-10-05). */
+  can_self_approve?: boolean;
 }
 
 export interface AppSettings {

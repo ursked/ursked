@@ -69,21 +69,82 @@ export function useSalaryAccess() {
     isViewer: q.data?.is_viewer ?? false,
     isApprover: q.data?.is_approver ?? false,
     pendingViewerId: (q.data?.pending_requests ?? []).find((r) => r.kind === 'viewer')?.id ?? null,
+    canSelfApprove: q.data?.can_self_approve ?? false,
   }
+}
+
+/** When nobody else could approve the caller's salary access (a new install,
+ *  or a company whose only approver is its administrator), they may approve
+ *  it themselves with a written reason. Files the request first if there is
+ *  none, then approves it. The API records it as self-approved and tells every
+ *  administrator and every approver appointed later. */
+export function SelfApprove({ pendingId, compact = false }: { pendingId: number | null; compact?: boolean }) {
+  const { showToast } = useToast()
+  const queryClient = useQueryClient()
+  const [reason, setReason] = useState('')
+  const ok = reason.trim().length >= 10
+
+  const mut = useMutation({
+    mutationFn: async () => {
+      const id = pendingId ?? (await api.createSalaryRequest({ kind: 'viewer', reason: reason.trim() })).id
+      return api.approveSalaryRequest(id, reason.trim())
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['my-salary-status'] })
+      queryClient.invalidateQueries({ queryKey: ['salary-requests'] })
+      queryClient.invalidateQueries({ queryKey: ['salary-enrollments'] })
+      queryClient.invalidateQueries({ queryKey: ['salary-grant-history'] })
+      showToast('You now have salary access. Every administrator has been told.', 'success')
+    },
+    onError: (e: Error) => {
+      queryClient.invalidateQueries({ queryKey: ['my-salary-status'] })
+      showToast(e.message, 'error')
+    },
+  })
+
+  return (
+    <div className={`rounded-md border border-amber-200 bg-amber-50 text-left ${compact ? 'mt-2 w-full p-3' : 'mt-4 p-4'}`}>
+      <p className="text-sm font-medium text-amber-900">Nobody else can approve this yet</p>
+      <p className="mt-1 text-xs text-amber-800">
+        You are the only approver who could decide it. You may approve your own access: write why.
+        It is recorded as self-approved, every administrator is told, and anyone who becomes an
+        approver later is told and can revoke it.
+      </p>
+      <label htmlFor="self-approve-reason" className="sr-only">Why you are approving your own access</label>
+      <textarea
+        id="self-approve-reason"
+        value={reason}
+        onChange={(e) => setReason(e.target.value)}
+        rows={2}
+        placeholder="e.g. I am the owner and run payroll myself; there is no one else yet."
+        className="mt-2 w-full rounded-md border border-amber-300 bg-white px-3 py-2 text-sm"
+      />
+      <button
+        onClick={() => mut.mutate()}
+        disabled={!ok || mut.isPending}
+        className="mt-2 w-full rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
+      >
+        Approve my own salary access
+      </button>
+      {!ok && reason.length > 0 && <p className="mt-1 text-xs text-amber-800">At least 10 characters.</p>}
+    </div>
+  )
 }
 
 /** Renders its children for a salary viewer and the request prompt for anyone else. */
 export function FiguresOnly({ what, children }: { what: string; children: ReactNode }) {
-  const { loading, isViewer, pendingViewerId } = useSalaryAccess()
+  const { loading, isViewer, pendingViewerId, canSelfApprove } = useSalaryAccess()
   if (loading) return <p className="py-8 text-center text-sm text-gray-500">Loading…</p>
-  if (!isViewer) return <SalaryAccessGate what={what} pendingId={pendingViewerId} />
+  if (!isViewer) return <SalaryAccessGate what={what} pendingId={pendingViewerId} canSelfApprove={canSelfApprove} />
   return <>{children}</>
 }
 
 /** Shown where figures would be, to someone who is not a salary viewer. Lets
  *  them file a request (or withdraw one) without leaving the page; another
  *  approver must approve it before any figure appears. */
-export function SalaryAccessGate({ what, pendingId }: { what: string; pendingId: number | null }) {
+export function SalaryAccessGate({ what, pendingId, canSelfApprove = false }: {
+  what: string; pendingId: number | null; canSelfApprove?: boolean
+}) {
   const { showToast } = useToast()
   const queryClient = useQueryClient()
   const [reason, setReason] = useState('')
@@ -119,7 +180,9 @@ export function SalaryAccessGate({ what, pendingId }: { what: string; pendingId:
         Salary figures are confidential. They are shown only to people another person has approved for
         salary access, whatever their role, administrators included. Request it below.
       </p>
-      {hasPending ? (
+      {canSelfApprove ? (
+        <SelfApprove pendingId={pendingId} />
+      ) : hasPending ? (
         <div className="mt-4 space-y-2">
           <p className="text-sm font-medium text-amber-600">Your request is waiting for another approver.</p>
           <button

@@ -6,13 +6,15 @@ import { api } from '@/lib/api'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/components/ui/Toast'
 import { hasRole } from '@/lib/roles'
+import { SelfApprove } from './financeUi'
 import type { SalaryEnrollmentRow, SalaryGrantHistoryRow, SalaryRequestRow } from '@/types'
 
 /** Salary Access enrollment console. Salary visibility is a per-user enrollment
  *  (viewer / approver), independent of role — even a tenant_admin must be an
  *  approved viewer to see salary. A request is approved by a DIFFERENT
- *  approver: never yourself, and never someone you made an approver. The last
- *  approver cannot be removed. Every change is announced to the other
+ *  approver: never yourself, and never someone you made an approver, unless
+ *  nobody else could approve it, when an approver may approve their own with a
+ *  reason (flagged Self-approved). The last approver cannot be removed. Every change is announced to the other
  *  approvers and administrators, and listed in the history below. */
 export default function SalaryAccessTab() {
   const { user } = useAuth()
@@ -74,8 +76,9 @@ export default function SalaryAccessTab() {
         <p className="mt-0.5 text-xs text-gray-500">
           Salary visibility is granted per user — being an admin, HR or Finance is not enough.
           A request must be approved by another approver: never yourself, and never someone you made an
-          approver. Every grant, decline and revoke is recorded and announced to the other approvers and
-          administrators. The last approver can&apos;t be removed.
+          approver. The one exception: when nobody else could approve it, an approver may approve their own,
+          with a reason, and it is flagged Self-approved. Every grant, decline and revoke is recorded and
+          announced to the other approvers and administrators. The last approver can&apos;t be removed.
         </p>
         <MyStatus />
       </div>
@@ -208,7 +211,10 @@ function MyStatus() {
       {s.is_approver && (
         <span className="rounded bg-purple-50 px-2 py-0.5 font-medium text-purple-700">Approver</span>
       )}
-      {!s.is_viewer && !pendingViewer && (
+      {!s.is_viewer && s.can_self_approve && (
+        <SelfApprove compact pendingId={(s.pending_requests ?? []).find((r) => r.kind === 'viewer')?.id ?? null} />
+      )}
+      {!s.is_viewer && !pendingViewer && !s.can_self_approve && (
         <button
           onClick={() => setOpen((v) => !v)}
           className="rounded-md bg-purple-600 px-2.5 py-1 font-medium text-white hover:bg-purple-700"
@@ -216,7 +222,7 @@ function MyStatus() {
           Request access
         </button>
       )}
-      {pendingViewer && <span className="text-amber-600">Request pending approval…</span>}
+      {pendingViewer && !s.can_self_approve && <span className="text-amber-600">Request pending approval…</span>}
       {pendingIds.length > 0 && (
         <button
           onClick={() => pendingIds.forEach((id) => cancelMut.mutate(id))}
@@ -294,7 +300,9 @@ function RequestsCard({
                   <td className="px-4 py-2 text-right">
                     {blocked ? (
                       <span className="text-gray-500">
-                        {own ? 'Awaiting another approver' : r.approval_block}
+                        {own
+                          ? (r.approval_block ? 'Awaiting another approver' : 'Nobody else can approve it: approve it yourself above, with a reason')
+                          : r.approval_block}
                       </span>
                     ) : (
                       <div className="inline-flex gap-2">
@@ -364,8 +372,16 @@ function EnrollmentCard({
                 <tr key={r.id}>
                   <td className="px-4 py-2 text-gray-800">{r.user_name}</td>
                   <td className="px-4 py-2 text-gray-500">
-                    {r.granted_by_name ?? 'Setup'}
+                    {r.self_approved ? 'Themselves' : (r.granted_by_name ?? 'Setup')}
                     {r.granted_at ? `, ${new Date(r.granted_at).toLocaleDateString()}` : ''}
+                    {r.self_approved && (
+                      <span
+                        className="ml-2 rounded bg-amber-50 px-1.5 py-0.5 text-xs font-medium text-amber-700"
+                        title="Approved by this person when nobody else could. Review it, and revoke it if it should not stand."
+                      >
+                        Self-approved
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-2 text-right">
                     <button
