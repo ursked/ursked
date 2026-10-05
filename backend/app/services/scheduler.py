@@ -87,6 +87,10 @@ JOBS: Sequence[Job] = (
     Job("leave_reminders", "app.services.leave_reminder_service.run_due", HOURLY),
     # Area S: live holiday feed (daily per tenant, failing feeds hourly).
     Job("holiday_sync", "app.services.holiday_sync_service.run_due", HOURLY),
+    # Plugins: deliver queued plugin events, then plugins' minute jobs.
+    Job("plugin_events", "app.services.plugin_host.run_due", TICK),
+    # Licence upkeep (clock high-water, employee limits), then plugins' hourly jobs.
+    Job("plugins_hourly", "app.services.plugin_host.run_hourly", HOURLY),
     # Area A: prune sessions, read notifications, old logs (once a company day).
     Job("housekeeping", "app.services.housekeeping_service.run_due", DAILY),
 )

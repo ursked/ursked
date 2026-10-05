@@ -350,8 +350,8 @@ export default function EmployeesPage() {
 
         {/* Tabs: types and custom fields are company settings (settings:view) */}
         {canViewSettings && (
-          <div className="border-b border-gray-200">
-            <nav className="-mb-px flex space-x-8 overflow-x-auto" role="tablist">
+          <div>
+            <nav className="flex space-x-8 overflow-x-auto shadow-[inset_0_-1px_0_0_#e5e7eb]" role="tablist">
               {tabs.map((tab) => (
                 <button
                   key={tab.key}

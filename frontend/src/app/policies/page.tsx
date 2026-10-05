@@ -82,8 +82,8 @@ export default function PoliciesPage() {
           </p>
         </div>
 
-        <div className="border-b border-gray-200 overflow-x-auto">
-          <nav className="-mb-px flex space-x-8 min-w-max" role="tablist">
+        <div className="overflow-x-auto">
+          <nav className="flex space-x-8 w-max min-w-full shadow-[inset_0_-1px_0_0_#e5e7eb]" role="tablist">
             {visible.map((tab) => (
               <button
                 key={tab.key}

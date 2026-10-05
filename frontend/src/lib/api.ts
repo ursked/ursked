@@ -92,6 +92,8 @@ import type {
   LeavePrecheckResult,
   OrgNodeDeletePreview,
 } from '@/types';
+// Plugins and licensing
+import type { LicenceInfo, PluginDelivery, PluginInfo, PluginList } from '@/types';
 
 // Area S: live holiday feed types.
 import type { HolidaySourceConfig, HolidayRegion, HolidaySyncResult } from '@/types';
@@ -1874,6 +1876,35 @@ class ApiClient {
   // ── Admin dashboard: administration only (admin session) ────────────
   async getAdminOverview(): Promise<AdminOverview> {
     return this.get('/api/v1/settings/admin-overview') as Promise<AdminOverview>;
+  }
+
+  // Plugins and licensing (admin dashboard; ops/PLUGINS_AND_LICENSING.md).
+  async getPlugins(): Promise<PluginList> {
+    return this.get('/api/v1/plugins') as Promise<PluginList>;
+  }
+  async savePluginSettings(id: string, values: Record<string, unknown>): Promise<PluginInfo> {
+    return this.put(`/api/v1/plugins/${encodeURIComponent(id)}/settings`, { values }) as Promise<PluginInfo>;
+  }
+  async setPluginEnabled(id: string, on: boolean): Promise<PluginInfo> {
+    return this.post(`/api/v1/plugins/${encodeURIComponent(id)}/${on ? 'enable' : 'disable'}`) as Promise<PluginInfo>;
+  }
+  async testPlugin(id: string): Promise<{ ok: boolean; message: string }> {
+    return this.post(`/api/v1/plugins/${encodeURIComponent(id)}/test`) as Promise<{ ok: boolean; message: string }>;
+  }
+  async getPluginActivity(id: string): Promise<PluginDelivery[]> {
+    return this.get(`/api/v1/plugins/${encodeURIComponent(id)}/activity`) as Promise<PluginDelivery[]>;
+  }
+  async retryPluginDelivery(id: string, rowId: number): Promise<{ ok: boolean }> {
+    return this.post(`/api/v1/plugins/${encodeURIComponent(id)}/activity/${rowId}/retry`) as Promise<{ ok: boolean }>;
+  }
+  async getLicence(): Promise<LicenceInfo> {
+    return this.get('/api/v1/licence') as Promise<LicenceInfo>;
+  }
+  async applyLicence(key: string): Promise<LicenceInfo> {
+    return this.put('/api/v1/licence', { key }) as Promise<LicenceInfo>;
+  }
+  async removeLicence(): Promise<LicenceInfo> {
+    return this.del('/api/v1/licence') as Promise<LicenceInfo>;
   }
 }
 

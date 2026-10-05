@@ -99,3 +99,8 @@ __all__.append("HolidaySource")
 from app.models.email_outbox import EmailOutbox  # noqa: E402
 
 __all__.append("EmailOutbox")
+
+# Plugins and licensing (migration 069).
+from app.models.plugin import PluginEventOutbox, PluginSetting  # noqa: E402
+
+__all__ += ["PluginEventOutbox", "PluginSetting"]

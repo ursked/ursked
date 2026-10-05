@@ -24,7 +24,9 @@ MIN_SECRET_LENGTH = 32
 
 class Settings(BaseSettings):
     APP_NAME: str = "Employee Scheduling SaaS"
-    APP_VERSION: str = "1.0.0"
+    # Stamped into the image by the release build (Dockerfile ARG APP_VERSION,
+    # from the git tag). Plugins check it against their min_core.
+    APP_VERSION: str = "0.2.0"
     DEBUG: bool = False
     ENVIRONMENT: str = "development"
     HOST: str = "0.0.0.0"

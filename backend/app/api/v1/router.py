@@ -28,6 +28,7 @@ from app.api.v1.audit import router as audit_router
 from app.api.v1.user_import import router as user_import_router
 # Area E (employees): company-defined profile fields.
 from app.api.v1.employee_fields import router as employee_fields_router
+from app.api.v1.plugins import router as plugins_router
 
 # Enterprise routes live in app/ee/, a package the Community Edition build does not
 # contain. That absence IS the gate: no package, no import, no routes — there is no
@@ -69,6 +70,26 @@ api_router.include_router(audit_router)
 api_router.include_router(user_import_router)
 # Area E (employees)
 api_router.include_router(employee_fields_router)
+# Plugins and licensing (ops/PLUGINS_AND_LICENSING.md).
+api_router.include_router(plugins_router)
+
+
+def _mount_plugin_routes() -> None:
+    """Each plugin's own routes under /ext/<id>, answering 404 unless that
+    plugin is licensed and on (plugin_host.route_guard)."""
+    from fastapi import Depends
+
+    from app.services import plugin_host
+
+    for plugin in plugin_host.plugins().values():
+        if plugin.router is not None:
+            api_router.include_router(
+                plugin.router, prefix=f"/ext/{plugin.id}",
+                dependencies=[Depends(plugin_host.route_guard(plugin.id))],
+            )
+
+
+_mount_plugin_routes()
 
 if EE:
     api_router.include_router(tenants_router)

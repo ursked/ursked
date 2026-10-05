@@ -1405,6 +1405,9 @@ async def create_leave_application(
             body=f"{full_name(current_user)} filed {await notifier.describe(app)} on your behalf.",
             app=app,
         )
+    from app.services import plugin_events
+
+    await plugin_events.leave_requested(db, app, subject)
 
     return await _to_response(db, app, await _ctx(db, current_user))
 

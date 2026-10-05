@@ -22,9 +22,13 @@ RUN python -m venv /opt/venv \
 
 FROM python:3.12.8-slim AS runtime
 
+# The release build passes the git tag without its "v" (ops/ce/release.yml);
+# a local build keeps the default in app/config.py.
+ARG APP_VERSION=0.2.0
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PATH="/opt/venv/bin:$PATH"
+    PATH="/opt/venv/bin:$PATH" \
+    APP_VERSION=$APP_VERSION
 
 # libpq5 is the runtime half of libpq-dev; postgresql-client provides pg_dump
 # for the backup feature; curl backs the healthcheck.

@@ -3059,6 +3059,9 @@ class ScheduleService:
             s.published_by = published_by
         await db.flush()
         await ScheduleService._after(db, tenant_id, actor, keys)
+        from app.services import plugin_events
+
+        await plugin_events.schedule_published(db, tenant_id, start_date, end_date, shifts, actor)
         return {"published_count": len(shifts), "employee_ids": affected}
 
     @staticmethod

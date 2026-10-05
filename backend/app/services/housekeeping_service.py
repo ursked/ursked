@@ -78,6 +78,7 @@ async def prune_tenant(db: AsyncSession, tenant_id, days: Dict[str, int], now: d
     from windows()). Does not commit."""
     from app.models.email_log import EmailLog
     from app.models.email_outbox import EmailOutbox
+    from app.models.plugin import PluginEventOutbox
     from app.models.notification import Notification
     from app.models.site_settings import AuditLog
     from app.models.user import UserSession
@@ -114,6 +115,13 @@ async def prune_tenant(db: AsyncSession, tenant_id, days: Dict[str, int], now: d
             EmailOutbox.tenant_id == tenant_id,
             EmailOutbox.status != "queued",
             EmailOutbox.created_at < now - timedelta(days=OUTBOX_FINISHED_DAYS),
+        )),
+        # Finished plugin deliveries: kept as long as finished emails, so a
+        # plugin's Activity shows the last month.
+        "plugin_event_outbox": await _delete(delete(PluginEventOutbox).where(
+            PluginEventOutbox.tenant_id == tenant_id,
+            PluginEventOutbox.status != "queued",
+            PluginEventOutbox.created_at < now - timedelta(days=OUTBOX_FINISHED_DAYS),
         )),
     }
     return out

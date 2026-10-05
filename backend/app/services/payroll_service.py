@@ -1213,6 +1213,9 @@ class PayrollService:
         period.status = "finalized"
         period.finalized_at = now
         period.finalized_by = finalized_by
+        from app.services import plugin_events
+
+        await plugin_events.payroll_finalized(db, period, finalized_by)
         await db.commit()
         await db.refresh(period)
         return period

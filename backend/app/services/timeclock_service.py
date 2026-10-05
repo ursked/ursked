@@ -369,6 +369,9 @@ class TimeclockService:
             await db.flush()
 
         await TimeclockService._rederive_day(db, tenant_id, employee_id, business_date, recorded_by)
+        from app.services import plugin_events
+
+        await plugin_events.clocked(db, tenant_id, punch)
         return punch
 
     @staticmethod

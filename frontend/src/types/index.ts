@@ -2412,3 +2412,82 @@ export interface ApprovalChainPreviewResult {
   nobody_can_approve?: boolean;
   message?: string | null;
 }
+
+// Plugins and licensing (ops/PLUGINS_AND_LICENSING.md). Admin dashboard only.
+export type EntitlementState =
+  | 'none' | 'active' | 'trial' | 'grace' | 'over_limit' | 'paused_over_limit' | 'expired';
+
+export interface Entitlement {
+  plugin: string;
+  state: EntitlementState;
+  runs: boolean;
+  model: string | null;
+  expires: string | null;
+  grace_until: string | null;
+  seats: number | null;
+  used: number | null;
+  near_limit: boolean;
+  trial: boolean;
+  via: string | null;
+  over_since: string | null;
+}
+
+export interface PluginField {
+  key: string;
+  label: string;
+  type: 'text' | 'url' | 'secret' | 'bool' | 'number' | 'select' | 'multiselect';
+  required: boolean;
+  default: unknown;
+  help: string | null;
+  options: { value: string; label: string }[];
+}
+
+export interface PluginInfo {
+  id: string;
+  name: string;
+  version: string;
+  tier: 'free' | 'paid';
+  summary: string;
+  description: string;
+  loaded: boolean;
+  error: string | null;
+  events: { key: string; label: string }[];
+  scopes: { key: string; label: string }[];
+  fields: PluginField[];
+  values: Record<string, unknown>;
+  missing: string[];
+  enabled: boolean;
+  runs: boolean;
+  has_test: boolean;
+  entitlement: Entitlement | null;
+  last_test: { at: string; ok: boolean; message: string } | null;
+  activity: Record<string, number>;
+}
+
+export interface PluginList {
+  plugins: PluginInfo[];
+  install_id: string;
+  store_url: string;
+}
+
+export interface PluginDelivery {
+  id: number;
+  event: string;
+  label: string;
+  status: 'queued' | 'sent' | 'failed' | 'skipped';
+  attempts: number;
+  last_error: string | null;
+  created_at: string | null;
+  delivered_at: string | null;
+  next_attempt_at: string | null;
+}
+
+export interface LicenceInfo {
+  install_id: string;
+  store_url: string;
+  applied: boolean;
+  error: string | null;
+  licence: { lid: string; customer: { name?: string; email?: string }; issued: string; grace_days: number } | null;
+  active_employees: number;
+  entitlements: (Entitlement & { name: string; installed: boolean })[];
+}

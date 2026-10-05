@@ -100,6 +100,9 @@ class UserService:
         )
         result = await db.execute(stmt)
         user = result.scalar_one()
+        from app.services import plugin_events
+
+        await plugin_events.employee_joined(db, user)
         return user
 
     @staticmethod

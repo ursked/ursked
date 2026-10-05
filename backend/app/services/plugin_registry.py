@@ -22,13 +22,17 @@ logger = logging.getLogger(__name__)
 class PluginManifest:
     """Normalized view of a plugin's MANIFEST."""
 
-    __slots__ = ("name", "version", "capabilities", "enabled")
+    __slots__ = ("name", "version", "capabilities", "enabled", "module")
 
-    def __init__(self, name: str, version: str, capabilities: List[str], enabled: bool):
+    def __init__(
+        self, name: str, version: str, capabilities: List[str], enabled: bool, module: Optional[str] = None
+    ):
         self.name = name
         self.version = version
         self.capabilities = capabilities
         self.enabled = enabled
+        # Dotted path of the plugin package, for plugin_host to load it from.
+        self.module = module
 
 
 def _coerce(raw: dict, package_name: str) -> Optional[PluginManifest]:
@@ -78,6 +82,7 @@ def _discover_uncached() -> List[PluginManifest]:
         manifest = _coerce(raw, pkg_name)
         if manifest is None:
             continue
+        manifest.module = pkg_name
         if manifest.name in found:
             logger.warning(
                 "Duplicate plugin name '%s' (from %s); keeping the first", manifest.name, pkg_name

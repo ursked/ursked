@@ -145,6 +145,7 @@ async def mark_no_shows(db: AsyncSession, settings: AppSettings, now: datetime) 
     locked = await PayrollService.locked_periods_for(db, tenant_id, due)
 
     marked = 0
+    marked_keys = []
     for emp_id, d in sorted(due, key=lambda k: (k[1], k[0])):
         key = (emp_id, d)
         if key in have_record or key in have_punch or key in locked or d in holidays:
@@ -160,6 +161,10 @@ async def mark_no_shows(db: AsyncSession, settings: AppSettings, now: datetime) 
         await db.flush()
         await AttendanceService.rederive(db, record)
         marked += 1
+        marked_keys.append(key)
+    from app.services import plugin_events
+
+    await plugin_events.missed(db, tenant_id, marked_keys)
     return marked
 
 

@@ -1,3 +1,5 @@
+import uuid
+
 from sqlalchemy import BigInteger, Boolean, Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 
@@ -49,6 +51,17 @@ class SiteSettings(Base):
     # Notifications
     notify_on_backup_failure = Column(Boolean, nullable=False, default=True)
     notification_email = Column(String(255), nullable=True)
+
+    # Licensing (ops/PLUGINS_AND_LICENSING.md 3). install_id identifies this
+    # install to the store: a licence key only unlocks the install whose ID it
+    # carries. Created on first boot and kept by backups, so moving servers
+    # keeps the licence. licence_key is the applied key, verified on every
+    # read; licence_state is what the hourly job remembers between runs (the
+    # clock high-water mark and when each plugin went over its employee limit).
+    install_id = Column(String(36), nullable=True, unique=True, default=lambda: str(uuid.uuid4()))
+    licence_key = Column(Text, nullable=True)
+    licence_state = Column(JSONB, nullable=True)
+
     # Timestamps
     created_at = Column(DateTime(timezone=True), default=utcnow)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)

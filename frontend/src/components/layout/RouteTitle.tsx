@@ -24,6 +24,7 @@ const TITLES: [string, string][] = [
   ['/data-management', 'Reports & Data'],
   ['/salary-access', 'Salary access'],
   ['/audit-log', 'Audit Log'],
+  ['/plugins', 'Plugins'],
   ['/settings', 'Settings'],
   ['/profile', 'Profile'],
   ['/superadmin', 'Platform'],
