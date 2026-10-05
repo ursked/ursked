@@ -109,7 +109,7 @@ export default function ImportModal({ onClose, onImported }: Props) {
             <li>Employee type, schedule format, organization unit and roles can be given by name or code; the line manager by email or employee number.</li>
             <li>Up to 2,000 rows and 2 MB per file. Save from Excel as &ldquo;CSV UTF-8&rdquo;.</li>
           </ul>
-          <button type="button" onClick={downloadTemplate} className="text-purple-700 underline underline-offset-2 hover:text-purple-900">
+          <button type="button" onClick={downloadTemplate} className="text-brand-700 underline underline-offset-2 hover:text-brand-900">
             Download a template with your company&apos;s columns
           </button>
           <div>
@@ -119,7 +119,7 @@ export default function ImportModal({ onClose, onImported }: Props) {
               type="file"
               accept=".csv,text/csv"
               onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-              className="block w-full text-sm text-gray-700 file:mr-3 file:rounded-md file:border-0 file:bg-purple-50 file:px-4 file:py-2 file:text-sm file:font-medium file:text-purple-700 hover:file:bg-purple-100"
+              className="block w-full text-sm text-gray-700 file:mr-3 file:rounded-md file:border-0 file:bg-brand-50 file:px-4 file:py-2 file:text-sm file:font-medium file:text-brand-700 hover:file:bg-brand-100"
             />
           </div>
         </div>
@@ -149,7 +149,7 @@ export default function ImportModal({ onClose, onImported }: Props) {
             <p className="text-sm text-gray-700">Rows with errors were skipped. Fix them in your file and import it again; rows already imported will show as &ldquo;No change&rdquo;.</p>
           )}
           <label className="inline-flex items-center gap-2 text-sm text-gray-700">
-            <input type="checkbox" checked={onlyProblems} onChange={(e) => setOnlyProblems(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-purple-600" />
+            <input type="checkbox" checked={onlyProblems} onChange={(e) => setOnlyProblems(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-brand-600" />
             Show only rows with errors
           </label>
           <div className="max-h-[45vh] overflow-auto rounded-lg border border-gray-200">

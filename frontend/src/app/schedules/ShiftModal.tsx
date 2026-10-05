@@ -231,7 +231,7 @@ export default function ShiftModal({
   const tabClass = (tab: string) =>
     `px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
       activeTab === tab
-        ? 'border-purple-600 text-purple-600'
+        ? 'border-brand-600 text-brand-600'
         : 'border-transparent text-gray-500 hover:text-gray-700'
     }`;
 
@@ -340,7 +340,7 @@ export default function ShiftModal({
                       <select
                         value={employeeId}
                         onChange={(e) => setEmployeeId(Number(e.target.value))}
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent"
                       >
                         <option value={0}>Select employee...</option>
                         {employees.map((emp) => (
@@ -358,7 +358,7 @@ export default function ShiftModal({
                       type="date"
                       value={date}
                       onChange={(e) => setDate(e.target.value)}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent"
                     />
                   </div>
                 </>
@@ -374,7 +374,7 @@ export default function ShiftModal({
                         type="date"
                         value={rangeStartDate}
                         onChange={(e) => setRangeStartDate(e.target.value)}
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent"
                       />
                     </div>
                     <div>
@@ -383,7 +383,7 @@ export default function ShiftModal({
                         type="date"
                         value={rangeEndDate}
                         onChange={(e) => setRangeEndDate(e.target.value)}
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent"
                       />
                     </div>
                   </div>
@@ -400,7 +400,7 @@ export default function ShiftModal({
                             type="checkbox"
                             checked={selectedEmployeeIds.includes(emp.employee_id)}
                             onChange={() => toggleEmployeeSelection(emp.employee_id)}
-                            className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                            className="rounded border-gray-300 text-brand-600 focus:ring-brand-500"
                           />
                           <span className="text-sm text-gray-700">{emp.employee_name}</span>
                         </label>
@@ -426,8 +426,8 @@ export default function ShiftModal({
                             }
                             className={`px-2.5 py-1 text-xs font-medium rounded-md border transition-colors capitalize ${
                               isActive
-                                ? 'bg-purple-600 text-white border-purple-600'
-                                : 'bg-white text-gray-600 border-gray-300 hover:border-purple-300'
+                                ? 'bg-brand-600 text-white border-brand-600'
+                                : 'bg-white text-gray-600 border-gray-300 hover:border-brand-300'
                             }`}
                           >
                             {short}
@@ -443,7 +443,7 @@ export default function ShiftModal({
                       type="checkbox"
                       checked={skipHolidays}
                       onChange={(e) => setSkipHolidays(e.target.checked)}
-                      className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                      className="rounded border-gray-300 text-brand-600 focus:ring-brand-500"
                     />
                     Skip Holidays
                   </label>
@@ -456,7 +456,7 @@ export default function ShiftModal({
                 <select
                   value={status}
                   onChange={(e) => setStatus(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent"
                 >
                   {statuses.map((s) => (
                     <option key={s.value} value={s.value}>{s.label}</option>
@@ -474,7 +474,7 @@ export default function ShiftModal({
                         type="time"
                         value={startTime}
                         onChange={(e) => setStartTime(e.target.value)}
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent"
                       />
                     </div>
                     <div>
@@ -483,7 +483,7 @@ export default function ShiftModal({
                         type="time"
                         value={endTime}
                         onChange={(e) => setEndTime(e.target.value)}
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent"
                       />
                     </div>
                   </div>
@@ -498,8 +498,8 @@ export default function ShiftModal({
                           onClick={() => setWorkArrangement(wa.value)}
                           className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
                             workArrangement === wa.value
-                              ? 'bg-purple-600 text-white border-purple-600'
-                              : 'bg-white text-gray-700 border-gray-300 hover:border-purple-300'
+                              ? 'bg-brand-600 text-white border-brand-600'
+                              : 'bg-white text-gray-700 border-gray-300 hover:border-brand-300'
                           }`}
                         >
                           {wa.label}
@@ -515,7 +515,7 @@ export default function ShiftModal({
                         id="shift-work-site"
                         value={workSiteId}
                         onChange={(e) => setWorkSiteId(e.target.value ? Number(e.target.value) : '')}
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent"
                       >
                         <option value="">No specific site</option>
                         {workSites.filter((s) => s.is_active || s.id === workSiteId).map((s) => (
@@ -539,7 +539,7 @@ export default function ShiftModal({
                   value={roleName}
                   onChange={(e) => setRoleName(e.target.value)}
                   placeholder="e.g. Shift Leader"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent"
                 />
               </div>
             </fieldset>
@@ -555,7 +555,7 @@ export default function ShiftModal({
                     type="button"
                     onClick={() => setColor('')}
                     className={`w-7 h-7 rounded-full border-2 flex items-center justify-center text-xs ${
-                      !color ? 'border-purple-500 ring-2 ring-purple-200' : 'border-gray-300'
+                      !color ? 'border-brand-500 ring-2 ring-brand-200' : 'border-gray-300'
                     }`}
                   >
                     <svg className="w-3 h-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -568,7 +568,7 @@ export default function ShiftModal({
                       type="button"
                       onClick={() => setColor(c)}
                       className={`w-7 h-7 rounded-full transition-all ${
-                        color === c ? 'ring-2 ring-offset-2 ring-purple-500 scale-110' : 'hover:scale-105'
+                        color === c ? 'ring-2 ring-offset-2 ring-brand-500 scale-110' : 'hover:scale-105'
                       }`}
                       style={{ backgroundColor: c }}
                     />
@@ -584,7 +584,7 @@ export default function ShiftModal({
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   placeholder="Additional notes..."
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent resize-none"
                 />
               </div>
 
@@ -596,7 +596,7 @@ export default function ShiftModal({
                   value={remarks}
                   onChange={(e) => setRemarks(e.target.value)}
                   placeholder="Remarks..."
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent resize-none"
                 />
               </div>
             </>
@@ -628,7 +628,7 @@ export default function ShiftModal({
             {conflictMode === 'partial' ? (
               <button
                 onClick={onClose}
-                className="px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors"
+                className="px-4 py-2 text-sm font-medium text-white bg-brand-600 hover:bg-brand-700 rounded-lg transition-colors"
               >
                 Done
               </button>
@@ -647,7 +647,7 @@ export default function ShiftModal({
                 <button
                   onClick={() => handleSave()}
                   disabled={saving || !canSubmit}
-                  className="px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  className="px-4 py-2 text-sm font-medium text-white bg-brand-600 hover:bg-brand-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                 >
                   {saving && (
                     <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">

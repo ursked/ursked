@@ -74,7 +74,7 @@ export default function MyPayslipsPage() {
                   </button>
                   <div className="flex items-center gap-3">
                     <div className="text-right">
-                      <div className="text-sm font-bold text-purple-700">
+                      <div className="text-sm font-bold text-brand-700">
                         {peso(p.net_pay)}
                       </div>
                       <div className="text-[11px] text-gray-500">net</div>

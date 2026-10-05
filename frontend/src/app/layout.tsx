@@ -38,6 +38,7 @@ export const metadata: Metadata = {
   icons: {
     icon: [
       { url: '/favicon.ico', sizes: '48x48' },
+      { url: '/logo/ursked-mark.svg', type: 'image/svg+xml' },
       { url: '/icons/ursked-32.png', type: 'image/png', sizes: '32x32' },
       { url: '/icons/ursked-192.png', type: 'image/png', sizes: '192x192' },
     ],

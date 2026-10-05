@@ -53,7 +53,7 @@ export function ForcePasswordChange() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-white to-slate-100 px-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <Image src="/logo/urskedlogo.png" alt="ursked" width={1311} height={359} priority className="mx-auto h-10 w-auto" />
+          <Image src="/logo/ursked-logo.svg" alt="ursked" width={294} height={64} priority className="mx-auto h-10 w-auto" />
         </div>
         <div className="bg-white rounded-xl shadow-lg p-8">
           <h1 className="text-xl font-semibold text-gray-900">Set a new password</h1>

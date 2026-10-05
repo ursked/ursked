@@ -9,6 +9,21 @@ module.exports = {
   theme: {
     extend: {
       colors: {
+        // ursked mint, matched to the logo (public/logo). 600 is the button and
+        // link colour: white text on it, and it as text on white, pass WCAG AA.
+        brand: {
+          50: '#ecfdf5',
+          100: '#d1fae5',
+          200: '#a7f3d0',
+          300: '#6ee7b7',
+          400: '#34d399',
+          500: '#059669',
+          600: '#047857',
+          700: '#065f46',
+          800: '#064e3b',
+          900: '#043d31',
+          950: '#022c22',
+        },
         border: 'hsl(var(--border))',
         input: 'hsl(var(--input))',
         ring: 'hsl(var(--ring))',

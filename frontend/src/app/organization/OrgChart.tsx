@@ -48,8 +48,8 @@ function OrgChartNode({
       onClick={() => onSelect(isSelected ? null : node.id)}
       className={`group relative w-52 rounded-lg border-2 p-3 cursor-pointer transition-all shadow-sm hover:shadow-md ${
         isSelected
-          ? 'border-purple-400 ring-2 ring-purple-200 bg-purple-50'
-          : `${color.border} bg-white hover:border-purple-300`
+          ? 'border-brand-400 ring-2 ring-brand-200 bg-brand-50'
+          : `${color.border} bg-white hover:border-brand-300`
       }`}
     >
       {/* Level badge */}
@@ -109,7 +109,7 @@ function OrgChartNode({
             e.stopPropagation();
             onAddChild(node.id);
           }}
-          className={`absolute opacity-0 group-hover:opacity-100 w-6 h-6 rounded-full bg-purple-600 text-white flex items-center justify-center shadow-md hover:bg-purple-700 transition-all z-10 ${
+          className={`absolute opacity-0 group-hover:opacity-100 w-6 h-6 rounded-full bg-brand-600 text-white flex items-center justify-center shadow-md hover:bg-brand-700 transition-all z-10 ${
             isVertical
               ? '-bottom-3 left-1/2 -translate-x-1/2'
               : '-right-3 top-1/2 -translate-y-1/2'
@@ -281,7 +281,7 @@ export default function OrgChart({ nodes, levels, selectedNodeId, onSelectNode, 
       <button
         onClick={() => setOrientation('vertical')}
         className={`px-2 py-1.5 rounded-md text-xs font-medium transition-colors flex items-center gap-1.5 ${
-          isVertical ? 'bg-purple-600 text-white' : 'text-gray-500 hover:text-gray-700'
+          isVertical ? 'bg-brand-600 text-white' : 'text-gray-500 hover:text-gray-700'
         }`}
         title="Top-down (vertical) layout"
       >
@@ -297,7 +297,7 @@ export default function OrgChart({ nodes, levels, selectedNodeId, onSelectNode, 
       <button
         onClick={() => setOrientation('horizontal')}
         className={`px-2 py-1.5 rounded-md text-xs font-medium transition-colors flex items-center gap-1.5 ${
-          !isVertical ? 'bg-purple-600 text-white' : 'text-gray-500 hover:text-gray-700'
+          !isVertical ? 'bg-brand-600 text-white' : 'text-gray-500 hover:text-gray-700'
         }`}
         title="Left-to-right (horizontal) layout"
       >

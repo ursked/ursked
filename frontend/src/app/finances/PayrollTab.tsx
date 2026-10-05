@@ -209,7 +209,7 @@ export default function PayrollTab() {
         {!showForm && canCreate && !error && (
           <button
             onClick={() => setShowForm(true)}
-            className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700"
+            className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700"
           >
             New Period
           </button>
@@ -228,7 +228,7 @@ export default function PayrollTab() {
                 required
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-purple-500 focus:ring-purple-500"
+                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:ring-brand-500"
                 placeholder="e.g. January 2026"
               />
             </div>
@@ -238,7 +238,7 @@ export default function PayrollTab() {
                 id="pp-type"
                 value={formData.period_type}
                 onChange={(e) => setFormData({ ...formData, period_type: e.target.value })}
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-purple-500 focus:ring-purple-500"
+                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:ring-brand-500"
               >
                 <option value="monthly">Monthly</option>
                 <option value="semi_monthly">Semi-Monthly</option>
@@ -255,7 +255,7 @@ export default function PayrollTab() {
                 required
                 value={formData.start_date}
                 onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-purple-500 focus:ring-purple-500"
+                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:ring-brand-500"
               />
             </div>
             <div>
@@ -266,7 +266,7 @@ export default function PayrollTab() {
                 required
                 value={formData.end_date}
                 onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-purple-500 focus:ring-purple-500"
+                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:ring-brand-500"
               />
             </div>
           </div>
@@ -278,7 +278,7 @@ export default function PayrollTab() {
                 type="date"
                 value={formData.payout_date}
                 onChange={(e) => setFormData({ ...formData, payout_date: e.target.value, schedule_id: null })}
-                className="block w-full max-w-xs rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-purple-500 focus:ring-purple-500"
+                className="block w-full max-w-xs rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:ring-brand-500"
               />
               {activeSchedule && (
                 <button
@@ -292,7 +292,7 @@ export default function PayrollTab() {
               )}
             </div>
             {formData.schedule_id && (
-              <p className="mt-1 text-xs text-purple-700">From payout schedule {scheduleName(formData.schedule_id)}.</p>
+              <p className="mt-1 text-xs text-brand-700">From payout schedule {scheduleName(formData.schedule_id)}.</p>
             )}
             <p className="mt-1 text-xs text-gray-500">
               When set, this run also pays every bonus, incentive, allowance and leave-cash
@@ -306,14 +306,14 @@ export default function PayrollTab() {
               type="text"
               value={formData.notes}
               onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-purple-500 focus:ring-purple-500"
+              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:ring-brand-500"
             />
           </div>
           <div className="flex justify-end gap-2">
             <button type="button" onClick={() => { setShowForm(false); setFormData(EMPTY_PERIOD) }} className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
               Cancel
             </button>
-            <button type="submit" disabled={createMutation.isPending} className="rounded-md bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700 disabled:opacity-50">
+            <button type="submit" disabled={createMutation.isPending} className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50">
               Create
             </button>
           </div>
@@ -353,7 +353,7 @@ export default function PayrollTab() {
                   <tr
                     key={p.id}
                     onClick={() => setSelectedPeriodId(p.id === selectedPeriodId ? null : p.id)}
-                    className={`cursor-pointer hover:bg-gray-50 ${selectedPeriodId === p.id ? 'bg-purple-50' : ''}`}
+                    className={`cursor-pointer hover:bg-gray-50 ${selectedPeriodId === p.id ? 'bg-brand-50' : ''}`}
                   >
                     <td className="px-4 py-3 text-sm font-medium text-gray-900">{p.name}</td>
                     <td className="px-4 py-3 text-sm text-gray-500 capitalize">{p.period_type.replace('_', '-')}</td>
@@ -417,7 +417,7 @@ export default function PayrollTab() {
                           preparer={isPreparer(p)}
                           busy={finalizeMutation.isPending}
                           onClick={() => finalizeMutation.mutate(p.id)}
-                          className="text-purple-600 hover:text-purple-800"
+                          className="text-brand-600 hover:text-brand-800"
                         />
                       )}
                     </td>
@@ -621,7 +621,7 @@ function PeriodOutcome({ period, canRetry, onRetry, retrying }: {
           <ul className="mt-1 list-disc pl-5">
             {skipped.map((s) => <li key={s.employee_id}>{s.employee_name}</li>)}
           </ul>
-          <Link href="/finances?tab=employee-salaries" className="mt-2 inline-block font-semibold text-purple-700 underline">
+          <Link href="/finances?tab=employee-salaries" className="mt-2 inline-block font-semibold text-brand-700 underline">
             Assign salaries
           </Link>
           <span className="text-amber-800">, then compute again.</span>

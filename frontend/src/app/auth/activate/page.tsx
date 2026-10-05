@@ -81,11 +81,11 @@ function ActivateAccountContent() {
   };
 
   return (
-    <div className="min-h-app bg-gradient-to-br from-purple-50 via-white to-purple-50 flex items-center justify-center p-4">
+    <div className="min-h-app bg-gradient-to-br from-brand-50 via-white to-brand-50 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         {/* Logo / Branding */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-14 h-14 bg-purple-600 rounded-2xl mb-4">
+          <div className="inline-flex items-center justify-center w-14 h-14 bg-brand-600 rounded-2xl mb-4">
             <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
             </svg>
@@ -97,7 +97,7 @@ function ActivateAccountContent() {
           {/* Loading */}
           {state === 'loading' && (
             <div className="text-center py-8">
-              <svg className="w-8 h-8 animate-spin text-purple-600 mx-auto mb-4" fill="none" viewBox="0 0 24 24">
+              <svg className="w-8 h-8 animate-spin text-brand-600 mx-auto mb-4" fill="none" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
               </svg>
@@ -120,7 +120,7 @@ function ActivateAccountContent() {
               </p>
               <Link
                 href="/auth/login"
-                className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-purple-600 bg-purple-50 rounded-lg hover:bg-purple-100 transition-colors"
+                className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-brand-600 bg-brand-50 rounded-lg hover:bg-brand-100 transition-colors"
               >
                 Go to Login
               </Link>
@@ -155,7 +155,7 @@ function ActivateAccountContent() {
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder="Create a strong password"
-                      className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none text-sm pr-10"
+                      className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent outline-none text-sm pr-10"
                       autoFocus
                     />
                     <button
@@ -207,7 +207,7 @@ function ActivateAccountContent() {
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     placeholder="Re-enter your password"
-                    className={`w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none text-sm ${
+                    className={`w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent outline-none text-sm ${
                       confirmPassword.length > 0 && !passwordsMatch ? 'border-red-300' : 'border-gray-300'
                     }`}
                   />
@@ -219,7 +219,7 @@ function ActivateAccountContent() {
                 <button
                   type="submit"
                   disabled={!canSubmit}
-                  className="w-full px-4 py-2.5 text-sm font-medium text-white bg-purple-600 rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                  className="w-full px-4 py-2.5 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
                 >
                   {submitting && (
                     <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
@@ -247,7 +247,7 @@ function ActivateAccountContent() {
               </p>
               <Link
                 href="/auth/login"
-                className="inline-flex items-center gap-2 px-6 py-2.5 text-sm font-medium text-white bg-purple-600 rounded-lg hover:bg-purple-700 transition-colors"
+                className="inline-flex items-center gap-2 px-6 py-2.5 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 transition-colors"
               >
                 Sign In
               </Link>
@@ -262,8 +262,8 @@ function ActivateAccountContent() {
 export default function ActivateAccountPage() {
   return (
     <Suspense fallback={
-      <div className="min-h-app bg-gradient-to-br from-purple-50 via-white to-purple-50 flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-purple-600 border-t-transparent rounded-full animate-spin" />
+      <div className="min-h-app bg-gradient-to-br from-brand-50 via-white to-brand-50 flex items-center justify-center">
+        <div className="w-8 h-8 border-4 border-brand-600 border-t-transparent rounded-full animate-spin" />
       </div>
     }>
       <ActivateAccountContent />

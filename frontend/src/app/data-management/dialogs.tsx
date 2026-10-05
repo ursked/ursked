@@ -74,7 +74,7 @@ function Label({ children }: { children: React.ReactNode }) {
 }
 
 const inputClass =
-  'w-full min-h-[44px] rounded-lg border border-gray-300 px-3 text-sm text-gray-900 focus:border-purple-500';
+  'w-full min-h-[44px] rounded-lg border border-gray-300 px-3 text-sm text-gray-900 focus:border-brand-500';
 
 // ── Filter ───────────────────────────────────────────────────────────
 
@@ -179,7 +179,7 @@ export function FilterDialog({
               value: isRange ? [low, high] : needsValue ? value : null,
             })
           }
-          className="min-h-[44px] rounded-lg bg-purple-600 px-4 text-sm font-medium text-white hover:bg-purple-700"
+          className="min-h-[44px] rounded-lg bg-brand-600 px-4 text-sm font-medium text-white hover:bg-brand-700"
         >
           Apply filter
         </button>
@@ -311,7 +311,7 @@ export function GroupDialog({
                   .map((a, i) => ({ ...a, output_key: a.output_key || `agg_${i}` }))
               )
             }
-            className="min-h-[44px] rounded-lg bg-purple-600 px-4 text-sm font-medium text-white hover:bg-purple-700 disabled:opacity-50"
+            className="min-h-[44px] rounded-lg bg-brand-600 px-4 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
           >
             Summarise
           </button>
@@ -391,7 +391,7 @@ export function GroupDialog({
           onClick={() =>
             setAggs((a) => [...a, { column: '', func: 'sum', output_key: `agg_${a.length}` }])
           }
-          className="mt-2 min-h-[44px] text-sm font-medium text-purple-700 hover:underline"
+          className="mt-2 min-h-[44px] text-sm font-medium text-brand-700 hover:underline"
         >
           + Add another figure
         </button>
@@ -454,7 +454,7 @@ export function FormatDialog({
           <button
             type="button"
             onClick={() => onSave(build())}
-            className="min-h-[44px] rounded-lg bg-purple-600 px-4 text-sm font-medium text-white hover:bg-purple-700"
+            className="min-h-[44px] rounded-lg bg-brand-600 px-4 text-sm font-medium text-white hover:bg-brand-700"
           >
             Apply
           </button>
@@ -548,7 +548,7 @@ export function RenameDialog({
           <button
             type="button"
             onClick={() => onSave(name.trim() || null)}
-            className="min-h-[44px] rounded-lg bg-purple-600 px-4 text-sm font-medium text-white hover:bg-purple-700"
+            className="min-h-[44px] rounded-lg bg-brand-600 px-4 text-sm font-medium text-white hover:bg-brand-700"
           >
             Rename
           </button>
@@ -659,7 +659,7 @@ export function CalculatedColumnDialog({
           type="button"
           disabled={!valid}
           onClick={() => onSave(name.trim(), formula.trim())}
-          className="min-h-[44px] rounded-lg bg-purple-600 px-4 text-sm font-medium text-white hover:bg-purple-700 disabled:opacity-50"
+          className="min-h-[44px] rounded-lg bg-brand-600 px-4 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
         >
           Add column
         </button>
@@ -687,7 +687,7 @@ export function CalculatedColumnDialog({
                 applyRecipe(r.key, picked);
               }}
               className={`flex w-full flex-col items-start rounded-lg border px-3 py-2 text-left ${
-                recipe === r.key ? 'border-purple-500 bg-purple-50' : 'border-gray-200 hover:bg-gray-50'
+                recipe === r.key ? 'border-brand-500 bg-brand-50' : 'border-gray-200 hover:bg-gray-50'
               }`}
             >
               <span className="text-sm font-medium text-gray-900">{r.label}</span>
@@ -816,7 +816,7 @@ export function HeaderBandDialog({
             type="button"
             disabled={!valid}
             onClick={() => onSave(tier, { label: label.trim(), from, to })}
-            className="min-h-[44px] rounded-lg bg-purple-600 px-4 text-sm font-medium text-white hover:bg-purple-700 disabled:opacity-50"
+            className="min-h-[44px] rounded-lg bg-brand-600 px-4 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
           >
             {editing ? 'Save heading' : 'Add heading'}
           </button>
@@ -935,7 +935,7 @@ export function BlockDialog({
                 orderFirst && !alreadyOrdered
               )
             }
-            className="min-h-[44px] rounded-lg bg-purple-600 px-4 text-sm font-medium text-white hover:bg-purple-700 disabled:opacity-50"
+            className="min-h-[44px] rounded-lg bg-brand-600 px-4 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
           >
             Apply
           </button>
@@ -1029,7 +1029,7 @@ export function PageSetupDialog({
               freeze_header: freeze,
             })
           }
-          className="min-h-[44px] rounded-lg bg-purple-600 px-4 text-sm font-medium text-white hover:bg-purple-700"
+          className="min-h-[44px] rounded-lg bg-brand-600 px-4 text-sm font-medium text-white hover:bg-brand-700"
         >
           Apply
         </button>
@@ -1089,7 +1089,7 @@ export function PageSetupDialog({
           <button
             type="button"
             onClick={() => setRows((x) => [...x, { text: '', span: null, align: 'left', bold: true }])}
-            className="min-h-[44px] text-sm font-medium text-purple-700 hover:underline"
+            className="min-h-[44px] text-sm font-medium text-brand-700 hover:underline"
           >
             + Add a line
           </button>
@@ -1199,7 +1199,7 @@ export function DataOptionsDialog({
             }
             onSave(out);
           }}
-          className="min-h-[44px] rounded-lg bg-purple-600 px-4 text-sm font-medium text-white hover:bg-purple-700"
+          className="min-h-[44px] rounded-lg bg-brand-600 px-4 text-sm font-medium text-white hover:bg-brand-700"
         >
           Apply
         </button>

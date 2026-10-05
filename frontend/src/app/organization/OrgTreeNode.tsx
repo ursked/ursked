@@ -39,7 +39,7 @@ export default function OrgTreeNode({
       <div
         className={`group flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-colors ${
           isSelected
-            ? 'bg-purple-50 ring-1 ring-purple-200'
+            ? 'bg-brand-50 ring-1 ring-brand-200'
             : 'hover:bg-gray-50'
         }`}
         style={{ paddingLeft: `${depth * 24 + 8}px` }}
@@ -116,7 +116,7 @@ export default function OrgTreeNode({
               e.stopPropagation();
               onAddChild(node.id);
             }}
-            className="ml-auto opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded transition-all flex-shrink-0"
+            className="ml-auto opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-brand-600 hover:bg-brand-50 rounded transition-all flex-shrink-0"
             title="Add child unit"
           >
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">

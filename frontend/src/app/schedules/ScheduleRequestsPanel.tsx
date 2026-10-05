@@ -187,7 +187,7 @@ function RequestCard({
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 rows={2}
-                className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-xs focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none"
+                className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-xs focus:ring-2 focus:ring-brand-500 focus:border-transparent resize-none"
                 placeholder="Notes (optional)"
               />
               <div className="flex items-center gap-2">
@@ -323,7 +323,7 @@ export default function ScheduleRequestsPanel({ isOpen, onClose }: ScheduleReque
             onClick={() => setTab('my')}
             className={`flex-1 px-4 py-2.5 text-sm font-medium transition-colors ${
               tab === 'my'
-                ? 'text-purple-700 border-b-2 border-purple-600'
+                ? 'text-brand-700 border-b-2 border-brand-600'
                 : 'text-gray-500 hover:text-gray-700'
             }`}
           >
@@ -333,7 +333,7 @@ export default function ScheduleRequestsPanel({ isOpen, onClose }: ScheduleReque
             onClick={() => setTab('approvals')}
             className={`flex-1 px-4 py-2.5 text-sm font-medium transition-colors relative ${
               tab === 'approvals'
-                ? 'text-purple-700 border-b-2 border-purple-600'
+                ? 'text-brand-700 border-b-2 border-brand-600'
                 : 'text-gray-500 hover:text-gray-700'
             }`}
           >
@@ -352,7 +352,7 @@ export default function ScheduleRequestsPanel({ isOpen, onClose }: ScheduleReque
             <>
               {loadingMy ? (
                 <div className="text-center py-8">
-                  <div className="w-8 h-8 border-4 border-purple-200 border-t-purple-600 rounded-full animate-spin mx-auto mb-2" />
+                  <div className="w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin mx-auto mb-2" />
                   <p className="text-sm text-gray-500">Loading requests...</p>
                 </div>
               ) : myRequests.length === 0 ? (
@@ -382,7 +382,7 @@ export default function ScheduleRequestsPanel({ isOpen, onClose }: ScheduleReque
             <>
               {loadingApprovals ? (
                 <div className="text-center py-8">
-                  <div className="w-8 h-8 border-4 border-purple-200 border-t-purple-600 rounded-full animate-spin mx-auto mb-2" />
+                  <div className="w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin mx-auto mb-2" />
                   <p className="text-sm text-gray-500">Loading approvals...</p>
                 </div>
               ) : pendingApprovals.length === 0 ? (

@@ -63,7 +63,7 @@ export default function RecordAttendanceModal({ onClose, onSubmit, isPending }: 
               value={date}
               onChange={(e) => setDate(e.target.value)}
               required
-              className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-purple-500 focus:ring-purple-500 focus:outline-none"
+              className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500 focus:outline-none"
             />
           </div>
 
@@ -74,7 +74,7 @@ export default function RecordAttendanceModal({ onClose, onSubmit, isPending }: 
                 type="time"
                 value={startTime}
                 onChange={(e) => setStartTime(e.target.value)}
-                className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-purple-500 focus:ring-purple-500 focus:outline-none"
+                className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500 focus:outline-none"
               />
               <p className="mt-1 text-xs text-gray-500">Leave empty to mark absent</p>
             </div>
@@ -84,7 +84,7 @@ export default function RecordAttendanceModal({ onClose, onSubmit, isPending }: 
                 type="time"
                 value={endTime}
                 onChange={(e) => setEndTime(e.target.value)}
-                className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-purple-500 focus:ring-purple-500 focus:outline-none"
+                className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500 focus:outline-none"
               />
             </div>
           </div>
@@ -96,7 +96,7 @@ export default function RecordAttendanceModal({ onClose, onSubmit, isPending }: 
               onChange={(e) => setNotes(e.target.value)}
               rows={2}
               placeholder="Optional notes..."
-              className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-purple-500 focus:ring-purple-500 focus:outline-none"
+              className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500 focus:outline-none"
             />
           </div>
 
@@ -111,7 +111,7 @@ export default function RecordAttendanceModal({ onClose, onSubmit, isPending }: 
             <button
               type="submit"
               disabled={isPending || !employeeId}
-              className="inline-flex items-center rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="inline-flex items-center rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {isPending ? 'Recording...' : 'Record Attendance'}
             </button>

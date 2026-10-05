@@ -13,7 +13,7 @@ import { ApproverCheckNote, EventList, StepDots, ViolationList, daysLabel, typeL
 type Target = { id: number; employeeName: string; app: LeaveApplication }
 
 const SPINNER = (
-  <svg className="h-5 w-5 animate-spin text-purple-600" fill="none" viewBox="0 0 24 24">
+  <svg className="h-5 w-5 animate-spin text-brand-600" fill="none" viewBox="0 0 24 24">
     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
   </svg>
@@ -46,7 +46,7 @@ function ReasonField({ id, value, onChange, placeholder, help }: { id: string; v
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-purple-500 focus:ring-purple-500 focus:outline-none"
+        className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500 focus:outline-none"
       />
       <p className="mt-1 text-xs text-gray-500">{help}</p>
     </div>
@@ -320,7 +320,7 @@ export default function ApprovalsTab() {
                           <div className="flex flex-wrap items-center justify-end gap-2">
                             {app.actions?.can_reassign && (
                               <button type="button" onClick={() => setReassignModal(target(app))}
-                                className="inline-flex items-center rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-purple-700 shadow-sm ring-1 ring-inset ring-purple-300 hover:bg-purple-50">
+                                className="inline-flex items-center rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-brand-700 shadow-sm ring-1 ring-inset ring-brand-300 hover:bg-brand-50">
                                 Reassign approver
                               </button>
                             )}
@@ -435,7 +435,7 @@ export default function ApprovalsTab() {
             <label htmlFor="review-notes" className="block text-sm font-medium text-gray-700 mb-1">Notes (optional)</label>
             <textarea id="review-notes" rows={3} value={reviewNotes} onChange={(e) => setReviewNotes(e.target.value)}
               placeholder="Add any notes..."
-              className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-purple-500 focus:ring-purple-500 focus:outline-none" />
+              className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500 focus:outline-none" />
           </div>
         </ModalShell>
       )}
@@ -521,7 +521,7 @@ export default function ApprovalsTab() {
                 type="button"
                 onClick={() => newApprover && reassignMutation.mutate({ id: reassignModal.id, approver_id: newApprover, reason: reason.trim() })}
                 disabled={reassignMutation.isPending || !newApprover || !reason.trim() || newApproverCheck?.is_active === false}
-                className="inline-flex items-center rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-700 disabled:opacity-50"
+                className="inline-flex items-center rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-700 disabled:opacity-50"
               >
                 {reassignMutation.isPending ? 'Saving...' : 'Reassign'}
               </button>

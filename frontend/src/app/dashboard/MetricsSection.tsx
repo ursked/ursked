@@ -75,7 +75,7 @@ export function MetricsSection({ metrics: data, view }: { metrics: DashboardMetr
             <MtdStat label="Attendance Rate" value={`${data.month_attendance_rate}%`} icon={<TrendingUp className="h-4 w-4 text-blue-500" />} />
             <MtdStat label="Late Arrivals" value={data.month_late_count} icon={<Clock className="h-4 w-4 text-yellow-500" />} />
             <MtdStat label="Overtime Hours" value={data.month_ot_hours} icon={<AlertTriangle className="h-4 w-4 text-orange-500" />} />
-            <MtdStat label="Leave Days" value={data.month_leave_days} icon={<Calendar className="h-4 w-4 text-purple-500" />} />
+            <MtdStat label="Leave Days" value={data.month_leave_days} icon={<Calendar className="h-4 w-4 text-brand-500" />} />
           </div>
         </div>
       </div>

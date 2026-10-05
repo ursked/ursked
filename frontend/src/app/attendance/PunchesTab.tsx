@@ -123,7 +123,7 @@ export default function PunchesTab() {
                         {LOCATION_LABEL[p.location_status] ?? p.location_status}
                         {p.latitude != null && p.longitude != null && (
                           <a
-                            className="ml-2 text-purple-700 underline"
+                            className="ml-2 text-brand-700 underline"
                             href={`https://www.openstreetmap.org/?mlat=${p.latitude}&mlon=${p.longitude}#map=17/${p.latitude}/${p.longitude}`}
                             target="_blank"
                             rel="noreferrer noopener"

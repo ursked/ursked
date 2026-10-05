@@ -195,7 +195,7 @@ export default function PayoutScheduleTab() {
                 key={k}
                 type="button"
                 onClick={() => { setCutoffs(p.cutoffs); setFrequency(p.frequency) }}
-                className="rounded-full border border-gray-300 px-3 py-1 text-xs font-medium text-gray-700 hover:border-purple-400 hover:bg-purple-50"
+                className="rounded-full border border-gray-300 px-3 py-1 text-xs font-medium text-gray-700 hover:border-brand-400 hover:bg-brand-50"
               >
                 {p.label}
               </button>
@@ -259,7 +259,7 @@ export default function PayoutScheduleTab() {
               type="button"
               onClick={() => saveMut.mutate()}
               disabled={saveMut.isPending || errors.length > 0}
-              className="rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-700 disabled:opacity-50"
+              className="rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
             >
               {active ? 'Save schedule' : 'Create schedule'}
             </button>
@@ -276,7 +276,7 @@ export default function PayoutScheduleTab() {
             Resolve
           </button>
           {previewResult && (
-            <span className="text-sm font-semibold text-purple-700">→ paid on {previewResult}</span>
+            <span className="text-sm font-semibold text-brand-700">→ paid on {previewResult}</span>
           )}
         </div>
       </div>

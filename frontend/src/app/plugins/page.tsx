@@ -55,7 +55,7 @@ function BuyHint({ storeUrl, installId, pluginId }: { storeUrl: string; installI
     if (pluginId) url.searchParams.set('plugin', pluginId);
     return (
       <a href={url.toString()} target="_blank" rel="noopener noreferrer"
-        className="text-sm font-medium text-purple-600 hover:text-purple-700">
+        className="text-sm font-medium text-brand-600 hover:text-brand-700">
         Buy or start a trial
       </a>
     );
@@ -342,7 +342,7 @@ function PluginCard({ plugin, list }: { plugin: PluginInfo; list: PluginList }) 
             <p className="mt-2 text-xs text-gray-600">
               {waiting > 0 && <>{waiting} waiting to send. </>}
               {failed > 0 && <span className="text-red-700">{failed} failed. </span>}
-              <button type="button" className="text-purple-600 hover:text-purple-700 font-medium" onClick={() => setActivityOpen(true)}>
+              <button type="button" className="text-brand-600 hover:text-brand-700 font-medium" onClick={() => setActivityOpen(true)}>
                 See activity
               </button>
             </p>

@@ -140,7 +140,7 @@ export default function ShiftCard({
             e.stopPropagation();
             onCopy(shift);
           }}
-          className="absolute top-0.5 right-0.5 p-1 rounded bg-white/80 text-gray-500 hover:text-purple-600 hover:bg-white opacity-0 group-hover/card:opacity-100 focus:opacity-100 transition-opacity"
+          className="absolute top-0.5 right-0.5 p-1 rounded bg-white/80 text-gray-500 hover:text-brand-600 hover:bg-white opacity-0 group-hover/card:opacity-100 focus:opacity-100 transition-opacity"
           title="Copy shift (Ctrl+C)"
           aria-label={`Copy the ${status.label} shift${timeStr ? ` at ${timeStr}` : ''}`}
         >

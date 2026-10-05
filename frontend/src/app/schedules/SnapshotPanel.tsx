@@ -132,7 +132,7 @@ export default function SnapshotPanel({
           <button
             onClick={() => setTab('list')}
             className={`py-2.5 text-sm font-medium border-b-2 transition-colors ${
-              tab === 'list' ? 'border-purple-600 text-purple-600' : 'border-transparent text-gray-500 hover:text-gray-700'
+              tab === 'list' ? 'border-brand-600 text-brand-600' : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
             Saved Snapshots
@@ -140,7 +140,7 @@ export default function SnapshotPanel({
           <button
             onClick={() => setTab('create')}
             className={`py-2.5 text-sm font-medium border-b-2 transition-colors ${
-              tab === 'create' ? 'border-purple-600 text-purple-600' : 'border-transparent text-gray-500 hover:text-gray-700'
+              tab === 'create' ? 'border-brand-600 text-brand-600' : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
             Save Current
@@ -151,12 +151,12 @@ export default function SnapshotPanel({
         <div className="flex-1 overflow-y-auto p-6">
           {tab === 'create' ? (
             <div className="space-y-4">
-              <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
-                <p className="text-xs font-medium text-purple-800 mb-1">Capturing schedule from</p>
-                <p className="text-sm text-purple-900">{currentStartDate} to {currentEndDate}</p>
-                <p className="text-xs text-purple-600 mt-0.5 capitalize">{currentRangeType} view</p>
+              <div className="bg-brand-50 border border-brand-200 rounded-lg p-3">
+                <p className="text-xs font-medium text-brand-800 mb-1">Capturing schedule from</p>
+                <p className="text-sm text-brand-900">{currentStartDate} to {currentEndDate}</p>
+                <p className="text-xs text-brand-600 mt-0.5 capitalize">{currentRangeType} view</p>
                 {employeeIds && (
-                  <p className="text-xs text-purple-600 mt-0.5">
+                  <p className="text-xs text-brand-600 mt-0.5">
                     {employeeIds.length} employee{employeeIds.length !== 1 ? 's' : ''} currently shown
                   </p>
                 )}
@@ -169,7 +169,7 @@ export default function SnapshotPanel({
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="e.g. Week 5 Pattern, Night Shift Rotation"
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-purple-500 focus:ring-purple-500 focus:outline-none"
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:ring-brand-500 focus:outline-none"
                 />
               </div>
 
@@ -180,14 +180,14 @@ export default function SnapshotPanel({
                   onChange={(e) => setDescription(e.target.value)}
                   rows={2}
                   placeholder="Notes about this schedule pattern"
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-purple-500 focus:ring-purple-500 focus:outline-none resize-none"
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:ring-brand-500 focus:outline-none resize-none"
                 />
               </div>
 
               <button
                 onClick={() => createMutation.mutate()}
                 disabled={!name.trim() || createMutation.isPending}
-                className="w-full py-2 text-sm font-medium text-white bg-purple-600 rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                className="w-full py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
               >
                 {createMutation.isPending ? (
                   <>
@@ -209,7 +209,7 @@ export default function SnapshotPanel({
             <div className="space-y-3">
               {isLoading ? (
                 <div className="flex items-center gap-2 text-sm text-gray-500 justify-center py-8">
-                  <div className="w-5 h-5 border-2 border-purple-200 border-t-purple-600 rounded-full animate-spin" />
+                  <div className="w-5 h-5 border-2 border-brand-200 border-t-brand-600 rounded-full animate-spin" />
                   Loading...
                 </div>
               ) : !snapshots || snapshots.length === 0 ? (
@@ -222,7 +222,7 @@ export default function SnapshotPanel({
                   <p className="text-xs text-gray-400 mt-1">Save the current schedule to create a reusable pattern</p>
                   <button
                     onClick={() => setTab('create')}
-                    className="mt-3 px-4 py-1.5 text-xs font-medium text-purple-700 bg-purple-50 rounded-lg hover:bg-purple-100 transition-colors"
+                    className="mt-3 px-4 py-1.5 text-xs font-medium text-brand-700 bg-brand-50 rounded-lg hover:bg-brand-100 transition-colors"
                   >
                     Save Current Schedule
                   </button>

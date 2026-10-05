@@ -52,7 +52,7 @@ const MAX_API_ENTRIES = 60
 const OFFLINE_PAGES = ['/my/schedule', '/my/leave']
 
 const PRECACHE_ASSETS = [
-  '/logo/urskedlogo.png',
+  '/logo/ursked-logo.svg',
   '/favicon.ico',
   '/icons/ursked-192.png',
   '/manifest.webmanifest',

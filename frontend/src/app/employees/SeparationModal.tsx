@@ -106,7 +106,7 @@ export default function SeparationModal({ employee, onClose, onConfirm }: Separa
               required
               value={separationDate}
               onChange={(e) => setSeparationDate(e.target.value)}
-              className="block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm shadow-sm focus:border-purple-500 focus:ring-2 focus:ring-purple-500 focus:outline-none"
+              className="block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm shadow-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-500 focus:outline-none"
             />
           </div>
 
@@ -121,7 +121,7 @@ export default function SeparationModal({ employee, onClose, onConfirm }: Separa
               value={separationReason}
               onChange={(e) => setSeparationReason(e.target.value)}
               placeholder="Enter the reason for separation..."
-              className="block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm shadow-sm focus:border-purple-500 focus:ring-2 focus:ring-purple-500 focus:outline-none resize-none"
+              className="block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm shadow-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-500 focus:outline-none resize-none"
             />
           </div>
 
@@ -130,7 +130,7 @@ export default function SeparationModal({ employee, onClose, onConfirm }: Separa
               type="checkbox"
               checked={deleteFutureShifts}
               onChange={(e) => setDeleteFutureShifts(e.target.checked)}
-              className="mt-0.5 h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+              className="mt-0.5 h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
             />
             <span className="text-sm text-gray-700">
               Delete their shifts after {separationDate || 'the separation date'}

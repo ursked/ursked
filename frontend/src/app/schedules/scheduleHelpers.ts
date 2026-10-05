@@ -45,7 +45,7 @@ export const SHIFT_STATUS_SHORT: Record<string, string> = {
 // ── Status Colors ────────────────────────────────────────────────────
 
 export const SHIFT_STATUS_COLORS: Record<string, string> = {
-  scheduled: '#7c3aed',       // purple-600
+  scheduled: '#7c3aed',       // brand-600
   rest_day: '#6b7280',        // gray-500
   sick_leave: '#ef4444',      // red-500
   personal_leave: '#f59e0b',  // amber-500
@@ -58,7 +58,7 @@ export const SHIFT_STATUS_COLORS: Record<string, string> = {
   maternity_leave: '#ec4899', // pink-500
   union_leave: '#14b8a6',     // teal-500
   fire_calamity_leave: '#f97316', // orange-500
-  solo_parent_leave: '#a855f7', // purple-500
+  solo_parent_leave: '#a855f7', // brand-500
   special_leave_women: '#d946ef', // fuchsia-500
   vawc_leave: '#e11d48',      // rose-600
   other: '#9ca3af',           // gray-400
@@ -97,7 +97,7 @@ export const WORK_ARRANGEMENT_BADGE: Record<string, string> = {
   wfh: 'bg-blue-50 text-blue-700',
   onsite: 'bg-green-50 text-green-700',
   hybrid: 'bg-amber-50 text-amber-700',
-  ob: 'bg-purple-50 text-purple-700',
+  ob: 'bg-brand-50 text-brand-700',
 };
 
 // ── All Status Options for Dropdowns ─────────────────────────────────

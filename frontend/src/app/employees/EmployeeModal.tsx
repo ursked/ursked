@@ -60,7 +60,7 @@ const ACTIONS: { key: keyof Pick<RolePermissionEntry, 'can_view' | 'can_create' 
 ];
 
 const inputClass =
-  'w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none text-sm disabled:bg-gray-50 disabled:text-gray-500';
+  'w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent outline-none text-sm disabled:bg-gray-50 disabled:text-gray-500';
 
 type Tab = 'basic' | 'employment' | 'additional' | 'roles';
 
@@ -297,7 +297,7 @@ export default function EmployeeModal({ employee, onClose, onSaved }: EmployeeMo
                 onClick={() => setTab(t.key)}
                 className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px whitespace-nowrap transition-colors ${
                   tab === t.key
-                    ? 'border-purple-600 text-purple-600'
+                    ? 'border-brand-600 text-brand-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700'
                 }`}
               >
@@ -357,7 +357,7 @@ export default function EmployeeModal({ employee, onClose, onSaved }: EmployeeMo
                     <div className="flex flex-col sm:flex-row gap-3">
                       <label
                         className={`flex-1 flex items-center gap-2 p-3 rounded-lg border cursor-pointer transition-colors ${
-                          sendInvite ? 'border-purple-300 bg-purple-50' : 'border-gray-200 hover:bg-gray-50'
+                          sendInvite ? 'border-brand-300 bg-brand-50' : 'border-gray-200 hover:bg-gray-50'
                         }`}
                       >
                         <input
@@ -365,7 +365,7 @@ export default function EmployeeModal({ employee, onClose, onSaved }: EmployeeMo
                           name="accountSetup"
                           checked={sendInvite}
                           onChange={() => setSendInvite(true)}
-                          className="w-4 h-4 text-purple-600 border-gray-300 focus:ring-purple-500"
+                          className="w-4 h-4 text-brand-600 border-gray-300 focus:ring-brand-500"
                         />
                         <div>
                           <p className="text-sm font-medium text-gray-900">Send Invite Email</p>
@@ -374,7 +374,7 @@ export default function EmployeeModal({ employee, onClose, onSaved }: EmployeeMo
                       </label>
                       <label
                         className={`flex-1 flex items-center gap-2 p-3 rounded-lg border cursor-pointer transition-colors ${
-                          !sendInvite ? 'border-purple-300 bg-purple-50' : 'border-gray-200 hover:bg-gray-50'
+                          !sendInvite ? 'border-brand-300 bg-brand-50' : 'border-gray-200 hover:bg-gray-50'
                         }`}
                       >
                         <input
@@ -382,7 +382,7 @@ export default function EmployeeModal({ employee, onClose, onSaved }: EmployeeMo
                           name="accountSetup"
                           checked={!sendInvite}
                           onChange={() => setSendInvite(false)}
-                          className="w-4 h-4 text-purple-600 border-gray-300 focus:ring-purple-500"
+                          className="w-4 h-4 text-brand-600 border-gray-300 focus:ring-brand-500"
                         />
                         <div>
                           <p className="text-sm font-medium text-gray-900">Set Password Manually</p>
@@ -581,7 +581,7 @@ export default function EmployeeModal({ employee, onClose, onSaved }: EmployeeMo
                       <div
                         key={role.code}
                         className={`rounded-lg border transition-colors ${
-                          isSelected ? 'border-purple-300 bg-purple-50/50' : 'border-gray-200 hover:bg-gray-50'
+                          isSelected ? 'border-brand-300 bg-brand-50/50' : 'border-gray-200 hover:bg-gray-50'
                         }`}
                       >
                         <label className={`flex items-center gap-3 p-3 ${lockReason ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
@@ -590,7 +590,7 @@ export default function EmployeeModal({ employee, onClose, onSaved }: EmployeeMo
                             checked={isSelected}
                             disabled={!!lockReason}
                             onChange={() => toggleRole(role.code)}
-                            className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500 disabled:opacity-50"
+                            className="w-4 h-4 text-brand-600 border-gray-300 rounded focus:ring-brand-500 disabled:opacity-50"
                           />
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium text-gray-900">{role.label}</p>
@@ -640,32 +640,32 @@ export default function EmployeeModal({ employee, onClose, onSaved }: EmployeeMo
 
                 {/* Effective Permissions Summary */}
                 {isAdmin && selectedRoles.length > 0 && (
-                  <div className="mt-4 bg-purple-50 border border-purple-200 rounded-lg p-4">
+                  <div className="mt-4 bg-brand-50 border border-brand-200 rounded-lg p-4">
                     <div className="mb-2">
-                      <h4 className="text-sm font-semibold text-purple-900">Effective Permissions</h4>
-                      <p className="text-xs text-purple-600">
+                      <h4 className="text-sm font-semibold text-brand-900">Effective Permissions</h4>
+                      <p className="text-xs text-brand-600">
                         Combined access from: {selectedRoles.map(c => ROLE_OPTIONS.find(r => r.code === c)?.label).filter(Boolean).join(', ')}
                       </p>
                     </div>
-                    <div className="bg-white rounded-lg border border-purple-100 overflow-x-auto">
+                    <div className="bg-white rounded-lg border border-brand-100 overflow-x-auto">
                       <table className="w-full text-[10px]">
                         <thead>
-                          <tr className="bg-purple-50/50">
-                            <th className="px-1.5 py-1 text-left font-medium text-purple-700 w-[60px]"></th>
+                          <tr className="bg-brand-50/50">
+                            <th className="px-1.5 py-1 text-left font-medium text-brand-700 w-[60px]"></th>
                             {MODULES.map(m => (
-                              <th key={m.key} className="px-1 py-1 text-center font-medium text-purple-700">{m.label}</th>
+                              <th key={m.key} className="px-1 py-1 text-center font-medium text-brand-700">{m.label}</th>
                             ))}
                           </tr>
                         </thead>
                         <tbody>
                           {ACTIONS.map(action => (
-                            <tr key={action.key} className="border-t border-purple-50">
-                              <td className="px-1.5 py-0.5 font-medium text-purple-600">{action.name}</td>
+                            <tr key={action.key} className="border-t border-brand-50">
+                              <td className="px-1.5 py-0.5 font-medium text-brand-600">{action.name}</td>
                               {MODULES.map(m => {
                                 const granted = effectivePerms[m.key]?.[action.key];
                                 return (
                                   <td key={m.key} className="px-1 py-0.5 text-center">
-                                    <span className={`inline-block w-3.5 h-3.5 rounded-full text-[8px] leading-[14px] ${granted ? 'bg-purple-600 text-white font-bold' : 'bg-gray-200 text-gray-400'}`}>{action.label}</span>
+                                    <span className={`inline-block w-3.5 h-3.5 rounded-full text-[8px] leading-[14px] ${granted ? 'bg-brand-600 text-white font-bold' : 'bg-gray-200 text-gray-400'}`}>{action.label}</span>
                                   </td>
                                 );
                               })}
@@ -674,7 +674,7 @@ export default function EmployeeModal({ employee, onClose, onSaved }: EmployeeMo
                         </tbody>
                       </table>
                     </div>
-                    <p className="mt-2 text-xs text-purple-700">
+                    <p className="mt-2 text-xs text-brand-700">
                       Administrator works only from the administrator sign-in, and Finance only from the finance
                       sign-in. No role shows salary figures: each person needs salary access, approved by someone
                       else under Salary access.
@@ -697,7 +697,7 @@ export default function EmployeeModal({ employee, onClose, onSaved }: EmployeeMo
             <button
               onClick={handleSubmit}
               disabled={!canSubmit || loading}
-              className="px-4 py-2.5 text-sm font-medium text-white bg-purple-600 rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+              className="px-4 py-2.5 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
             >
               {loading && (
                 <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">

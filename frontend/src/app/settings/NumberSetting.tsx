@@ -58,7 +58,7 @@ export default function NumberSetting({
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commit}
         onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
-        className="block w-40 rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-purple-500 focus:ring-purple-500 focus:outline-none disabled:opacity-50"
+        className="block w-40 rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500 focus:outline-none disabled:opacity-50"
       />
       {help && <p className="mt-1 text-xs text-gray-500">{help}</p>}
     </div>

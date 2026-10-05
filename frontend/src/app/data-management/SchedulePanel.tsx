@@ -195,7 +195,7 @@ export default function SchedulePanel({
           type="button"
           disabled={!form.configId || !form.emails.trim() || !form.time || save.isPending}
           onClick={() => save.mutate()}
-          className="min-h-[44px] rounded-lg bg-purple-600 px-4 text-sm font-medium text-white hover:bg-purple-700 disabled:opacity-50"
+          className="min-h-[44px] rounded-lg bg-brand-600 px-4 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
         >
           {save.isPending ? 'Saving…' : editing === 'new' ? 'Create schedule' : 'Save schedule'}
         </button>
@@ -312,7 +312,7 @@ export default function SchedulePanel({
                             setEditing(s.id);
                             setForm(toForm(s));
                           }}
-                          className="min-h-[44px] rounded-lg px-3 text-sm font-medium text-purple-700 hover:bg-purple-50"
+                          className="min-h-[44px] rounded-lg px-3 text-sm font-medium text-brand-700 hover:bg-brand-50"
                         >
                           Edit
                         </button>

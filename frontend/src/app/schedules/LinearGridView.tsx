@@ -330,14 +330,14 @@ export default function LinearGridView({
                     key={dateStr}
                     scope="col"
                     className={`sticky top-0 z-30 border-b border-r border-gray-200 px-1 py-2 text-center min-w-[56px] sm:min-w-[100px] max-w-[120px] ${
-                      isToday ? 'bg-purple-50' : isWeekend ? 'bg-gray-50' : 'bg-gray-100'
+                      isToday ? 'bg-brand-50' : isWeekend ? 'bg-gray-50' : 'bg-gray-100'
                     }`}
                   >
                     {/* gray-400 on these header tints measured 2.3:1 against a
                         4.5:1 requirement — roughly half. This is the primary
                         orientation cue in a grid you scroll sideways. */}
                     <div className="text-[10px] text-gray-600 uppercase">{dayName}</div>
-                    <div className={`text-sm font-semibold ${isToday ? 'text-purple-600' : 'text-gray-700'}`}>
+                    <div className={`text-sm font-semibold ${isToday ? 'text-brand-600' : 'text-gray-700'}`}>
                       {dayNum}
                     </div>
                     {remark && (
@@ -400,7 +400,7 @@ export default function LinearGridView({
                           <circle cx="10.5" cy="12.5" r="1.5" />
                         </svg>
                       </div>
-                      <div className="hidden sm:flex w-7 h-7 rounded-full bg-gradient-to-br from-purple-400 to-purple-600 items-center justify-center text-white text-[10px] font-semibold flex-shrink-0">
+                      <div className="hidden sm:flex w-7 h-7 rounded-full bg-gradient-to-br from-brand-400 to-brand-600 items-center justify-center text-white text-[10px] font-semibold flex-shrink-0">
                         {emp.employee_name.split(' ').map(n => n[0]).join('').substring(0, 2)}
                       </div>
                       <div className="min-w-0">

@@ -30,7 +30,7 @@ export function LoadProblem({ error, what }: { error: unknown; what: string }) {
         <p className="font-medium">You need salary access to see {what}.</p>
         <p className="mt-1">
           Salary figures are shown only to people with an approved salary-viewer enrollment, whatever their role.{' '}
-          <Link href="/salary-access" className="font-semibold text-purple-700 underline">
+          <Link href="/salary-access" className="font-semibold text-brand-700 underline">
             Request salary access
           </Link>
         </p>
@@ -206,7 +206,7 @@ export function SalaryAccessGate({ what, pendingId, canSelfApprove = false }: {
           <button
             onClick={() => requestMut.mutate()}
             disabled={requestMut.isPending}
-            className="w-full rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-700 disabled:opacity-50"
+            className="w-full rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
           >
             Request salary access
           </button>

@@ -150,7 +150,7 @@ export function DayBreakdown({ items, total }: { items: LeaveDayBreakdownItem[];
         <span>
           {total !== undefined ? `This request uses ${total} day${total === 1 ? '' : 's'} of leave` : 'Day by day'}
         </span>
-        <span className="text-xs text-purple-700">{open ? 'Hide days' : 'Show days'}</span>
+        <span className="text-xs text-brand-700">{open ? 'Hide days' : 'Show days'}</span>
       </button>
       {open && (
         <ul className="mt-2 divide-y divide-gray-100">

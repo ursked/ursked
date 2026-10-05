@@ -158,7 +158,7 @@ export default function BackgroundJobsTab() {
                           type="button"
                           onClick={() => retry.mutate(o.id)}
                           disabled={retry.isPending}
-                          className="text-sm font-medium text-purple-600 hover:text-purple-700 disabled:opacity-50"
+                          className="text-sm font-medium text-brand-600 hover:text-brand-700 disabled:opacity-50"
                         >
                           Retry now
                         </button>

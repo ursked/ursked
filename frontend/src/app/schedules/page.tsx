@@ -865,9 +865,9 @@ function SchedulesPageInner() {
 
         {/* Draft / publish banner */}
         {canEditShifts && draftCount > 0 && (
-          <div className="rounded-lg border border-purple-200 bg-purple-50 px-4 py-2.5">
+          <div className="rounded-lg border border-brand-200 bg-brand-50 px-4 py-2.5">
             <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2 text-xs text-purple-800">
+              <div className="flex items-center gap-2 text-xs text-brand-800">
                 <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                 </svg>
@@ -879,15 +879,15 @@ function SchedulesPageInner() {
                 <button
                   onClick={() => publishPreviewMutation.mutate()}
                   disabled={publishPreviewMutation.isPending}
-                  className="rounded-md bg-purple-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-purple-700 disabled:opacity-50"
+                  className="rounded-md bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700 disabled:opacity-50"
                 >
                   {publishPreviewMutation.isPending ? 'Checking…' : `Publish ${draftCount} shift${draftCount !== 1 ? 's' : ''}…`}
                 </button>
               )}
             </div>
             {publishPreview && (
-              <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-purple-200 pt-2">
-                <p className="text-xs text-purple-900">
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-brand-200 pt-2">
+                <p className="text-xs text-brand-900">
                   {publishPreview.published_count === 0
                     ? 'Nothing left to publish for the employees shown.'
                     : `Publish ${publishPreview.published_count} shift${publishPreview.published_count !== 1 ? 's' : ''} for ${publishPreview.employee_count} employee${publishPreview.employee_count !== 1 ? 's' : ''} (${actionStart} to ${actionEnd})? Each of them is notified.`}
@@ -902,7 +902,7 @@ function SchedulesPageInner() {
                   <button
                     onClick={() => publishMutation.mutate()}
                     disabled={publishMutation.isPending || publishPreview.published_count === 0}
-                    className="rounded-md bg-purple-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-purple-700 disabled:opacity-50"
+                    className="rounded-md bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700 disabled:opacity-50"
                   >
                     {publishMutation.isPending ? 'Publishing…' : 'Publish and notify'}
                   </button>
@@ -1004,7 +1004,7 @@ function SchedulesPageInner() {
         {isLoading && (
           <div className="bg-white rounded-xl border border-gray-200 p-12 flex items-center justify-center">
             <div className="text-center">
-              <div className="w-10 h-10 border-4 border-purple-200 border-t-purple-600 rounded-full animate-spin mx-auto mb-3" />
+              <div className="w-10 h-10 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin mx-auto mb-3" />
               <p className="text-sm text-gray-500">Loading schedule...</p>
             </div>
           </div>

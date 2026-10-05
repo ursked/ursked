@@ -178,7 +178,7 @@ export default function TemplatesPanel({ isOpen, onClose, employees, weekStart, 
               key={t}
               onClick={() => setTab(t)}
               className={`py-2.5 text-sm font-medium border-b-2 transition-colors ${
-                tab === t ? 'border-purple-600 text-purple-600' : 'border-transparent text-gray-500 hover:text-gray-700'
+                tab === t ? 'border-brand-600 text-brand-600' : 'border-transparent text-gray-500 hover:text-gray-700'
               }`}
             >
               {t === 'list' ? 'Templates' : 'New from this week'}
@@ -230,7 +230,7 @@ export default function TemplatesPanel({ isOpen, onClose, employees, weekStart, 
               <button
                 onClick={() => createMutation.mutate()}
                 disabled={!name.trim() || !source || pattern.every((d) => !d.status) || createMutation.isPending}
-                className="w-full py-2 text-sm font-medium text-white bg-purple-600 rounded-lg hover:bg-purple-700 disabled:opacity-50"
+                className="w-full py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50"
               >
                 {createMutation.isPending ? 'Saving…' : 'Save template'}
               </button>
@@ -242,7 +242,7 @@ export default function TemplatesPanel({ isOpen, onClose, employees, weekStart, 
               <p className="text-sm text-gray-500">No templates yet</p>
               <button
                 onClick={() => setTab('create')}
-                className="mt-3 px-4 py-1.5 text-xs font-medium text-purple-700 bg-purple-50 rounded-lg hover:bg-purple-100"
+                className="mt-3 px-4 py-1.5 text-xs font-medium text-brand-700 bg-brand-50 rounded-lg hover:bg-brand-100"
               >
                 Make one from this week
               </button>

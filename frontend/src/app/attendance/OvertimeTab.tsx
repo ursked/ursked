@@ -81,7 +81,7 @@ export default function OvertimeTab() {
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="rounded-md border border-gray-300 px-3 py-1.5 text-sm shadow-sm focus:border-purple-500 focus:ring-purple-500 focus:outline-none"
+                className="rounded-md border border-gray-300 px-3 py-1.5 text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500 focus:outline-none"
               >
                 <option value="">All</option>
                 <option value="pending">Pending</option>
@@ -96,7 +96,7 @@ export default function OvertimeTab() {
         <div className="px-6 py-6">
           {isLoading ? (
             <div className="flex items-center gap-3 text-sm text-gray-500">
-              <svg className="h-5 w-5 animate-spin text-purple-600" fill="none" viewBox="0 0 24 24">
+              <svg className="h-5 w-5 animate-spin text-brand-600" fill="none" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
               </svg>
@@ -137,7 +137,7 @@ export default function OvertimeTab() {
                           {log.status}
                         </span>
                         {log.paid_at && (
-                          <span className="ml-1 inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-800" title="Paid in a finalized payroll run">Paid</span>
+                          <span className="ml-1 inline-flex items-center rounded-full bg-brand-100 px-2 py-0.5 text-xs font-medium text-brand-800" title="Paid in a finalized payroll run">Paid</span>
                         )}
                       </td>
                       {canEdit && (

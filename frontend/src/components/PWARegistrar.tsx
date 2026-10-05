@@ -161,12 +161,12 @@ export default function PWARegistrar() {
       aria-live="polite"
       className="fixed z-[65] left-4 right-4 top-[calc(4.5rem+env(safe-area-inset-top))] sm:top-auto sm:right-auto sm:left-4 sm:bottom-[calc(1rem+env(safe-area-inset-bottom))] sm:max-w-sm"
     >
-      <div className="flex items-center gap-3 rounded-lg border border-purple-200 bg-white p-3 pl-4 shadow-lg">
+      <div className="flex items-center gap-3 rounded-lg border border-brand-200 bg-white p-3 pl-4 shadow-lg">
         <p className="flex-1 text-sm text-gray-800">A new version of ursked is available.</p>
         <button
           type="button"
           onClick={reload}
-          className="rounded-md bg-purple-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-purple-700"
+          className="rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700"
         >
           Reload
         </button>

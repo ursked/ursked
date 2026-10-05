@@ -22,7 +22,7 @@ def _base_wrapper(content: str, site_name: str = "ursked") -> str:
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:580px;background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
 <!-- Header -->
 <tr>
-<td style="background-color:#7c3aed;padding:24px 32px;">
+<td style="background-color:#047857;padding:24px 32px;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
 <tr>
 <td>
@@ -58,7 +58,7 @@ def _button(url: str, label: str) -> str:
     return f"""\
 <table role="presentation" cellpadding="0" cellspacing="0" style="margin:24px 0;">
 <tr>
-<td style="background-color:#7c3aed;border-radius:8px;padding:12px 28px;">
+<td style="background-color:#047857;border-radius:8px;padding:12px 28px;">
 <a href="{url}" style="color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;display:inline-block;">{label}</a>
 </td>
 </tr>

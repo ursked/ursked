@@ -96,7 +96,7 @@ export default function DayDetailPanel({
               {Object.entries(byEmployee).map(([name, empShifts]) => (
                 <div key={name}>
                   <div className="flex items-center gap-2 mb-2">
-                    <div className="w-6 h-6 rounded-full bg-gradient-to-br from-purple-400 to-purple-600 flex items-center justify-center text-white text-[9px] font-semibold">
+                    <div className="w-6 h-6 rounded-full bg-gradient-to-br from-brand-400 to-brand-600 flex items-center justify-center text-white text-[9px] font-semibold">
                       {name.split(' ').map(n => n[0]).join('').substring(0, 2)}
                     </div>
                     <span className="text-sm font-medium text-gray-800">{name}</span>
@@ -108,7 +108,7 @@ export default function DayDetailPanel({
                         <div key={shift.id}>
                           <button
                             onClick={() => onShiftClick(shift)}
-                            className="w-full text-left p-2.5 rounded-lg border border-gray-200 hover:border-purple-300 hover:shadow-sm transition-all"
+                            className="w-full text-left p-2.5 rounded-lg border border-gray-200 hover:border-brand-300 hover:shadow-sm transition-all"
                           >
                             <div className="flex items-center justify-between">
                               <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${getStatusBgClass(shift.status)}`}>
@@ -160,7 +160,7 @@ export default function DayDetailPanel({
           <div className="px-6 py-3 border-t">
             <button
               onClick={() => onAddShift(dateStr)}
-              className="w-full py-2 text-sm font-medium text-purple-700 bg-purple-50 rounded-lg hover:bg-purple-100 transition-colors flex items-center justify-center gap-1.5"
+              className="w-full py-2 text-sm font-medium text-brand-700 bg-brand-50 rounded-lg hover:bg-brand-100 transition-colors flex items-center justify-center gap-1.5"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />

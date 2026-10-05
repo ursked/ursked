@@ -65,7 +65,7 @@ export default function StepsPanel({ steps }: { steps: Step[] }) {
                 <button
                   type="button"
                   onClick={s.onEdit}
-                  className="min-h-[44px] min-w-[44px] rounded text-xs font-medium text-purple-700 hover:bg-purple-50"
+                  className="min-h-[44px] min-w-[44px] rounded text-xs font-medium text-brand-700 hover:bg-brand-50"
                   aria-label={`Change: ${s.text}`}
                 >
                   Change

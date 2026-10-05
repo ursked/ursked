@@ -92,7 +92,7 @@ export default function PoliciesPage() {
                 onClick={() => setChosen(tab.key)}
                 className={`whitespace-nowrap border-b-2 py-3 px-1 text-sm font-medium transition-colors ${
                   activeTab === tab.key
-                    ? 'border-purple-500 text-purple-600'
+                    ? 'border-brand-500 text-brand-600'
                     : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
                 }`}
               >

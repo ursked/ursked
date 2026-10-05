@@ -146,7 +146,7 @@ export default function AnalyticsPage() {
               <select
                 value={year}
                 onChange={(e) => { setYear(Number(e.target.value)); clearDateRange(); }}
-                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none text-sm bg-white"
+                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent outline-none text-sm bg-white"
               >
                 {yearOptions.map((y) => (
                   <option key={y} value={y}>{y}</option>
@@ -161,7 +161,7 @@ export default function AnalyticsPage() {
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none text-sm bg-white"
+                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent outline-none text-sm bg-white"
               />
             </div>
 
@@ -172,7 +172,7 @@ export default function AnalyticsPage() {
                 type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none text-sm bg-white"
+                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent outline-none text-sm bg-white"
               />
             </div>
 
@@ -201,7 +201,7 @@ export default function AnalyticsPage() {
               <button
                 key={p.key}
                 onClick={() => setPreset(p.key)}
-                className="px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600 hover:bg-purple-100 hover:text-purple-700 transition-colors"
+                className="px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600 hover:bg-brand-100 hover:text-brand-700 transition-colors"
               >
                 {p.label}
               </button>
@@ -218,7 +218,7 @@ export default function AnalyticsPage() {
                 onClick={() => setActiveTab(tab.key)}
                 className={`whitespace-nowrap border-b-2 py-3 px-1 text-sm font-medium transition-colors ${
                   activeTab === tab.key
-                    ? 'border-purple-500 text-purple-600'
+                    ? 'border-brand-500 text-brand-600'
                     : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
                 }`}
               >

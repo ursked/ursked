@@ -99,7 +99,7 @@ export default function LevelConfigModal({ currentLevels, canAdd = true, canRemo
           <div className="space-y-3">
             {levels.map((level, index) => (
               <div key={level.id ?? `new-${index}`} className="flex items-center gap-3">
-                <span className="w-8 h-8 flex-shrink-0 rounded-full bg-purple-100 text-purple-700 text-sm font-semibold flex items-center justify-center">
+                <span className="w-8 h-8 flex-shrink-0 rounded-full bg-brand-100 text-brand-700 text-sm font-semibold flex items-center justify-center">
                   {level.level_number}
                 </span>
                 <input
@@ -107,7 +107,7 @@ export default function LevelConfigModal({ currentLevels, canAdd = true, canRemo
                   value={level.name}
                   onChange={(e) => handleNameChange(index, e.target.value)}
                   placeholder={`Level ${level.level_number} name (e.g., ${['Department', 'Division', 'Section', 'Unit', 'Team', 'Group', 'Sub-group', 'Cell', 'Squad'][index] || `Sub-level ${level.level_number}`})`}
-                  className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
+                  className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent outline-none"
                   maxLength={100}
                 />
                 {canRemoveLevel(level) && (
@@ -128,7 +128,7 @@ export default function LevelConfigModal({ currentLevels, canAdd = true, canRemo
           {canAdd && (
           <button
             onClick={handleAddLevel}
-            className="w-full py-2 border-2 border-dashed border-gray-300 rounded-lg text-sm font-medium text-gray-500 hover:text-purple-600 hover:border-purple-300 transition-colors flex items-center justify-center gap-1"
+            className="w-full py-2 border-2 border-dashed border-gray-300 rounded-lg text-sm font-medium text-gray-500 hover:text-brand-600 hover:border-brand-300 transition-colors flex items-center justify-center gap-1"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -164,7 +164,7 @@ export default function LevelConfigModal({ currentLevels, canAdd = true, canRemo
           <button
             onClick={handleSave}
             disabled={saving}
-            className="px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
+            className="px-4 py-2 text-sm font-medium text-white bg-brand-600 hover:bg-brand-700 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
           >
             {saving && (
               <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">

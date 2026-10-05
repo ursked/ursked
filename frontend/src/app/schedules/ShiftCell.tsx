@@ -163,7 +163,7 @@ export default function ShiftCell({
       // its cells, so the header's intent never applied and the grid showed
       // two days of seven.
       className={`border-r border-b border-gray-100 p-0.5 align-top min-w-[56px] sm:min-w-[100px] max-w-[120px] transition-colors cursor-pointer ${
-        isToday ? 'bg-purple-50/50' : isWeekend ? 'bg-gray-50/50' : 'bg-white'
+        isToday ? 'bg-brand-50/50' : isWeekend ? 'bg-gray-50/50' : 'bg-white'
       } ${
         remark?.is_holiday
           ? remark.is_special
@@ -171,7 +171,7 @@ export default function ShiftCell({
             : 'bg-red-50/40'
           : ''
       } ${
-        isSelected ? 'ring-2 ring-inset ring-purple-500' : ''
+        isSelected ? 'ring-2 ring-inset ring-brand-500' : ''
       } ${isDragOver ? 'ring-2 ring-inset ring-blue-400 bg-blue-50/60' : 'hover:bg-gray-50'}`}
       onClick={handleClick}
       onDragOver={handleDragOver}
@@ -285,7 +285,7 @@ export default function ShiftCell({
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); onCellClick(dateStr); }}
-            className="absolute bottom-0 left-0 z-20 hidden group-hover/cell:flex group-focus-within/cell:flex h-5 w-5 items-center justify-center rounded bg-purple-100 text-purple-700 hover:bg-purple-200 transition-colors"
+            className="absolute bottom-0 left-0 z-20 hidden group-hover/cell:flex group-focus-within/cell:flex h-5 w-5 items-center justify-center rounded bg-brand-100 text-brand-700 hover:bg-brand-200 transition-colors"
             title="Add another shift on this day (split shift)"
           >
             <svg className="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -298,11 +298,11 @@ export default function ShiftCell({
           <button
             type="button"
             onClick={handlePaste}
-            className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 focus:opacity-100 transition-opacity bg-purple-50/50 rounded"
+            className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 focus:opacity-100 transition-opacity bg-brand-50/50 rounded"
             title="Paste shift (Ctrl+V)"
             aria-label={`Paste the copied shift into ${dateStr}`}
           >
-            <svg className="w-4 h-4 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="w-4 h-4 text-brand-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
             </svg>
           </button>

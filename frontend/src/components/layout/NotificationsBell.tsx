@@ -82,7 +82,7 @@ export function NotificationsBell() {
             {unread > 0 && (
               <button
                 onClick={() => readAllMut.mutate()}
-                className="text-xs text-purple-600 hover:text-purple-700"
+                className="text-xs text-brand-600 hover:text-brand-700"
               >
                 Mark all read
               </button>
@@ -123,7 +123,7 @@ function NotificationItem({
 }) {
   const actionable = n.action_type === 'approve_salary_request' && !n.is_actioned
   return (
-    <div className={`border-b border-gray-50 px-4 py-3 ${n.is_read ? 'bg-white' : 'bg-purple-50/40'}`}>
+    <div className={`border-b border-gray-50 px-4 py-3 ${n.is_read ? 'bg-white' : 'bg-brand-50/40'}`}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="text-sm font-medium text-gray-900">{n.title}</p>
@@ -151,7 +151,7 @@ function NotificationItem({
           >
             Decline
           </button>
-          <button onClick={onOpen} className="rounded px-2 py-1 text-xs text-purple-600 hover:text-purple-700">
+          <button onClick={onOpen} className="rounded px-2 py-1 text-xs text-brand-600 hover:text-brand-700">
             Open
           </button>
         </div>

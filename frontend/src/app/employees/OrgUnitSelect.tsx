@@ -48,7 +48,7 @@ export default function OrgUnitSelect({ id, value, onChange, disabled, emptyLabe
       disabled={disabled || isLoading}
       className={
         className ||
-        'w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none text-sm bg-white disabled:bg-gray-50'
+        'w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent outline-none text-sm bg-white disabled:bg-gray-50'
       }
     >
       <option value="">{isLoading ? 'Loading units…' : isError ? 'Could not load units' : emptyLabel}</option>

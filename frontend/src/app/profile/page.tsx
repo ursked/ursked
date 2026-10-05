@@ -12,7 +12,7 @@ import { passwordProblem } from '@/app/auth/passwordRule'
 import SecuritySection from './SecuritySection'
 
 const inputClass =
-  'block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-purple-500 focus:ring-purple-500 focus:outline-none'
+  'block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500 focus:outline-none'
 
 export default function ProfilePage() {
   const { user, refreshUser } = useAuth()
@@ -148,7 +148,7 @@ export default function ProfilePage() {
         <div className="bg-white border border-gray-200 rounded-xl shadow-sm">
           <div className="px-6 py-5 border-b border-gray-200 flex items-center justify-between gap-4">
             <div className="flex items-center gap-4 min-w-0">
-              <div className="w-14 h-14 rounded-full bg-purple-600 flex items-center justify-center text-white text-xl font-semibold flex-shrink-0">
+              <div className="w-14 h-14 rounded-full bg-brand-600 flex items-center justify-center text-white text-xl font-semibold flex-shrink-0">
                 {profile.first_name?.[0]}{profile.last_name?.[0]}
               </div>
               <div className="min-w-0">
@@ -162,7 +162,7 @@ export default function ProfilePage() {
               <button
                 type="button"
                 onClick={startEditing}
-                className="inline-flex items-center gap-1.5 rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-700 transition-colors"
+                className="inline-flex items-center gap-1.5 rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-700 transition-colors"
               >
                 Edit
               </button>
@@ -210,7 +210,7 @@ export default function ProfilePage() {
                   <button
                     type="submit"
                     disabled={updateMutation.isPending}
-                    className="inline-flex items-center rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    className="inline-flex items-center rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     {updateMutation.isPending ? 'Saving...' : 'Save Changes'}
                   </button>
@@ -275,7 +275,7 @@ export default function ProfilePage() {
                   <dt className="text-sm font-medium text-gray-500">Roles</dt>
                   <dd className="mt-1 flex flex-wrap gap-1.5">
                     {roleBadges.length > 0 ? roleBadges.map((r) => (
-                      <span key={r} className="inline-flex items-center rounded-full bg-purple-100 text-purple-800 px-2.5 py-0.5 text-xs font-medium">
+                      <span key={r} className="inline-flex items-center rounded-full bg-brand-100 text-brand-800 px-2.5 py-0.5 text-xs font-medium">
                         {r}
                       </span>
                     )) : <span className="text-sm text-gray-500">--</span>}
@@ -329,7 +329,7 @@ export default function ProfilePage() {
                   <button
                     type="submit"
                     disabled={passwordMutation.isPending}
-                    className="inline-flex items-center rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    className="inline-flex items-center rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     {passwordMutation.isPending ? 'Changing...' : 'Change Password'}
                   </button>

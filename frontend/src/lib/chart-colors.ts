@@ -1,5 +1,5 @@
 export const CHART_COLORS = [
-  '#8b5cf6', // purple-500
+  '#8b5cf6', // brand-500
   '#3b82f6', // blue-500
   '#10b981', // emerald-500
   '#f59e0b', // amber-500

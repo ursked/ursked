@@ -114,23 +114,23 @@ export default function DayView({
       </div>
 
       {/* MY SCHEDULE TODAY — Hero Card */}
-      <div className="bg-gradient-to-br from-purple-600 to-purple-800 rounded-2xl p-5 text-white shadow-lg">
+      <div className="bg-gradient-to-br from-brand-600 to-brand-800 rounded-2xl p-5 text-white shadow-lg">
         <div className="flex items-center gap-2 mb-3">
-          <svg className="w-5 h-5 text-purple-200" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+          <svg className="w-5 h-5 text-brand-200" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
           </svg>
-          <span className="text-sm font-medium text-purple-200 uppercase tracking-wide">My Schedule Today</span>
+          <span className="text-sm font-medium text-brand-200 uppercase tracking-wide">My Schedule Today</span>
         </div>
 
         {myTodayShifts.length === 0 ? (
           <div className="py-4 text-center">
             <div className="w-14 h-14 mx-auto mb-3 rounded-full bg-white/10 flex items-center justify-center">
-              <svg className="w-7 h-7 text-purple-200" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+              <svg className="w-7 h-7 text-brand-200" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M15.182 15.182a4.5 4.5 0 01-6.364 0M21 12a9 9 0 11-18 0 9 9 0 0118 0zM9.75 9.75c0 .414-.168.75-.375.75S9 10.164 9 9.75 9.168 9 9.375 9s.375.336.375.75zm-.375 0h.008v.015h-.008V9.75zm5.625 0c0 .414-.168.75-.375.75s-.375-.336-.375-.75.168-.75.375-.75.375.336.375.75zm-.375 0h.008v.015h-.008V9.75z" />
               </svg>
             </div>
             <p className="text-base font-medium text-white">No shift scheduled</p>
-            <p className="text-sm text-purple-200 mt-1">Enjoy your day off!</p>
+            <p className="text-sm text-brand-200 mt-1">Enjoy your day off!</p>
             {canEdit && (
               <button
                 onClick={() => myEmployee && onCellClick(myEmployee.employee_id, todayStr)}
@@ -153,7 +153,7 @@ export default function DayView({
                       {resolveStatus(shift.status, statusMaps).label}
                     </span>
                     {shift.work_arrangement && (
-                      <span className="text-xs text-purple-200 bg-white/10 px-2 py-0.5 rounded-full">
+                      <span className="text-xs text-brand-200 bg-white/10 px-2 py-0.5 rounded-full">
                         {WORK_ARRANGEMENT_LABELS[shift.work_arrangement] ?? shift.work_arrangement}
                       </span>
                     )}
@@ -161,7 +161,7 @@ export default function DayView({
 
                   {formatShiftTime(shift.start_time, shift.end_time) && (
                     <div className="flex items-center gap-2 mb-1">
-                      <svg className="w-4 h-4 text-purple-200" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                      <svg className="w-4 h-4 text-brand-200" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
                       <span className="text-lg font-semibold text-white">
@@ -171,10 +171,10 @@ export default function DayView({
                   )}
 
                   {shift.role_name && (
-                    <p className="text-sm text-purple-200 mt-1">{shift.role_name}</p>
+                    <p className="text-sm text-brand-200 mt-1">{shift.role_name}</p>
                   )}
                   {shift.notes && (
-                    <p className="text-xs text-purple-300 mt-1 truncate">{shift.notes}</p>
+                    <p className="text-xs text-brand-300 mt-1 truncate">{shift.notes}</p>
                   )}
                 </button>
 
@@ -206,7 +206,7 @@ export default function DayView({
             {canEdit && (
               <button
                 onClick={() => myEmployee && onCellClick(myEmployee.employee_id, todayStr)}
-                className="w-full py-2 text-xs font-medium text-purple-200 hover:text-white bg-white/5 hover:bg-white/10 rounded-xl transition-colors"
+                className="w-full py-2 text-xs font-medium text-brand-200 hover:text-white bg-white/5 hover:bg-white/10 rounded-xl transition-colors"
               >
                 + Add another shift
               </button>
@@ -353,7 +353,7 @@ export default function DayView({
         <div className="text-center pb-4">
           <button
             onClick={() => onCellClick(0, todayStr)}
-            className="text-xs font-medium text-purple-600 hover:text-purple-800 transition-colors"
+            className="text-xs font-medium text-brand-600 hover:text-brand-800 transition-colors"
           >
             + Add shift for an employee
           </button>

@@ -71,7 +71,7 @@ export default function DataBackupsTab() {
             type="button"
             onClick={download}
             disabled={starting}
-            className="rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-700 disabled:opacity-50"
+            className="rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-700 disabled:opacity-50"
           >
             {starting ? 'Preparing the backup...' : 'Download a backup'}
           </button>

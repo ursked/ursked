@@ -25,7 +25,7 @@ const html = `<!doctype html>
   *{box-sizing:border-box}
   html,body{margin:0;height:100%}
   body{font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:#111827;
-    background:linear-gradient(135deg,#faf5ff 0%,#ffffff 50%,#faf5ff 100%);
+    background:linear-gradient(135deg,#ecfdf5 0%,#ffffff 50%,#ecfdf5 100%);
     min-height:100vh;min-height:100dvh;display:flex;align-items:center;justify-content:center;
     padding:calc(1rem + env(safe-area-inset-top)) calc(1rem + env(safe-area-inset-right))
       calc(1rem + env(safe-area-inset-bottom)) calc(1rem + env(safe-area-inset-left))}
@@ -33,25 +33,25 @@ const html = `<!doctype html>
   .logo{height:2.5rem;width:auto;margin:0 auto 2rem;display:block}
   .card{background:#fff;border:1px solid #f3f4f6;border-radius:1rem;padding:2rem;
     box-shadow:0 10px 15px -3px rgba(0,0,0,.08),0 4px 6px -4px rgba(0,0,0,.06)}
-  .badge{width:3rem;height:3rem;border-radius:9999px;background:#f3e8ff;color:${BRAND_COLOR};
+  .badge{width:3rem;height:3rem;border-radius:9999px;background:#d1fae5;color:${BRAND_COLOR};
     display:inline-flex;align-items:center;justify-content:center;margin-bottom:1rem}
   h1{font-size:1.25rem;margin:0 0 .5rem}
   p{color:#6b7280;font-size:.875rem;line-height:1.5;margin:0 0 1.5rem}
   .actions{display:flex;flex-direction:column;gap:.75rem}
   .btn{display:block;width:100%;padding:.75rem 1rem;border-radius:.5rem;font:inherit;font-size:.875rem;
     font-weight:500;text-decoration:none;cursor:pointer;border:0}
-  /* purple-600 / 700, the buttons on the sign-in pages */
-  .primary{background:#9333ea;color:#fff}
-  .primary:hover{background:#7e22ce}
-  .secondary{background:#faf5ff;color:#7e22ce}
-  .secondary:hover{background:#f3e8ff}
+  /* brand-600 / 700, the buttons on the sign-in pages */
+  .primary{background:#047857;color:#fff}
+  .primary:hover{background:#065f46}
+  .secondary{background:#ecfdf5;color:#065f46}
+  .secondary:hover{background:#d1fae5}
   .btn:focus-visible{outline:2px solid ${BRAND_COLOR};outline-offset:2px}
   [hidden]{display:none!important}
 </style>
 </head>
 <body>
 <main>
-  <img class="logo" src="/logo/urskedlogo.png" alt="${APP_NAME}" width="1311" height="359">
+  <img class="logo" src="/logo/ursked-logo.svg" alt="${APP_NAME}" width="294" height="64">
   <div class="card">
     <div class="badge" aria-hidden="true">
       <svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 2l20 20M8.5 16.5a5 5 0 0 1 7 0M2 8.82a15 15 0 0 1 4.17-2.65M10.66 5c4.01-.36 8.14.9 11.34 3.76M16.85 11.25a10 10 0 0 1 2.22 1.68M5 13a10 10 0 0 1 5.24-2.76M12 20h.01"/></svg>

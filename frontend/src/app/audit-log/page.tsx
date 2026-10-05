@@ -164,7 +164,7 @@ export default function AuditLogPage() {
             <button
               type="button"
               onClick={() => { setActorId(null); setTargetId(null); setAction(''); setDateFrom(''); setDateTo(''); resetPage(); }}
-              className="mt-3 text-sm text-purple-700 underline"
+              className="mt-3 text-sm text-brand-700 underline"
             >
               Clear filters
             </button>
@@ -207,7 +207,7 @@ export default function AuditLogPage() {
                             type="button"
                             onClick={() => setExpanded(expanded === e.id ? null : e.id)}
                             aria-expanded={expanded === e.id}
-                            className="text-sm text-purple-700 hover:underline whitespace-nowrap"
+                            className="text-sm text-brand-700 hover:underline whitespace-nowrap"
                           >
                             {expanded === e.id ? 'Hide' : 'Details'}
                           </button>

@@ -89,7 +89,7 @@ function scopeText(a: LeaveApproverAssignment): string {
   return 'everyone not matched by a rule above'
 }
 
-const FIELD = 'block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-purple-500 focus:ring-purple-500 focus:outline-none'
+const FIELD = 'block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500 focus:outline-none'
 
 export default function ApprovalRulesTab() {
   const queryClient = useQueryClient()
@@ -286,7 +286,7 @@ export default function ApprovalRulesTab() {
           </div>
           {canEdit && !formOpen && (
             <button type="button" onClick={() => { setFormOpen(true); setEditingId(null); setForm(EMPTY_FORM) }}
-              className="inline-flex items-center gap-1.5 rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-700">
+              className="inline-flex items-center gap-1.5 rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-700">
               Add Rule
             </button>
           )}
@@ -309,7 +309,7 @@ export default function ApprovalRulesTab() {
                       onClick={() => setForm((p) => ({ ...p, scope_type: value, employee_id: null, org_node_id: null, cascade: false, exclude: false }))}
                       aria-pressed={form.scope_type === value}
                       className={`text-left p-3 rounded-lg border-2 transition-all ${
-                        form.scope_type === value ? 'border-purple-500 bg-purple-50' : 'border-gray-200 bg-white hover:border-gray-300'
+                        form.scope_type === value ? 'border-brand-500 bg-brand-50' : 'border-gray-200 bg-white hover:border-gray-300'
                       }`}>
                       <span className="text-sm font-medium text-gray-900">{label}</span>
                       <p className="text-xs text-gray-500 mt-0.5">{desc}</p>
@@ -352,7 +352,7 @@ export default function ApprovalRulesTab() {
                   <label className="flex items-start gap-3 border rounded-lg p-3 bg-white border-gray-200">
                     <input type="checkbox" checked={form.cascade}
                       onChange={(e) => setForm((p) => ({ ...p, cascade: e.target.checked }))}
-                      className="mt-0.5 h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500" />
+                      className="mt-0.5 h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500" />
                     <span className="text-sm text-gray-900">Also apply to every unit below it</span>
                   </label>
                 </div>
@@ -385,7 +385,7 @@ export default function ApprovalRulesTab() {
                         {(['user', 'role'] as const).map((k) => (
                           <button key={k} type="button" onClick={() => patchStep(i, { kind: k, approver_id: null, approver_role: null })}
                             aria-pressed={s.kind === k}
-                            className={`flex-1 py-1.5 text-xs font-medium ${s.kind === k ? 'bg-purple-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
+                            className={`flex-1 py-1.5 text-xs font-medium ${s.kind === k ? 'bg-brand-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
                             {k === 'user' ? 'A person' : 'A position'}
                           </button>
                         ))}
@@ -418,7 +418,7 @@ export default function ApprovalRulesTab() {
                     </div>
                   ))}
                   <button type="button" onClick={() => setForm((f) => ({ ...f, steps: [...f.steps, { ...BLANK_STEP }] }))}
-                    className="text-sm font-medium text-purple-700 hover:text-purple-800">
+                    className="text-sm font-medium text-brand-700 hover:text-brand-800">
                     + Add another approval step
                   </button>
                 </fieldset>
@@ -426,7 +426,7 @@ export default function ApprovalRulesTab() {
 
               <div className="flex items-center gap-3 pt-2">
                 <button type="submit" disabled={isMutating || !stepsValid || !scopeValid}
-                  className="inline-flex items-center rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                  className="inline-flex items-center rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed">
                   {isMutating ? 'Saving...' : editingId ? 'Update rule' : 'Create rule'}
                 </button>
                 <button type="button" onClick={resetForm}
@@ -471,7 +471,7 @@ export default function ApprovalRulesTab() {
                     onDrop={(e) => handleDrop(e, index)}
                     className={`flex items-start gap-3 rounded-lg border p-4 ${
                       a.exclude ? 'bg-red-50/60 border-red-200' : !a.is_active ? 'bg-gray-50 border-gray-200' : 'bg-white border-gray-200'
-                    } ${dragIndex === index ? 'opacity-40' : ''} ${dragOverIndex === index && dragIndex !== index ? 'ring-2 ring-purple-200' : ''} ${canEdit ? 'cursor-grab' : ''}`}
+                    } ${dragIndex === index ? 'opacity-40' : ''} ${dragOverIndex === index && dragIndex !== index ? 'ring-2 ring-brand-200' : ''} ${canEdit ? 'cursor-grab' : ''}`}
                   >
                     <span className="mt-0.5 w-6 text-xs font-semibold text-gray-400">{index + 1}.</span>
                     <div className="flex-1 min-w-0 space-y-1">
@@ -504,7 +504,7 @@ export default function ApprovalRulesTab() {
                           <button type="button" onClick={() => moveRule(index, 1)} disabled={index === sortedAssignments.length - 1}
                             className="rounded px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 disabled:opacity-30" aria-label="Move rule down">Down</button>
                           <button type="button" onClick={() => handleEdit(a)}
-                            className="rounded px-2 py-1 text-xs font-medium text-purple-700 hover:bg-purple-50">Edit</button>
+                            className="rounded px-2 py-1 text-xs font-medium text-brand-700 hover:bg-brand-50">Edit</button>
                           <button type="button" onClick={() => toggleMutation.mutate({ id: a.id, is_active: !a.is_active })}
                             className="rounded px-2 py-1 text-xs text-gray-700 hover:bg-gray-100">
                             {a.is_active ? 'Switch off' : 'Switch on'}
@@ -528,7 +528,7 @@ export default function ApprovalRulesTab() {
                   </div>
                 )
               })}
-              {reorderMutation.isPending && <p className="text-xs text-purple-600">Saving new order...</p>}
+              {reorderMutation.isPending && <p className="text-xs text-brand-600">Saving new order...</p>}
             </div>
           ) : (
             <p className="text-sm text-gray-500">No approval rules yet.</p>

@@ -74,7 +74,7 @@ export function Header() {
             aria-label="Account menu"
             aria-expanded={dropdownOpen}
           >
-            <div className="w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center text-white text-sm font-medium">
+            <div className="w-8 h-8 rounded-full bg-brand-600 flex items-center justify-center text-white text-sm font-medium">
               {user?.first_name?.[0]}
               {user?.last_name?.[0]}
             </div>

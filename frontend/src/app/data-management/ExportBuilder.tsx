@@ -794,7 +794,7 @@ export default function ExportBuilder({
             type="button"
             disabled={!ready || downloading}
             onClick={() => download('xlsx')}
-            className="min-h-[44px] rounded-lg bg-purple-600 px-4 text-sm font-medium text-white hover:bg-purple-700 disabled:opacity-50"
+            className="min-h-[44px] rounded-lg bg-brand-600 px-4 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
           >
             {downloading ? 'Preparing…' : 'Download Excel'}
           </button>
@@ -846,7 +846,7 @@ export default function ExportBuilder({
                   </span>
                 )}
               </span>
-              <span className="text-sm text-purple-700">{showPicker ? 'Hide' : 'Change'}</span>
+              <span className="text-sm text-brand-700">{showPicker ? 'Hide' : 'Change'}</span>
             </button>
             {showPicker && (
               <div className="border-t border-gray-200 p-4">
@@ -863,7 +863,7 @@ export default function ExportBuilder({
                           onClick={() => chooseSource(s.key)}
                           aria-pressed={on}
                           className={`rounded-lg border p-3 text-left transition-colors ${
-                            on ? 'border-purple-500 bg-purple-50' : 'border-gray-200 hover:bg-gray-50'
+                            on ? 'border-brand-500 bg-brand-50' : 'border-gray-200 hover:bg-gray-50'
                           }`}
                         >
                           <span className="block text-sm font-medium text-gray-900">{s.label}</span>

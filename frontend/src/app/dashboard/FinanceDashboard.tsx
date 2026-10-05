@@ -239,7 +239,7 @@ export default function FinanceDashboard({ ownPath, adminPath }: { ownPath: stri
         {latest.some((p) => p.figures_hidden) && (
           <p className="mt-3 text-xs text-gray-500">
             Totals are shown only to people another person has approved for{' '}
-            <Link href="/salary-access" className="font-medium text-purple-600 hover:text-purple-700">salary access</Link>.
+            <Link href="/salary-access" className="font-medium text-brand-600 hover:text-brand-700">salary access</Link>.
           </p>
         )}
       </Card>
@@ -247,7 +247,7 @@ export default function FinanceDashboard({ ownPath, adminPath }: { ownPath: stri
   );
 }
 
-const linkCls = 'text-sm font-medium text-purple-600 hover:text-purple-700';
+const linkCls = 'text-sm font-medium text-brand-600 hover:text-brand-700';
 
 function Skeleton() {
   return (

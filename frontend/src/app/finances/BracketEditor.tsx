@@ -237,7 +237,7 @@ export default function BracketEditor({ deduction, canEdit, onClose }: {
           {canEdit && (
             <button type="button" onClick={() => save.mutate()}
               disabled={save.isPending || rows === null || checked.errors.length > 0}
-              className="rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-700 disabled:opacity-50">
+              className="rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50">
               {save.isPending ? 'Saving…' : 'Save brackets'}
             </button>
           )}

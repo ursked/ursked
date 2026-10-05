@@ -48,7 +48,7 @@ function useDebounced<T>(value: T, ms: number): T {
 }
 
 const INPUT =
-  'block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-purple-500 focus:ring-purple-500 focus:outline-none'
+  'block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500 focus:outline-none'
 
 const SOURCE_NOTE: Record<string, string> = {
   self_approval: 'Nobody else in your company can approve leave, so you will be asked to self-approve. This is recorded.',
@@ -210,7 +210,7 @@ export default function MyLeaveTab() {
             <button
               type="button"
               onClick={() => setShowApplyForm(true)}
-              className="inline-flex items-center gap-1.5 rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-700 transition-colors"
+              className="inline-flex items-center gap-1.5 rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-700 transition-colors"
             >
               Apply for Leave
             </button>
@@ -228,11 +228,11 @@ export default function MyLeaveTab() {
                 <div key={b.leave_type} className="bg-white border border-gray-200 rounded-lg p-4">
                   <h4 className="text-sm font-semibold text-gray-900 truncate">{b.leave_type_name || b.leave_type}</h4>
                   <div className="mt-2 flex items-baseline gap-1">
-                    <span className={`text-2xl font-bold ${b.available_days < 0 ? 'text-red-600' : 'text-purple-600'}`}>{b.available_days}</span>
+                    <span className={`text-2xl font-bold ${b.available_days < 0 ? 'text-red-600' : 'text-brand-600'}`}>{b.available_days}</span>
                     <span className="text-sm text-gray-500">/ {b.total_days} days</span>
                   </div>
                   <div className="mt-2 h-2 bg-gray-100 rounded-full overflow-hidden flex">
-                    <div className="bg-purple-500 h-full" style={{ width: `${usedPct}%` }} />
+                    <div className="bg-brand-500 h-full" style={{ width: `${usedPct}%` }} />
                     <div className="bg-yellow-400 h-full" style={{ width: `${pendingPct}%` }} />
                   </div>
                   <div className="mt-1 flex justify-between text-xs text-gray-500">
@@ -336,31 +336,31 @@ export default function MyLeaveTab() {
               <NobodyCanApproveNote message={chainPreview.message} />
             )}
             {!onBehalfOf && chainPreview && chainPreview.chain.length > 0 && (
-              <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
-                <p className="text-xs font-medium text-purple-700 mb-2">Your request will be reviewed by:</p>
+              <div className="bg-brand-50 border border-brand-200 rounded-lg p-3">
+                <p className="text-xs font-medium text-brand-700 mb-2">Your request will be reviewed by:</p>
                 <div className="flex flex-wrap gap-2">
                   {chainPreview.chain.map((step, i) => (
                     <div key={i} className="flex items-center gap-1">
-                      <span className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-purple-200 text-purple-800 text-xs font-bold">
+                      <span className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-brand-200 text-brand-800 text-xs font-bold">
                         {step.step_order}
                       </span>
-                      <span className="text-sm text-purple-800">
+                      <span className="text-sm text-brand-800">
                         {step.source === 'self_approval' ? 'You (self-approval)' : step.approver_name}
                         {step.is_deputy ? ' (standing in as deputy)' : ''}
                       </span>
-                      {i < chainPreview.chain.length - 1 && <span className="mx-1 text-purple-300" aria-hidden>&rarr;</span>}
+                      {i < chainPreview.chain.length - 1 && <span className="mx-1 text-brand-300" aria-hidden>&rarr;</span>}
                     </div>
                   ))}
                 </div>
                 {chainPreview.chain.map((s) => SOURCE_NOTE[s.source]).filter(Boolean).map((note) => (
-                  <p key={note} className="mt-2 text-xs text-purple-800">{note}</p>
+                  <p key={note} className="mt-2 text-xs text-brand-800">{note}</p>
                 ))}
               </div>
             )}
 
             <div className="flex items-center gap-3">
               <button type="submit" disabled={applyMutation.isPending || blocked}
-                className="inline-flex items-center rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                className="inline-flex items-center rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
                 {applyMutation.isPending ? 'Saving...' : editingApp ? 'Save changes' : 'Submit request'}
               </button>
               <button type="button"
@@ -381,7 +381,7 @@ export default function MyLeaveTab() {
             {STATUS_FILTERS.map((s) => (
               <button key={s} onClick={() => { setStatusFilter(s); setPage(1) }}
                 className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                  statusFilter === s ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  statusFilter === s ? 'bg-brand-100 text-brand-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                 }`}>
                 {s.charAt(0).toUpperCase() + s.slice(1)}
               </button>
@@ -444,7 +444,7 @@ export default function MyLeaveTab() {
                                     })
                                     setShowApplyForm(true)
                                   }}
-                                  className="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium text-purple-700 hover:bg-purple-50">
+                                  className="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium text-brand-700 hover:bg-brand-50">
                                   Change
                                 </button>
                               )}

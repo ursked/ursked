@@ -134,7 +134,7 @@ export default function SalaryGradesTab() {
         {!showForm && canCreate && isViewer && !error && (
           <button
             onClick={() => { resetForm(); setShowForm(true) }}
-            className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700"
+            className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700"
           >
             Add Grade
           </button>
@@ -152,7 +152,7 @@ export default function SalaryGradesTab() {
                 disabled={!!editingId}
                 value={formData.code}
                 onChange={(e) => setFormData({ ...formData, code: e.target.value })}
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-purple-500 focus:ring-purple-500 disabled:bg-gray-100"
+                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:ring-brand-500 disabled:bg-gray-100"
                 placeholder="e.g. SG-1"
               />
             </div>
@@ -163,7 +163,7 @@ export default function SalaryGradesTab() {
                 required
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-purple-500 focus:ring-purple-500"
+                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:ring-brand-500"
                 placeholder="e.g. Grade 1 - Entry Level"
               />
             </div>
@@ -178,7 +178,7 @@ export default function SalaryGradesTab() {
                     min="0"
                     value={formData.monthly_rate}
                     onChange={(e) => setFormData({ ...formData, monthly_rate: parseFloat(e.target.value) || 0 })}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-purple-500 focus:ring-purple-500"
+                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:ring-brand-500"
                   />
                 </div>
                 <div>
@@ -189,7 +189,7 @@ export default function SalaryGradesTab() {
                     min="0"
                     value={formData.daily_rate ?? ''}
                     onChange={(e) => setFormData({ ...formData, daily_rate: e.target.value ? parseFloat(e.target.value) : null })}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-purple-500 focus:ring-purple-500"
+                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:ring-brand-500"
                   />
                 </div>
                 <div>
@@ -200,7 +200,7 @@ export default function SalaryGradesTab() {
                     min="0"
                     value={formData.hourly_rate ?? ''}
                     onChange={(e) => setFormData({ ...formData, hourly_rate: e.target.value ? parseFloat(e.target.value) : null })}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-purple-500 focus:ring-purple-500"
+                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:ring-brand-500"
                   />
                 </div>
               </>
@@ -215,7 +215,7 @@ export default function SalaryGradesTab() {
                 type="number"
                 value={formData.sort_order}
                 onChange={(e) => setFormData({ ...formData, sort_order: parseInt(e.target.value) || 0 })}
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-purple-500 focus:ring-purple-500"
+                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:ring-brand-500"
               />
             </div>
           </div>
@@ -225,14 +225,14 @@ export default function SalaryGradesTab() {
               type="text"
               value={formData.description}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-purple-500 focus:ring-purple-500"
+              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:ring-brand-500"
             />
           </div>
           <div className="flex justify-end gap-2">
             <button type="button" onClick={resetForm} className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
               Cancel
             </button>
-            <button type="submit" disabled={createMutation.isPending || updateMutation.isPending} className="rounded-md bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700 disabled:opacity-50">
+            <button type="submit" disabled={createMutation.isPending || updateMutation.isPending} className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50">
               {editingId ? 'Update' : 'Create'}
             </button>
           </div>
@@ -242,7 +242,7 @@ export default function SalaryGradesTab() {
       {!isViewer && !!grades?.length && (
         <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
           Rates are hidden. You need salary access to see them.{' '}
-          <Link href="/salary-access" className="font-semibold text-purple-700 underline">
+          <Link href="/salary-access" className="font-semibold text-brand-700 underline">
             Request it
           </Link>
         </p>
@@ -292,7 +292,7 @@ export default function SalaryGradesTab() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-right space-x-2">
-                    {canEdit && <button onClick={() => startEdit(g)} className="text-sm text-purple-600 hover:text-purple-800">Edit</button>}
+                    {canEdit && <button onClick={() => startEdit(g)} className="text-sm text-brand-600 hover:text-brand-800">Edit</button>}
                     {!canDelete ? null : deleteConfirmId === g.id ? (
                       <>
                         <button onClick={() => deleteMutation.mutate(g.id)} disabled={deleteMutation.isPending} className="text-sm text-red-600 hover:text-red-800 disabled:opacity-50 disabled:cursor-not-allowed">{deleteMutation.isPending ? 'Deleting…' : 'Confirm'}</button>

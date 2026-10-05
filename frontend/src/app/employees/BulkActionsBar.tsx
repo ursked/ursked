@@ -40,7 +40,7 @@ const ACTION_LABELS: Record<EmployeeBulkAction, string> = {
 };
 
 const selectClass =
-  'px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none';
+  'px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-brand-500 focus:border-transparent outline-none';
 
 export default function BulkActionsBar({ selection, canEdit, canCreate, canSeparate, onClear, onDone }: Props) {
   const count = selection.mode === 'ids' ? selection.ids.length : selection.count;
@@ -135,10 +135,10 @@ export default function BulkActionsBar({ selection, canEdit, canCreate, canSepar
 
   return (
     <>
-      <div className="sticky top-2 z-30 flex flex-col gap-3 rounded-xl border border-purple-200 bg-purple-50 px-4 py-3 shadow-sm lg:flex-row lg:items-center" role="region" aria-label="Bulk actions">
-        <p className="text-sm font-medium text-purple-900 whitespace-nowrap">
+      <div className="sticky top-2 z-30 flex flex-col gap-3 rounded-xl border border-brand-200 bg-brand-50 px-4 py-3 shadow-sm lg:flex-row lg:items-center" role="region" aria-label="Bulk actions">
+        <p className="text-sm font-medium text-brand-900 whitespace-nowrap">
           {count} selected
-          <button type="button" onClick={onClear} className="ml-2 text-xs font-normal text-purple-700 underline">Clear</button>
+          <button type="button" onClick={onClear} className="ml-2 text-xs font-normal text-brand-700 underline">Clear</button>
         </p>
         <div className="flex flex-1 flex-wrap items-center gap-2">
           <select
@@ -177,7 +177,7 @@ export default function BulkActionsBar({ selection, canEdit, canCreate, canSepar
               <div className="flex gap-3">
                 {(['resigned', 'terminated'] as const).map((t) => (
                   <label key={t} className="inline-flex items-center gap-2">
-                    <input type="radio" name="bulk-sep-type" checked={sepType === t} onChange={() => setSepType(t)} className="h-4 w-4 text-purple-600" />
+                    <input type="radio" name="bulk-sep-type" checked={sepType === t} onChange={() => setSepType(t)} className="h-4 w-4 text-brand-600" />
                     {t === 'resigned' ? 'Resigned' : 'Terminated'}
                   </label>
                 ))}
@@ -191,7 +191,7 @@ export default function BulkActionsBar({ selection, canEdit, canCreate, canSepar
                 <textarea id="bulk-sep-reason" rows={2} value={sepReason} onChange={(e) => setSepReason(e.target.value)} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
               </div>
               <label className="inline-flex items-center gap-2">
-                <input type="checkbox" checked={deleteShifts} onChange={(e) => setDeleteShifts(e.target.checked)} className="h-4 w-4 rounded text-purple-600" />
+                <input type="checkbox" checked={deleteShifts} onChange={(e) => setDeleteShifts(e.target.checked)} className="h-4 w-4 rounded text-brand-600" />
                 Delete their shifts after the separation date
               </label>
             </div>

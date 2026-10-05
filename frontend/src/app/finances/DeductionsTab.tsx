@@ -163,7 +163,7 @@ export default function DeductionsTab() {
         {!showForm && canCreate && (
           <button
             onClick={() => { resetForm(); setShowForm(true) }}
-            className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700"
+            className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700"
           >
             Add Type
           </button>
@@ -181,7 +181,7 @@ export default function DeductionsTab() {
                 disabled={!!editingId}
                 value={formData.code}
                 onChange={(e) => setFormData({ ...formData, code: e.target.value })}
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-purple-500 focus:ring-purple-500 disabled:bg-gray-100"
+                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:ring-brand-500 disabled:bg-gray-100"
                 placeholder="e.g. sss"
               />
             </div>
@@ -192,7 +192,7 @@ export default function DeductionsTab() {
                 required
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-purple-500 focus:ring-purple-500"
+                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:ring-brand-500"
               />
             </div>
             <div>
@@ -200,7 +200,7 @@ export default function DeductionsTab() {
               <select
                 value={formData.calculation_type}
                 onChange={(e) => setFormData({ ...formData, calculation_type: e.target.value })}
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-purple-500 focus:ring-purple-500"
+                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:ring-brand-500"
               >
                 <option value="fixed">Fixed Amount</option>
                 <option value="percentage">Percentage</option>
@@ -220,7 +220,7 @@ export default function DeductionsTab() {
                   min="0"
                   value={formData.default_amount ?? ''}
                   onChange={(e) => setFormData({ ...formData, default_amount: e.target.value ? parseFloat(e.target.value) : null })}
-                  className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-purple-500 focus:ring-purple-500"
+                  className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:ring-brand-500"
                 />
               </div>
             ) : (
@@ -233,7 +233,7 @@ export default function DeductionsTab() {
                   max="1"
                   value={formData.default_rate ?? ''}
                   onChange={(e) => setFormData({ ...formData, default_rate: e.target.value ? parseFloat(e.target.value) : null })}
-                  className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-purple-500 focus:ring-purple-500"
+                  className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:ring-brand-500"
                 />
               </div>
             )}
@@ -243,7 +243,7 @@ export default function DeductionsTab() {
                 <select
                   value={formData.calculation_basis}
                   onChange={(e) => setFormData({ ...formData, calculation_basis: e.target.value as 'gross' | 'base' })}
-                  className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-purple-500 focus:ring-purple-500"
+                  className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:ring-brand-500"
                 >
                   <option value="gross">Gross pay</option>
                   <option value="base">Base pay</option>
@@ -256,7 +256,7 @@ export default function DeductionsTab() {
                 type="number"
                 value={formData.sort_order}
                 onChange={(e) => setFormData({ ...formData, sort_order: parseInt(e.target.value) || 0 })}
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-purple-500 focus:ring-purple-500"
+                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:ring-brand-500"
               />
             </div>
           </div>
@@ -266,7 +266,7 @@ export default function DeductionsTab() {
               type="text"
               value={formData.description}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-purple-500 focus:ring-purple-500"
+              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:ring-brand-500"
             />
           </div>
           <div className="flex gap-6">
@@ -275,7 +275,7 @@ export default function DeductionsTab() {
                 type="checkbox"
                 checked={formData.is_mandatory}
                 onChange={(e) => setFormData({ ...formData, is_mandatory: e.target.checked })}
-                className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                className="rounded border-gray-300 text-brand-600 focus:ring-brand-500"
               />
               Mandatory (auto-applied)
             </label>
@@ -284,7 +284,7 @@ export default function DeductionsTab() {
                 type="checkbox"
                 checked={formData.is_employer_contribution}
                 onChange={(e) => setFormData({ ...formData, is_employer_contribution: e.target.checked })}
-                className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                className="rounded border-gray-300 text-brand-600 focus:ring-brand-500"
               />
               Employer Contribution
             </label>
@@ -293,7 +293,7 @@ export default function DeductionsTab() {
             <button type="button" onClick={resetForm} className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
               Cancel
             </button>
-            <button type="submit" disabled={createMutation.isPending || updateMutation.isPending} className="rounded-md bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700 disabled:opacity-50">
+            <button type="submit" disabled={createMutation.isPending || updateMutation.isPending} className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50">
               {editingId ? 'Update' : 'Create'}
             </button>
           </div>
@@ -346,7 +346,7 @@ export default function DeductionsTab() {
                       type="button"
                       onClick={() => updateMutation.mutate({ id: dt.id, data: { is_active: !dt.is_active } })}
                       disabled={updateMutation.isPending || !canEdit}
-                      className={`relative inline-flex h-5 w-9 disabled:opacity-50 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 ${dt.is_active ? 'bg-purple-600' : 'bg-gray-200'}`}
+                      className={`relative inline-flex h-5 w-9 disabled:opacity-50 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 ${dt.is_active ? 'bg-brand-600' : 'bg-gray-200'}`}
                       title={dt.is_active ? 'Click to deactivate' : 'Click to activate'}
                     >
                       <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${dt.is_active ? 'translate-x-4' : 'translate-x-0'}`} />
@@ -354,12 +354,12 @@ export default function DeductionsTab() {
                   </td>
                   <td className="px-4 py-3 text-right space-x-2">
                     {dt.calculation_type === 'tiered' && (
-                      <button onClick={() => setBracketsFor(dt)} className="text-sm text-purple-600 hover:text-purple-800">
+                      <button onClick={() => setBracketsFor(dt)} className="text-sm text-brand-600 hover:text-brand-800">
                         {canEdit ? 'Brackets' : 'View brackets'}
                       </button>
                     )}
                     {canEdit && (
-                      <button onClick={() => startEdit(dt)} className="text-sm text-purple-600 hover:text-purple-800">Edit</button>
+                      <button onClick={() => startEdit(dt)} className="text-sm text-brand-600 hover:text-brand-800">Edit</button>
                     )}
                     {!canDelete ? null : deleteConfirmId === dt.id ? (
                       <>

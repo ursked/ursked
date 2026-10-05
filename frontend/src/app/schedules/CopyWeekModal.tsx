@@ -89,7 +89,7 @@ export default function CopyWeekModal({
             <button
               onClick={() => previewMut.mutate()}
               disabled={previewMut.isPending}
-              className="w-full rounded-md bg-purple-600 px-3 py-2 text-sm font-medium text-white hover:bg-purple-700 disabled:opacity-50"
+              className="w-full rounded-md bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
             >
               {previewMut.isPending ? 'Checking…' : 'Preview'}
             </button>
@@ -132,7 +132,7 @@ export default function CopyWeekModal({
                 <button
                   onClick={() => applyMut.mutate()}
                   disabled={applyMut.isPending}
-                  className="flex-1 rounded-md bg-purple-600 px-3 py-2 text-sm font-medium text-white hover:bg-purple-700 disabled:opacity-50"
+                  className="flex-1 rounded-md bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
                 >
                   {applyMut.isPending ? 'Copying…' : 'Copy to next week'}
                 </button>

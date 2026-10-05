@@ -161,7 +161,7 @@ function Card({ title, icon, children, footer }: {
   );
 }
 
-const linkCls = 'text-sm font-medium text-purple-600 hover:text-purple-700';
+const linkCls = 'text-sm font-medium text-brand-600 hover:text-brand-700';
 
 /** Leave requests are waiting and nobody can decide them. The administrator
  * cannot either (approving is not administration); the fix is a role. Plain
@@ -280,7 +280,7 @@ function UsersWithoutRoles({ users }: { users: AdminOverview['users_without_role
           <ul className="divide-y divide-gray-50 text-sm">
             {users.map((u) => (
               <li key={u.id} className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-3 py-1.5">
-                <Link href={`/employees?open=${u.id}`} className="min-w-0 truncate font-medium text-purple-600 hover:text-purple-700">
+                <Link href={`/employees?open=${u.id}`} className="min-w-0 truncate font-medium text-brand-600 hover:text-brand-700">
                   {u.name || u.email}
                 </Link>
                 <span className="min-w-0 truncate text-gray-500">{u.email}</span>

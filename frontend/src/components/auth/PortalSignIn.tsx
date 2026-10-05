@@ -142,7 +142,7 @@ function PortalSignInInner({ portal }: { portal: Portal }) {
       <div className="w-full max-w-md">
         <div className="mb-8 flex flex-col items-center gap-3 text-center">
           <span className="inline-flex items-center rounded-md bg-white px-2 py-1">
-            <Image src="/logo/urskedlogo.png" alt="ursked" width={1311} height={359} priority className="h-7 w-auto" />
+            <Image src="/logo/ursked-logo.svg" alt="ursked" width={294} height={64} priority className="h-7 w-auto" />
           </span>
           <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-wider ${copy.accentBorder} ${copy.accentText}`}>
             <Icon className="h-4 w-4" aria-hidden="true" />

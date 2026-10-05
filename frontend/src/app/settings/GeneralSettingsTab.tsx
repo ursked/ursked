@@ -133,7 +133,7 @@ export default function GeneralSettingsTab() {
         <div className="px-6 py-6">
           {settingsLoading ? (
             <div className="flex items-center gap-3 text-sm text-gray-500">
-              <svg className="h-5 w-5 animate-spin text-purple-600" fill="none" viewBox="0 0 24 24">
+              <svg className="h-5 w-5 animate-spin text-brand-600" fill="none" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
               </svg>
@@ -149,7 +149,7 @@ export default function GeneralSettingsTab() {
                     onError: (err: Error) => showToast(err.message, 'error') },
                 )}
                 disabled={updateSettingsMutation.isPending}
-                className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-purple-500 focus:ring-purple-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed">
+                className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed">
                 <option value="">Select timezone</option>
                 <option value="Africa/Johannesburg">Africa/Johannesburg (SAST, UTC+2)</option>
                 <option value="Africa/Cairo">Africa/Cairo (EET, UTC+2)</option>
@@ -178,7 +178,7 @@ export default function GeneralSettingsTab() {
                 {appSettings?.timezone ? `Current timezone: ${appSettings.timezone}` : 'No timezone set. Select one to configure.'}
               </p>
               {updateSettingsMutation.isPending && (
-                <p className="mt-2 text-xs text-purple-600 flex items-center gap-1">
+                <p className="mt-2 text-xs text-brand-600 flex items-center gap-1">
                   <svg className="h-3 w-3 animate-spin" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
@@ -221,7 +221,7 @@ export default function GeneralSettingsTab() {
                     }
                   }}
                   disabled={updateSettingsMutation.isPending}
-                  className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-purple-500 focus:ring-purple-500 focus:outline-none disabled:opacity-50"
+                  className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500 focus:outline-none disabled:opacity-50"
                 >
                   {!CURATED_CURRENCIES.some((c) => c.code === currentCurrency) && currencyMode !== 'custom' && (
                     <option value={currentCurrency}>{currentCurrency}</option>
@@ -246,13 +246,13 @@ export default function GeneralSettingsTab() {
                       value={customCurrency}
                       onChange={(e) => setCustomCurrency(e.target.value.toUpperCase())}
                       placeholder="e.g. CHF"
-                      className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm uppercase shadow-sm focus:border-purple-500 focus:ring-purple-500 focus:outline-none"
+                      className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm uppercase shadow-sm focus:border-brand-500 focus:ring-brand-500 focus:outline-none"
                     />
                   </div>
                   <button
                     onClick={() => saveCurrency(customCurrency)}
                     disabled={updateSettingsMutation.isPending}
-                    className="rounded-md bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700 disabled:opacity-50"
+                    className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
                   >
                     Save
                   </button>
@@ -286,7 +286,7 @@ export default function GeneralSettingsTab() {
         <div className="px-6 py-6">
           {settingsLoading ? (
             <div className="flex items-center gap-3 text-sm text-gray-500">
-              <svg className="h-5 w-5 animate-spin text-purple-600" fill="none" viewBox="0 0 24 24">
+              <svg className="h-5 w-5 animate-spin text-brand-600" fill="none" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
               </svg>
@@ -304,7 +304,7 @@ export default function GeneralSettingsTab() {
                     { onSuccess: () => showToast('Week start day saved', 'success') },
                   )}
                   disabled={updateSettingsMutation.isPending}
-                  className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-purple-500 focus:ring-purple-500 focus:outline-none disabled:opacity-50"
+                  className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500 focus:outline-none disabled:opacity-50"
                 >
                   {WEEK_START_OPTIONS.map((opt) => (
                     <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -325,7 +325,7 @@ export default function GeneralSettingsTab() {
                     { onSuccess: () => showToast('Schedule visibility saved', 'success') },
                   )}
                   disabled={updateSettingsMutation.isPending}
-                  className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-purple-500 focus:ring-purple-500 focus:outline-none disabled:opacity-50"
+                  className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500 focus:outline-none disabled:opacity-50"
                 >
                   {SCHEDULE_VISIBILITY_OPTIONS.map((opt) => (
                     <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -341,7 +341,7 @@ export default function GeneralSettingsTab() {
                 <button
                   type="button"
                   onClick={() => setShowAdvancedVisibility(!showAdvancedVisibility)}
-                  className="flex items-center gap-2 text-sm font-medium text-purple-600 hover:text-purple-700 transition-colors"
+                  className="flex items-center gap-2 text-sm font-medium text-brand-600 hover:text-brand-700 transition-colors"
                 >
                   <svg
                     className={`h-4 w-4 transition-transform ${showAdvancedVisibility ? 'rotate-90' : ''}`}
@@ -367,7 +367,7 @@ export default function GeneralSettingsTab() {
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Person</label>
                         <select
-                          className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-purple-500 focus:ring-purple-500 focus:outline-none"
+                          className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500 focus:outline-none"
                           value={grantUserId}
                           onChange={(e) => setGrantUserId(e.target.value ? Number(e.target.value) : '')}
                         >
@@ -382,7 +382,7 @@ export default function GeneralSettingsTab() {
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Org unit</label>
                         <select
-                          className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-purple-500 focus:ring-purple-500 focus:outline-none"
+                          className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500 focus:outline-none"
                           value={grantNodeId}
                           onChange={(e) => setGrantNodeId(e.target.value ? Number(e.target.value) : '')}
                         >
@@ -400,7 +400,7 @@ export default function GeneralSettingsTab() {
                         type="checkbox"
                         checked={grantIncludeDescendants}
                         onChange={(e) => setGrantIncludeDescendants(e.target.checked)}
-                        className="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                        className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
                       />
                       Include everything below this unit (its whole subtree)
                     </label>
@@ -409,7 +409,7 @@ export default function GeneralSettingsTab() {
                         type="button"
                         onClick={() => createGrantMutation.mutate()}
                         disabled={!canGrant}
-                        className="rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        className="rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                       >
                         {createGrantMutation.isPending ? 'Granting...' : 'Grant access'}
                       </button>
@@ -463,7 +463,7 @@ export default function GeneralSettingsTab() {
               )}
 
               {updateSettingsMutation.isPending && (
-                <p className="text-xs text-purple-600 flex items-center gap-1">
+                <p className="text-xs text-brand-600 flex items-center gap-1">
                   <svg className="h-3 w-3 animate-spin" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
@@ -532,7 +532,7 @@ export default function GeneralSettingsTab() {
                       { onSuccess: () => showToast('Holiday setting saved', 'success'),
                         onError: (err: Error) => showToast(err.message, 'error') },
                     )}
-                    className="mt-0.5 h-4 w-4 rounded text-purple-600 border-gray-300 focus:ring-purple-500"
+                    className="mt-0.5 h-4 w-4 rounded text-brand-600 border-gray-300 focus:ring-brand-500"
                   />
                   <div>
                     <p className="text-sm font-medium text-gray-900">
@@ -616,7 +616,7 @@ export default function GeneralSettingsTab() {
                     { onSuccess: () => showToast('Overlap check saved', 'success'),
                       onError: (err: Error) => showToast(err.message, 'error') },
                   )}
-                  className="mt-0.5 h-4 w-4 rounded text-purple-600 border-gray-300 focus:ring-purple-500"
+                  className="mt-0.5 h-4 w-4 rounded text-brand-600 border-gray-300 focus:ring-brand-500"
                 />
                 <div>
                   <p className="text-sm font-medium text-gray-900">Flag overlapping shifts</p>
@@ -651,7 +651,7 @@ export default function GeneralSettingsTab() {
                 { onSuccess: () => showToast('Time clock setting saved', 'success'),
                   onError: (err: Error) => showToast(err.message, 'error') },
               )}
-              className="mt-0.5 h-4 w-4 rounded text-purple-600 border-gray-300 focus:ring-purple-500"
+              className="mt-0.5 h-4 w-4 rounded text-brand-600 border-gray-300 focus:ring-brand-500"
             />
             <div>
               <p className="text-sm font-medium text-gray-900">Enable the time clock</p>
@@ -674,7 +674,7 @@ export default function GeneralSettingsTab() {
                 { onSuccess: () => showToast('Location setting saved', 'success'),
                   onError: (err: Error) => showToast(err.message, 'error') },
               )}
-              className="mt-0.5 h-4 w-4 rounded text-purple-600 border-gray-300 focus:ring-purple-500"
+              className="mt-0.5 h-4 w-4 rounded text-brand-600 border-gray-300 focus:ring-brand-500"
             />
             <div>
               <p className="text-sm font-medium text-gray-900">Ask for location on each punch</p>
@@ -750,7 +750,7 @@ export default function GeneralSettingsTab() {
                         onError: (err: Error) => showToast(err.message, 'error') },
                     )}
                     className={`min-w-[3rem] rounded-full border px-3 py-1.5 text-sm ${
-                      on ? 'border-purple-600 bg-purple-50 text-purple-700' : 'border-gray-300 text-gray-600 hover:bg-gray-50'
+                      on ? 'border-brand-600 bg-brand-50 text-brand-700' : 'border-gray-300 text-gray-600 hover:bg-gray-50'
                     } disabled:opacity-60`}
                   >
                     {label}
@@ -802,7 +802,7 @@ export default function GeneralSettingsTab() {
                     { onSuccess: () => showToast('Notification setting saved', 'success'),
                       onError: (err: Error) => showToast(err.message, 'error') },
                   )}
-                  className="mt-0.5 h-4 w-4 rounded text-purple-600 border-gray-300 focus:ring-purple-500"
+                  className="mt-0.5 h-4 w-4 rounded text-brand-600 border-gray-300 focus:ring-brand-500"
                 />
                 <div>
                   <p className="text-sm font-medium text-gray-900">{title}</p>
@@ -860,7 +860,7 @@ export default function GeneralSettingsTab() {
                 { onSuccess: () => showToast('Absence setting saved', 'success'),
                   onError: (err: Error) => showToast(err.message, 'error') },
               )}
-              className="mt-0.5 h-4 w-4 rounded text-purple-600 border-gray-300 focus:ring-purple-500"
+              className="mt-0.5 h-4 w-4 rounded text-brand-600 border-gray-300 focus:ring-brand-500"
             />
             <div>
               <p className="text-sm font-medium text-gray-900">Mark no-shows absent</p>
@@ -904,7 +904,7 @@ export default function GeneralSettingsTab() {
                 { onSuccess: () => showToast('Notification setting saved', 'success'),
                   onError: (err: Error) => showToast(err.message, 'error') },
               )}
-              className="mt-0.5 h-4 w-4 rounded text-purple-600 border-gray-300 focus:ring-purple-500"
+              className="mt-0.5 h-4 w-4 rounded text-brand-600 border-gray-300 focus:ring-brand-500"
             />
             <div>
               <p className="text-sm font-medium text-gray-900">Email employees when their schedule changes</p>
@@ -954,7 +954,7 @@ export default function GeneralSettingsTab() {
         <div className="px-6 py-6">
           {settingsLoading ? (
             <div className="flex items-center gap-3 text-sm text-gray-500">
-              <svg className="h-5 w-5 animate-spin text-purple-600" fill="none" viewBox="0 0 24 24">
+              <svg className="h-5 w-5 animate-spin text-brand-600" fill="none" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
               </svg>
@@ -971,7 +971,7 @@ export default function GeneralSettingsTab() {
                       name="data-retention"
                       checked={appSettings?.data_retention_days === null || appSettings?.data_retention_days === undefined}
                       onChange={() => updateSettingsMutation.mutate({ data_retention_days: null })}
-                      className="mt-1 h-4 w-4 text-purple-600 border-gray-300 focus:ring-purple-500"
+                      className="mt-1 h-4 w-4 text-brand-600 border-gray-300 focus:ring-brand-500"
                     />
                     <div>
                       <p className="text-sm font-medium text-gray-900">Keep data forever</p>
@@ -984,7 +984,7 @@ export default function GeneralSettingsTab() {
                       name="data-retention"
                       checked={appSettings?.data_retention_days !== null && appSettings?.data_retention_days !== undefined}
                       onChange={() => updateSettingsMutation.mutate({ data_retention_days: 365 })}
-                      className="mt-1 h-4 w-4 text-purple-600 border-gray-300 focus:ring-purple-500"
+                      className="mt-1 h-4 w-4 text-brand-600 border-gray-300 focus:ring-brand-500"
                     />
                     <div>
                       <p className="text-sm font-medium text-gray-900">Flag for deletion after a set period</p>
@@ -1008,7 +1008,7 @@ export default function GeneralSettingsTab() {
                         const val = parseInt(e.target.value, 10);
                         if (val > 0) updateSettingsMutation.mutate({ data_retention_days: val });
                       }}
-                      className="block w-32 rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-purple-500 focus:ring-purple-500 focus:outline-none"
+                      className="block w-32 rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500 focus:outline-none"
                     />
                     <p className="mt-1 text-xs text-gray-500">
                       Records are flagged as due for deletion {appSettings?.data_retention_days} day{appSettings?.data_retention_days !== 1 ? 's' : ''} after the separation date.
@@ -1032,7 +1032,7 @@ export default function GeneralSettingsTab() {
                       const val = parseInt(e.target.value, 10);
                       if (val >= 0) updateSettingsMutation.mutate({ analytics_exclusion_days: val });
                     }}
-                    className="block w-32 rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-purple-500 focus:ring-purple-500 focus:outline-none"
+                    className="block w-32 rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500 focus:outline-none"
                   />
                   <span className="text-sm text-gray-500">days after separation</span>
                 </div>
@@ -1061,7 +1061,7 @@ export default function GeneralSettingsTab() {
               </div>
 
               {updateSettingsMutation.isPending && (
-                <p className="text-xs text-purple-600 flex items-center gap-1">
+                <p className="text-xs text-brand-600 flex items-center gap-1">
                   <svg className="h-3 w-3 animate-spin" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />

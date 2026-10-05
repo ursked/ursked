@@ -209,7 +209,7 @@ function MyStatus() {
         {s.is_viewer ? 'You are a Salary Viewer' : 'No salary access'}
       </span>
       {s.is_approver && (
-        <span className="rounded bg-purple-50 px-2 py-0.5 font-medium text-purple-700">Approver</span>
+        <span className="rounded bg-brand-50 px-2 py-0.5 font-medium text-brand-700">Approver</span>
       )}
       {!s.is_viewer && s.can_self_approve && (
         <SelfApprove compact pendingId={(s.pending_requests ?? []).find((r) => r.kind === 'viewer')?.id ?? null} />
@@ -217,7 +217,7 @@ function MyStatus() {
       {!s.is_viewer && !pendingViewer && !s.can_self_approve && (
         <button
           onClick={() => setOpen((v) => !v)}
-          className="rounded-md bg-purple-600 px-2.5 py-1 font-medium text-white hover:bg-purple-700"
+          className="rounded-md bg-brand-600 px-2.5 py-1 font-medium text-white hover:bg-brand-700"
         >
           Request access
         </button>
@@ -243,7 +243,7 @@ function MyStatus() {
           <button
             onClick={() => requestMut.mutate('viewer')}
             disabled={requestMut.isPending}
-            className="rounded-md bg-purple-600 px-2.5 py-1 font-medium text-white hover:bg-purple-700 disabled:opacity-50"
+            className="rounded-md bg-brand-600 px-2.5 py-1 font-medium text-white hover:bg-brand-700 disabled:opacity-50"
           >
             Submit viewer request
           </button>

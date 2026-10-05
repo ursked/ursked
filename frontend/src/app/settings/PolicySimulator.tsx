@@ -64,7 +64,7 @@ export default function PolicySimulator() {
         <button
           onClick={() => runMutation.mutate()}
           disabled={runMutation.isPending || !startDate || !endDate}
-          className="rounded-md bg-purple-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-purple-700 disabled:opacity-50"
+          className="rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
         >
           {runMutation.isPending ? 'Simulating…' : 'Run simulation'}
         </button>
@@ -96,7 +96,7 @@ export default function PolicySimulator() {
                       <td className="px-2 py-1.5 text-gray-700">{e.employee_name ?? `#${e.employee_id}`}</td>
                       <td className="px-2 py-1.5 text-gray-500">{e.rule_name}</td>
                       <td className="px-2 py-1.5">
-                        <span className="inline-block rounded bg-purple-50 px-1.5 py-0.5 text-purple-700">
+                        <span className="inline-block rounded bg-brand-50 px-1.5 py-0.5 text-brand-700">
                           {ACTION_LABEL[e.action] ?? e.action}
                         </span>
                         {e.detail ? <span className="ml-2 text-gray-400">{e.detail}</span> : null}

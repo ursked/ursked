@@ -321,7 +321,7 @@ function PersonalCard({ title, icon, href, linkLabel, loading, children }: {
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 flex flex-col min-w-0">
       <div className="flex items-center gap-2 mb-3">
-        <span className="p-1.5 rounded-lg bg-purple-50 text-purple-600">{icon}</span>
+        <span className="p-1.5 rounded-lg bg-brand-50 text-brand-600">{icon}</span>
         <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
       </div>
       <div className="flex-1">
@@ -335,7 +335,7 @@ function PersonalCard({ title, icon, href, linkLabel, loading, children }: {
         )}
       </div>
       {href && (
-        <Link href={href} className="mt-3 text-sm font-medium text-purple-600 hover:text-purple-700">
+        <Link href={href} className="mt-3 text-sm font-medium text-brand-600 hover:text-brand-700">
           {linkLabel}
         </Link>
       )}

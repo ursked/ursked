@@ -371,24 +371,24 @@ export function Sidebar() {
       {/* Logo */}
       <div className={`flex items-center justify-between h-[calc(4rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] border-b border-gray-800 ${isCollapsed ? 'px-6 lg:px-3' : 'px-6'}`}>
         <Link href="/dashboard" aria-label="ursked — go to the dashboard" className={`flex items-center ${isCollapsed ? 'lg:justify-center lg:w-full' : ''}`}>
-          {/* The wordmark's darker half would disappear on the dark sidebar, so
-              it sits on a small white chip. Collapsed rail shows just the icon. */}
-          <span className="inline-flex items-center rounded-md bg-white px-2 py-1">
+          {/* The white wordmark sits straight on the dark sidebar. Collapsed
+              rail shows just the mark. */}
+          <span className="inline-flex items-center">
             <Image
-              src="/logo/urskedlogo.png"
+              src="/logo/ursked-logo-white.svg"
               alt="ursked"
-              width={1311}
-              height={359}
+              width={294}
+              height={64}
               priority
-              className={`h-6 w-auto ${isCollapsed ? 'lg:hidden' : ''}`}
+              className={`h-7 w-auto ${isCollapsed ? 'lg:hidden' : ''}`}
             />
             {isCollapsed && (
               <Image
-                src="/logo/urskedicon.png"
+                src="/logo/ursked-mark.svg"
                 alt="ursked"
-                width={350}
-                height={358}
-                className="hidden h-6 w-auto lg:block"
+                width={64}
+                height={64}
+                className="hidden h-8 w-8 lg:block"
               />
             )}
           </span>
@@ -464,7 +464,7 @@ export function Sidebar() {
       {user && (
         <div className={`p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] border-t border-gray-800 ${isCollapsed ? 'lg:flex lg:justify-center' : ''}`}>
           <div className={`flex items-center ${rowJustify}`}>
-            <div className="w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center text-sm font-medium flex-shrink-0">
+            <div className="w-8 h-8 rounded-full bg-brand-600 flex items-center justify-center text-sm font-medium flex-shrink-0">
               {user.first_name[0]}
               {user.last_name[0]}
             </div>

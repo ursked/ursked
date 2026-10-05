@@ -76,7 +76,7 @@ export default function AttendanceTab() {
             <button
               type="button"
               onClick={() => setShowModal(true)}
-              className="inline-flex items-center gap-1.5 rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-700 transition-colors"
+              className="inline-flex items-center gap-1.5 rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-700 transition-colors"
             >
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
@@ -95,7 +95,7 @@ export default function AttendanceTab() {
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
-                className="rounded-md border border-gray-300 px-3 py-1.5 text-sm shadow-sm focus:border-purple-500 focus:ring-purple-500 focus:outline-none"
+                className="rounded-md border border-gray-300 px-3 py-1.5 text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500 focus:outline-none"
               />
             </div>
             <div>
@@ -105,7 +105,7 @@ export default function AttendanceTab() {
                 type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
-                className="rounded-md border border-gray-300 px-3 py-1.5 text-sm shadow-sm focus:border-purple-500 focus:ring-purple-500 focus:outline-none"
+                className="rounded-md border border-gray-300 px-3 py-1.5 text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500 focus:outline-none"
               />
             </div>
             {(startDate || endDate) && (
@@ -123,7 +123,7 @@ export default function AttendanceTab() {
         <div className="px-6 py-6">
           {isLoading ? (
             <div className="flex items-center gap-3 text-sm text-gray-500">
-              <svg className="h-5 w-5 animate-spin text-purple-600" fill="none" viewBox="0 0 24 24">
+              <svg className="h-5 w-5 animate-spin text-brand-600" fill="none" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
               </svg>
@@ -178,7 +178,7 @@ export default function AttendanceTab() {
                             <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[11px] font-medium text-gray-700" title="Marked absent automatically: no clock-in for a published shift">Automatic</span>
                           )}
                           {rec.status_override && (
-                            <span className="rounded bg-purple-50 px-1.5 py-0.5 text-[11px] font-medium text-purple-800" title="Status set by hand">Set by hand</span>
+                            <span className="rounded bg-brand-50 px-1.5 py-0.5 text-[11px] font-medium text-brand-800" title="Status set by hand">Set by hand</span>
                           )}
                         </div>
                       </td>
@@ -187,7 +187,7 @@ export default function AttendanceTab() {
                           <button
                             type="button"
                             onClick={() => setEditing(rec)}
-                            className="rounded-md bg-purple-50 px-2.5 py-1 text-xs font-medium text-purple-700 hover:bg-purple-100"
+                            className="rounded-md bg-brand-50 px-2.5 py-1 text-xs font-medium text-brand-700 hover:bg-brand-100"
                           >
                             Edit
                           </button>
@@ -301,7 +301,7 @@ function EditAttendanceModal({ record, onClose, onDone }: {
         <div className="mt-5 flex justify-end gap-2">
           <button type="button" onClick={onClose} className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
           <button type="button" onClick={() => save.mutate()} disabled={!reasonOk || save.isPending}
-            className="rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-700 disabled:opacity-50">
+            className="rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50">
             {save.isPending ? 'Saving…' : 'Save correction'}
           </button>
         </div>

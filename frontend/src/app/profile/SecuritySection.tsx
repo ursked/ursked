@@ -25,7 +25,7 @@ const cardClass = 'bg-white border border-gray-200 rounded-xl shadow-sm'
 const secondaryBtn =
   'inline-flex items-center rounded-md bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 transition-colors disabled:opacity-50'
 const primaryBtn =
-  'inline-flex items-center rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors'
+  'inline-flex items-center rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors'
 
 export default function SecuritySection() {
   const queryClient = useQueryClient()
@@ -135,7 +135,7 @@ export default function SecuritySection() {
                 <div className="mt-2 flex flex-wrap items-center gap-3">
                   <button type="button" className={secondaryBtn} onClick={copyCodes}>Copy codes</button>
                   <label className="inline-flex items-center gap-2 text-sm">
-                    <input type="checkbox" checked={codesSaved} onChange={(e) => setCodesSaved(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-purple-600" />
+                    <input type="checkbox" checked={codesSaved} onChange={(e) => setCodesSaved(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-brand-600" />
                     I have saved my recovery codes
                   </label>
                 </div>

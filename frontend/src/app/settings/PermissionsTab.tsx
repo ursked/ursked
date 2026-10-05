@@ -22,7 +22,7 @@ const MODULES: { key: PermissionModule; label: string }[] = [
 // `swatch` paints the legend chip; `box` tints the checkbox itself. It uses
 // accent-* rather than text-*: @tailwindcss/forms is NOT installed here, so these
 // are native checkboxes and their checked fill comes from CSS accent-color. The
-// old text-purple-600 was inert — every box drew in the browser default.
+// old text-brand-600 was inert — every box drew in the browser default.
 const ACTIONS = [
   {
     key: 'can_view',
@@ -177,7 +177,7 @@ export default function PermissionsTab() {
   if (isLoading) {
     return (
       <div className="flex items-center gap-3 text-sm text-gray-500 py-12">
-        <svg className="h-5 w-5 animate-spin text-purple-600" fill="none" viewBox="0 0 24 24">
+        <svg className="h-5 w-5 animate-spin text-brand-600" fill="none" viewBox="0 0 24 24">
           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
         </svg>
@@ -314,7 +314,7 @@ export default function PermissionsTab() {
                             onClick={() => saveMutation.mutate(entry.role_id)}
                             className={`inline-flex items-center rounded-md px-3 py-1.5 text-xs font-semibold shadow-sm transition-colors ${
                               isRoleDirty
-                                ? 'bg-purple-600 text-white hover:bg-purple-700'
+                                ? 'bg-brand-600 text-white hover:bg-brand-700'
                                 : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                             } disabled:opacity-50`}
                           >

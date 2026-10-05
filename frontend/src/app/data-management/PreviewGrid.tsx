@@ -128,7 +128,7 @@ export default function PreviewGrid({
         <p className="text-sm text-gray-700">
           {isLoading ? (
             <span className="inline-flex items-center gap-2 text-gray-600">
-              <span className="h-3 w-3 animate-spin rounded-full border-2 border-purple-200 border-t-purple-600" />
+              <span className="h-3 w-3 animate-spin rounded-full border-2 border-brand-200 border-t-brand-600" />
               Updating…
             </span>
           ) : total === 0 ? (
@@ -150,7 +150,7 @@ export default function PreviewGrid({
           {tabs.slice(0, 30).map((t, i) => (
             <span
               key={`${t}-${i}`}
-              className={`flex-shrink-0 rounded-full px-2.5 py-1 text-xs ${i === 0 ? 'bg-purple-100 font-medium text-purple-800' : 'bg-gray-100 text-gray-700'}`}
+              className={`flex-shrink-0 rounded-full px-2.5 py-1 text-xs ${i === 0 ? 'bg-brand-100 font-medium text-brand-800' : 'bg-gray-100 text-gray-700'}`}
             >
               {t}
             </span>
@@ -195,12 +195,12 @@ export default function PreviewGrid({
                 if (b) {
                   const tierIndex = (layout?.header_tiers || []).indexOf(tier);
                   cells.push(
-                    <th key={`band-${t}-${i}`} colSpan={b.span} scope="colgroup" className="border-b border-r border-gray-200 bg-purple-50 p-0">
+                    <th key={`band-${t}-${i}`} colSpan={b.span} scope="colgroup" className="border-b border-r border-gray-200 bg-brand-50 p-0">
                       <button
                         type="button"
                         onClick={() => onBandClick?.(tierIndex, b.index)}
                         disabled={!onBandClick}
-                        className="flex w-full min-h-[40px] items-center justify-center whitespace-pre-line px-3 py-1.5 text-center text-xs font-semibold uppercase tracking-wide text-purple-900 hover:bg-purple-100"
+                        className="flex w-full min-h-[40px] items-center justify-center whitespace-pre-line px-3 py-1.5 text-center text-xs font-semibold uppercase tracking-wide text-brand-900 hover:bg-brand-100"
                         aria-label={`Heading ${b.band.label}: change or remove`}
                       >
                         {b.band.label}
@@ -239,7 +239,7 @@ export default function PreviewGrid({
                         {marks.map((m) => (
                           <span
                             key={m}
-                            className="rounded bg-purple-100 px-1 py-0.5 text-[10px] font-medium normal-case text-purple-800"
+                            className="rounded bg-brand-100 px-1 py-0.5 text-[10px] font-medium normal-case text-brand-800"
                           >
                             {m}
                           </span>

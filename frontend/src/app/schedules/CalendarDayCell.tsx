@@ -40,9 +40,9 @@ export default function CalendarDayCell({
     <button
       type="button"
       onClick={() => onClick(dateStr)}
-      className={`relative w-full border border-gray-100 rounded-lg p-2 text-left transition-all hover:shadow-md hover:border-purple-200 min-h-[100px] flex flex-col ${
+      className={`relative w-full border border-gray-100 rounded-lg p-2 text-left transition-all hover:shadow-md hover:border-brand-200 min-h-[100px] flex flex-col ${
         !isCurrentMonth ? 'opacity-40' : ''
-      } ${isToday ? 'ring-2 ring-purple-400 ring-offset-1 bg-purple-50/30' : 'bg-white'} ${
+      } ${isToday ? 'ring-2 ring-brand-400 ring-offset-1 bg-brand-50/30' : 'bg-white'} ${
         remark?.is_holiday
           ? remark.is_special
             ? 'bg-amber-50/50'
@@ -56,13 +56,13 @@ export default function CalendarDayCell({
       <div className="flex items-center justify-between mb-1">
         <span
           className={`text-sm font-semibold ${
-            isToday ? 'text-purple-700' : isCurrentMonth ? 'text-gray-800' : 'text-gray-500'
+            isToday ? 'text-brand-700' : isCurrentMonth ? 'text-gray-800' : 'text-gray-500'
           }`}
         >
           {dayNum}
         </span>
         {totalShifts > 0 && (
-          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700">
+          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-brand-100 text-brand-700">
             {totalShifts}
           </span>
         )}

@@ -249,11 +249,11 @@ export default function EmployeesPage() {
       );
     }
     return sortOrder === 'asc' ? (
-      <svg className="w-3.5 h-3.5 text-purple-600 ml-1 inline-block" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+      <svg className="w-3.5 h-3.5 text-brand-600 ml-1 inline-block" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
       </svg>
     ) : (
-      <svg className="w-3.5 h-3.5 text-purple-600 ml-1 inline-block" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+      <svg className="w-3.5 h-3.5 text-brand-600 ml-1 inline-block" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
       </svg>
     );
@@ -336,7 +336,7 @@ export default function EmployeesPage() {
               {canCreate && (
                 <button
                   onClick={() => setShowCreateModal(true)}
-                  className="inline-flex items-center gap-2 bg-purple-600 text-white px-4 py-2.5 rounded-lg font-medium hover:bg-purple-700 transition-colors"
+                  className="inline-flex items-center gap-2 bg-brand-600 text-white px-4 py-2.5 rounded-lg font-medium hover:bg-brand-700 transition-colors"
                 >
                   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
@@ -360,7 +360,7 @@ export default function EmployeesPage() {
                   onClick={() => setView(tab.key)}
                   className={`whitespace-nowrap border-b-2 py-3 px-1 text-sm font-medium transition-colors ${
                     view === tab.key
-                      ? 'border-purple-500 text-purple-600'
+                      ? 'border-brand-500 text-brand-600'
                       : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
                   }`}
                 >
@@ -391,7 +391,7 @@ export default function EmployeesPage() {
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
                 placeholder={`Search by name, email, ${numberLabel}…`}
-                className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none text-sm"
+                className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent outline-none text-sm"
               />
             </div>
 
@@ -400,7 +400,7 @@ export default function EmployeesPage() {
               aria-label="Filter by role"
               value={roleFilter}
               onChange={(e) => { setRoleFilter(e.target.value); setPage(1); }}
-              className="px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none text-sm bg-white"
+              className="px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent outline-none text-sm bg-white"
             >
               <option value="">All Roles</option>
               <option value="tenant_admin">Administrator</option>
@@ -418,7 +418,7 @@ export default function EmployeesPage() {
               aria-label="Filter by status"
               value={statusFilter}
               onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
-              className="px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none text-sm bg-white"
+              className="px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent outline-none text-sm bg-white"
             >
               <option value="">All Employees</option>
               <option value="true">Active</option>
@@ -433,7 +433,7 @@ export default function EmployeesPage() {
                 value={unitFilter}
                 onChange={(id) => { setUnitFilter(id); setPage(1); }}
                 emptyLabel="All units"
-                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none text-sm bg-white"
+                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent outline-none text-sm bg-white"
               />
             </div>
           </div>
@@ -467,7 +467,7 @@ export default function EmployeesPage() {
                       <p className="px-2 pb-1 text-xs text-gray-500">Show custom fields as columns</p>
                       {columnDefs.map((d) => (
                         <label key={d.key} className="flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-gray-50">
-                          <input type="checkbox" checked={shownColumns.includes(d.key)} onChange={() => toggleColumn(d.key)} className="h-4 w-4 rounded border-gray-300 text-purple-600" />
+                          <input type="checkbox" checked={shownColumns.includes(d.key)} onChange={() => toggleColumn(d.key)} className="h-4 w-4 rounded border-gray-300 text-brand-600" />
                           {d.label}
                         </label>
                       ))}
@@ -491,7 +491,7 @@ export default function EmployeesPage() {
         )}
 
         {canBulk && allOnPageSelected && !allMatching && total > employees.length && (
-          <div className="rounded-lg bg-purple-50 px-4 py-2 text-sm text-purple-900">
+          <div className="rounded-lg bg-brand-50 px-4 py-2 text-sm text-brand-900">
             All {employees.length} on this page are selected.{' '}
             <button type="button" onClick={() => setAllMatching(true)} className="font-medium underline">
               Select all {total} matching this filter
@@ -512,22 +512,22 @@ export default function EmployeesPage() {
                         aria-label="Select all on this page"
                         checked={allOnPageSelected || allMatching}
                         onChange={togglePage}
-                        className="h-4 w-4 rounded border-gray-300 text-purple-600"
+                        className="h-4 w-4 rounded border-gray-300 text-brand-600"
                       />
                     </th>
                   )}
                   <th className="text-left py-3 px-4 font-medium text-gray-600">
-                    <button onClick={() => handleSort('first_name')} className="inline-flex items-center hover:text-purple-600 transition-colors">
+                    <button onClick={() => handleSort('first_name')} className="inline-flex items-center hover:text-brand-600 transition-colors">
                       Employee{renderSortIcon('first_name')}
                     </button>
                   </th>
                   <th className="text-left py-3 px-4 font-medium text-gray-600 hidden md:table-cell">
-                    <button onClick={() => handleSort('personnel_number')} className="inline-flex items-center hover:text-purple-600 transition-colors">
+                    <button onClick={() => handleSort('personnel_number')} className="inline-flex items-center hover:text-brand-600 transition-colors">
                       {numberLabel}{renderSortIcon('personnel_number')}
                     </button>
                   </th>
                   <th className="text-left py-3 px-4 font-medium text-gray-600 hidden lg:table-cell">
-                    <button onClick={() => handleSort('job_title')} className="inline-flex items-center hover:text-purple-600 transition-colors">
+                    <button onClick={() => handleSort('job_title')} className="inline-flex items-center hover:text-brand-600 transition-colors">
                       Job Title{renderSortIcon('job_title')}
                     </button>
                   </th>
@@ -544,7 +544,7 @@ export default function EmployeesPage() {
                 {loading ? (
                   <tr>
                     <td colSpan={colCount} className="py-12 text-center text-gray-400">
-                      <svg className="w-8 h-8 animate-spin mx-auto mb-2 text-purple-500" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+                      <svg className="w-8 h-8 animate-spin mx-auto mb-2 text-brand-500" fill="none" viewBox="0 0 24 24" aria-hidden="true">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                       </svg>
@@ -566,7 +566,7 @@ export default function EmployeesPage() {
                   </tr>
                 ) : (
                   employees.map((emp) => (
-                    <tr key={emp.id} className={`hover:bg-gray-50 transition-colors ${selectedIds.includes(emp.id) || allMatching ? 'bg-purple-50/40' : ''}`}>
+                    <tr key={emp.id} className={`hover:bg-gray-50 transition-colors ${selectedIds.includes(emp.id) || allMatching ? 'bg-brand-50/40' : ''}`}>
                       {canBulk && (
                         <td className="py-3 pl-4">
                           <input
@@ -574,7 +574,7 @@ export default function EmployeesPage() {
                             aria-label={`Select ${emp.first_name} ${emp.last_name}`}
                             checked={allMatching || selectedIds.includes(emp.id)}
                             onChange={() => toggleOne(emp.id)}
-                            className="h-4 w-4 rounded border-gray-300 text-purple-600"
+                            className="h-4 w-4 rounded border-gray-300 text-brand-600"
                           />
                         </td>
                       )}
@@ -582,9 +582,9 @@ export default function EmployeesPage() {
                       <td className="py-3 px-4">
                         <button
                           onClick={() => setViewingEmployee(emp)}
-                          className="flex items-center gap-3 text-left hover:text-purple-600 transition-colors"
+                          className="flex items-center gap-3 text-left hover:text-brand-600 transition-colors"
                         >
-                          <div className="w-9 h-9 rounded-full bg-purple-100 text-purple-700 flex items-center justify-center text-sm font-semibold flex-shrink-0">
+                          <div className="w-9 h-9 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center text-sm font-semibold flex-shrink-0">
                             {emp.first_name[0]}{emp.last_name[0]}
                           </div>
                           <div className="min-w-0">
@@ -606,7 +606,7 @@ export default function EmployeesPage() {
                         {emp.org_node_name || <span className="text-gray-500">-</span>}
                       </td>
                       <td className="py-3 px-4">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-50 text-purple-700">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-brand-50 text-brand-700">
                           {getPrimaryRole(emp)}
                         </span>
                       </td>
@@ -638,7 +638,7 @@ export default function EmployeesPage() {
                         <div className="flex items-center justify-end gap-1">
                           <button
                             onClick={() => setViewingEmployee(emp)}
-                            className="p-1.5 text-gray-400 hover:text-purple-600 rounded-lg hover:bg-purple-50 transition-colors"
+                            className="p-1.5 text-gray-400 hover:text-brand-600 rounded-lg hover:bg-brand-50 transition-colors"
                             title="View details"
                             aria-label={`View ${emp.first_name} ${emp.last_name}`}
                           >
@@ -736,7 +736,7 @@ export default function EmployeesPage() {
                       aria-current={page === pageNum ? 'page' : undefined}
                       className={`px-3 py-1.5 text-sm rounded-lg ${
                         page === pageNum
-                          ? 'bg-purple-600 text-white'
+                          ? 'bg-brand-600 text-white'
                           : 'border border-gray-300 hover:bg-gray-50'
                       }`}
                     >

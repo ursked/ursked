@@ -152,13 +152,13 @@ export function UserPicker(props: UserPickerProps) {
           {props.value.map((id) => {
             const u = byId.get(id)
             return (
-              <li key={id} className="inline-flex items-center gap-1 rounded-full bg-purple-50 py-1 pl-3 pr-1 text-sm text-purple-900">
+              <li key={id} className="inline-flex items-center gap-1 rounded-full bg-brand-50 py-1 pl-3 pr-1 text-sm text-brand-900">
                 <span className="max-w-[14rem] truncate">{u ? u.name : `#${id}`}</span>
                 <button
                   type="button"
                   disabled={disabled}
                   onClick={() => remove(id)}
-                  className="inline-flex h-7 w-7 items-center justify-center rounded-full hover:bg-purple-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-full hover:bg-brand-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                   aria-label={`Remove ${u ? u.name : 'employee'}`}
                 >
                   ×
@@ -192,7 +192,7 @@ export function UserPicker(props: UserPickerProps) {
             <button
               type="button"
               onClick={() => remove(single.id)}
-              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500"
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
               aria-label="Clear selection"
             >
               ×
@@ -219,7 +219,7 @@ export function UserPicker(props: UserPickerProps) {
           }}
           onKeyDown={onKeyDown}
           className={cn(
-            'flex h-10 w-full rounded-lg border bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 disabled:cursor-not-allowed disabled:bg-gray-50',
+            'flex h-10 w-full rounded-lg border bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 disabled:cursor-not-allowed disabled:bg-gray-50',
             invalid ? 'border-red-400' : 'border-gray-300'
           )}
         />
@@ -251,7 +251,7 @@ export function UserPicker(props: UserPickerProps) {
               onMouseEnter={() => setActive(i)}
               className={cn(
                 'flex min-h-[44px] cursor-pointer flex-col justify-center px-3 py-1.5 text-sm',
-                i === active ? 'bg-purple-50' : 'bg-white'
+                i === active ? 'bg-brand-50' : 'bg-white'
               )}
             >
               <span className="font-medium text-gray-900">

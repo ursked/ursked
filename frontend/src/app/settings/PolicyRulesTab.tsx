@@ -343,11 +343,11 @@ export default function PolicyRulesTab() {
               onClick={() => setFormData(p => ({ ...p, rule_type: t.value }))}
               className={`text-left p-2.5 rounded-lg border-2 transition-all ${
                 formData.rule_type === t.value
-                  ? 'border-purple-500 bg-purple-50 ring-1 ring-purple-500'
+                  ? 'border-brand-500 bg-brand-50 ring-1 ring-brand-500'
                   : 'border-gray-200 bg-white hover:border-gray-300'
               }`}
             >
-              <span className={`text-xs font-semibold ${formData.rule_type === t.value ? 'text-purple-900' : 'text-gray-700'}`}>
+              <span className={`text-xs font-semibold ${formData.rule_type === t.value ? 'text-brand-900' : 'text-gray-700'}`}>
                 {t.label}
               </span>
               <p className="text-[10px] text-gray-500 mt-0.5 leading-tight">{t.description}</p>
@@ -362,13 +362,13 @@ export default function PolicyRulesTab() {
           <input type="text" required value={formData.name}
             onChange={(e) => setFormData(p => ({ ...p, name: e.target.value }))}
             placeholder="e.g. Regular Weekday Overtime"
-            className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-purple-500 focus:ring-purple-500 focus:outline-none" />
+            className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500 focus:outline-none" />
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
           <input type="number" value={formData.priority}
             onChange={(e) => setFormData(p => ({ ...p, priority: parseInt(e.target.value, 10) || 0 }))}
-            className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-purple-500 focus:ring-purple-500 focus:outline-none" />
+            className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500 focus:outline-none" />
           <p className="mt-1 text-xs text-gray-500">Lower number = evaluated first. Rules with the same type are checked in priority order; the first match wins.</p>
         </div>
         <div>
@@ -376,7 +376,7 @@ export default function PolicyRulesTab() {
           <input type="text" value={formData.description}
             onChange={(e) => setFormData(p => ({ ...p, description: e.target.value }))}
             placeholder="Optional - explain what this rule does"
-            className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-purple-500 focus:ring-purple-500 focus:outline-none" />
+            className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500 focus:outline-none" />
         </div>
       </div>
 
@@ -388,18 +388,18 @@ export default function PolicyRulesTab() {
             <div className="inline-flex rounded-md border border-gray-200 overflow-hidden text-xs">
               <button type="button"
                 onClick={() => setFormData(p => ({ ...p, matchMode: 'all' }))}
-                className={`px-2 py-0.5 ${formData.matchMode === 'all' ? 'bg-purple-600 text-white' : 'bg-white text-gray-600'}`}>
+                className={`px-2 py-0.5 ${formData.matchMode === 'all' ? 'bg-brand-600 text-white' : 'bg-white text-gray-600'}`}>
                 ALL (AND)
               </button>
               <button type="button"
                 onClick={() => setFormData(p => ({ ...p, matchMode: 'any' }))}
-                className={`px-2 py-0.5 ${formData.matchMode === 'any' ? 'bg-purple-600 text-white' : 'bg-white text-gray-600'}`}>
+                className={`px-2 py-0.5 ${formData.matchMode === 'any' ? 'bg-brand-600 text-white' : 'bg-white text-gray-600'}`}>
                 ANY (OR)
               </button>
             </div>
           </div>
           <button type="button" onClick={addCondition}
-            className="text-xs text-purple-600 hover:text-purple-700 font-medium">+ Add Condition</button>
+            className="text-xs text-brand-600 hover:text-brand-700 font-medium">+ Add Condition</button>
         </div>
         <div className="space-y-2">
           {formData.conditions.map((cond, idx) => {
@@ -470,7 +470,7 @@ export default function PolicyRulesTab() {
         <div className="flex items-center justify-between mb-2">
           <label className="block text-sm font-semibold text-gray-700">Then do this</label>
           <button type="button" onClick={addAction}
-            className="text-xs text-purple-600 hover:text-purple-700 font-medium">+ Add Action</button>
+            className="text-xs text-brand-600 hover:text-brand-700 font-medium">+ Add Action</button>
         </div>
         <div className="space-y-2">
           {formData.actions.map((action, idx) => {
@@ -553,7 +553,7 @@ export default function PolicyRulesTab() {
                       <label className="flex items-center gap-1 text-xs text-gray-600 mt-1.5">
                         <input type="checkbox" checked={!!action.convert_to_leave}
                           onChange={(e) => updateAction(idx, 'convert_to_leave', e.target.checked)}
-                          className="h-3 w-3 rounded border-gray-300 text-purple-600" />
+                          className="h-3 w-3 rounded border-gray-300 text-brand-600" />
                         Also convert to leave credits
                       </label>
                     </div>
@@ -576,7 +576,7 @@ export default function PolicyRulesTab() {
                       <label className="flex items-center gap-1 text-xs text-gray-600">
                         <input type="checkbox" checked={!!action.convert_to_leave}
                           onChange={(e) => updateAction(idx, 'convert_to_leave', e.target.checked)}
-                          className="h-3 w-3 rounded border-gray-300 text-purple-600" />
+                          className="h-3 w-3 rounded border-gray-300 text-brand-600" />
                         Also convert to leave credits
                       </label>
                     </div>
@@ -613,9 +613,9 @@ export default function PolicyRulesTab() {
 
       {/* Rule Preview */}
       {formData.conditions[0]?.field && formData.actions[0]?.type && (
-        <div className="bg-purple-50 border border-purple-200 rounded-md p-3">
-          <p className="text-xs font-medium text-purple-800 mb-1">Rule preview</p>
-          <p className="text-sm text-purple-900">
+        <div className="bg-brand-50 border border-brand-200 rounded-md p-3">
+          <p className="text-xs font-medium text-brand-800 mb-1">Rule preview</p>
+          <p className="text-sm text-brand-900">
             {summarizeRule(
               { id: 0, name: formData.name, description: '', rule_type: formData.rule_type, priority: formData.priority, is_active: formData.is_active, conditions: formData.conditions, actions: formData.actions } as PolicyRule,
               otCategories ?? []
@@ -627,13 +627,13 @@ export default function PolicyRulesTab() {
       <div className="flex items-center gap-2">
         <input type="checkbox" id="is_active" checked={formData.is_active}
           onChange={(e) => setFormData(p => ({ ...p, is_active: e.target.checked }))}
-          className="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500" />
+          className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500" />
         <label htmlFor="is_active" className="text-sm text-gray-700">Active</label>
       </div>
 
       <div className="flex items-center gap-3 pt-2">
         <button type="submit" disabled={isMutating}
-          className="inline-flex items-center rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+          className="inline-flex items-center rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
           {isMutating ? 'Saving...' : editingId ? 'Update' : 'Create'}
         </button>
         <button type="button" onClick={resetForm}
@@ -659,12 +659,12 @@ export default function PolicyRulesTab() {
           <div className="flex items-center gap-3">
             <label className="flex items-center gap-2 text-sm text-gray-600">
               <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)}
-                className="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500" />
+                className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500" />
               Show inactive
             </label>
             {canCreate && !showForm && editingId === null && (
               <button type="button" onClick={() => { setShowForm(true); setEditingId(null); setFormData(EMPTY_FORM) }}
-                className="inline-flex items-center gap-1.5 rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-700 transition-colors">
+                className="inline-flex items-center gap-1.5 rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-700 transition-colors">
                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
                 </svg>
@@ -679,7 +679,7 @@ export default function PolicyRulesTab() {
 
           {isLoading ? (
             <div className="flex items-center gap-3 text-sm text-gray-500">
-              <svg className="h-5 w-5 animate-spin text-purple-600" fill="none" viewBox="0 0 24 24">
+              <svg className="h-5 w-5 animate-spin text-brand-600" fill="none" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
               </svg>
@@ -710,7 +710,7 @@ export default function PolicyRulesTab() {
                     </div>
                     <div className="flex-shrink-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity ml-3">
                       {canEdit && <button type="button" onClick={() => handleEdit(rule)}
-                        className="inline-flex items-center rounded-md p-1.5 text-gray-400 hover:text-purple-600 hover:bg-purple-50 transition-colors" title="Edit">
+                        className="inline-flex items-center rounded-md p-1.5 text-gray-400 hover:text-brand-600 hover:bg-brand-50 transition-colors" title="Edit">
                         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
                         </svg>

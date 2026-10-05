@@ -83,7 +83,7 @@ export default function CompensationTab() {
         {canCreate && !error && (
           <button
             onClick={() => setShowForm(true)}
-            className="rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-700"
+            className="rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700"
           >
             Add compensation
           </button>
@@ -136,7 +136,7 @@ export default function CompensationTab() {
                   <td className="px-4 py-2 text-gray-600">{KIND_LABEL[it.kind] ?? it.kind}</td>
                   <td className="px-4 py-2 text-right font-medium text-gray-900">{formatCurrency(it.amount)}</td>
                   <td className="px-4 py-2 text-gray-500">{it.earned_on}</td>
-                  <td className="px-4 py-2 font-medium text-purple-700">{it.payout_date}</td>
+                  <td className="px-4 py-2 font-medium text-brand-700">{it.payout_date}</td>
                   <td className="px-4 py-2 text-gray-500">
                     {it.recurrence === 'monthly' ? 'Every month' : it.recurrence === 'per_cutoff' ? 'Every cutoff' : it.template_id ? 'Repeat' : '—'}
                   </td>
@@ -270,7 +270,7 @@ function AddModal({ employees, onClose, onDone }: {
                 Preview payout
               </button>
             </div>
-            {resolved && <span className="mt-1 block text-xs font-medium text-purple-700">→ paid on {resolved}</span>}
+            {resolved && <span className="mt-1 block text-xs font-medium text-brand-700">→ paid on {resolved}</span>}
           </label>
           <label className="block">
             <span className="mb-1 block text-sm font-medium text-gray-700">Recurrence</span>
@@ -287,7 +287,7 @@ function AddModal({ employees, onClose, onDone }: {
         </div>
         <div className="mt-4 flex justify-end gap-2">
           <button onClick={onClose} className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
-          <button onClick={() => saveMut.mutate()} disabled={!canSave || saveMut.isPending} className="rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-700 disabled:opacity-50">Add</button>
+          <button onClick={() => saveMut.mutate()} disabled={!canSave || saveMut.isPending} className="rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50">Add</button>
         </div>
       </div>
     </div>

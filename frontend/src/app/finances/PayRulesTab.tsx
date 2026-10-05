@@ -139,7 +139,7 @@ export default function PayRulesTab() {
           step={f.step}
           value={draft[key]}
           onChange={(e) => set({ [key]: e.target.value } as Partial<Draft>)}
-          className="block w-40 rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-purple-500 focus:ring-purple-500 focus:outline-none disabled:bg-gray-50 disabled:text-gray-700"
+          className="block w-40 rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500 focus:outline-none disabled:bg-gray-50 disabled:text-gray-700"
         />
         <p className="mt-1 text-xs text-gray-500">{f.help}</p>
       </div>
@@ -184,7 +184,7 @@ export default function PayRulesTab() {
                   type="time"
                   value={draft.night_shift_start}
                   onChange={(e) => set({ night_shift_start: e.target.value })}
-                  className="block w-40 rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-purple-500 focus:ring-purple-500 focus:outline-none disabled:bg-gray-50 disabled:text-gray-700"
+                  className="block w-40 rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500 focus:outline-none disabled:bg-gray-50 disabled:text-gray-700"
                 />
               </div>
               <div>
@@ -194,7 +194,7 @@ export default function PayRulesTab() {
                   type="time"
                   value={draft.night_shift_end}
                   onChange={(e) => set({ night_shift_end: e.target.value })}
-                  className="block w-40 rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-purple-500 focus:ring-purple-500 focus:outline-none disabled:bg-gray-50 disabled:text-gray-700"
+                  className="block w-40 rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500 focus:outline-none disabled:bg-gray-50 disabled:text-gray-700"
                 />
               </div>
             </div>
@@ -235,7 +235,7 @@ export default function PayRulesTab() {
               <button
                 type="submit"
                 disabled={!dirty || errors.length > 0 || saveMut.isPending}
-                className="rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-700 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {saveMut.isPending ? 'Saving…' : 'Save pay rules'}
               </button>

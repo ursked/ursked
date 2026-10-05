@@ -406,7 +406,7 @@ export default function PolicyWizard({ open, onOpenChange, policy, initialStep =
                       className={
                         'rounded-full border px-3 py-1 text-sm ' +
                         (on
-                          ? 'border-purple-600 bg-purple-50 text-purple-700'
+                          ? 'border-brand-600 bg-brand-50 text-brand-700'
                           : 'border-gray-300 text-gray-600 hover:bg-gray-50')
                       }
                     >
@@ -427,7 +427,7 @@ export default function PolicyWizard({ open, onOpenChange, policy, initialStep =
                   className={
                     'rounded-lg border p-3 text-left ' +
                     (state.pool_type === pt
-                      ? 'border-purple-600 ring-1 ring-purple-600'
+                      ? 'border-brand-600 ring-1 ring-brand-600'
                       : 'border-gray-300 hover:bg-gray-50')
                   }
                 >
@@ -448,7 +448,7 @@ export default function PolicyWizard({ open, onOpenChange, policy, initialStep =
                   className={
                     'rounded-lg border p-3 text-left ' +
                     (state.accrual_method === am
-                      ? 'border-purple-600 ring-1 ring-purple-600'
+                      ? 'border-brand-600 ring-1 ring-brand-600'
                       : 'border-gray-300 hover:bg-gray-50')
                   }
                 >
@@ -649,7 +649,7 @@ export default function PolicyWizard({ open, onOpenChange, policy, initialStep =
                   className={
                     'rounded-lg border p-3 text-left ' +
                     (state.approval_mode === am
-                      ? 'border-purple-600 ring-1 ring-purple-600'
+                      ? 'border-brand-600 ring-1 ring-brand-600'
                       : 'border-gray-300 hover:bg-gray-50')
                   }
                 >

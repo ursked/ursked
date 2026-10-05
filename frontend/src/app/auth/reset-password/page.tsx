@@ -65,7 +65,7 @@ function ResetPasswordContent() {
   };
 
   return (
-    <div className="min-h-app flex items-center justify-center bg-gradient-to-br from-purple-50 via-white to-purple-50 px-4">
+    <div className="min-h-app flex items-center justify-center bg-gradient-to-br from-brand-50 via-white to-brand-50 px-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <h1 className="text-2xl font-bold text-gray-900">Reset your password</h1>
@@ -74,7 +74,7 @@ function ResetPasswordContent() {
         <div className="bg-white rounded-xl shadow-lg p-8">
           {state === 'loading' && (
             <div className="text-center py-8">
-              <svg className="w-8 h-8 animate-spin text-purple-600 mx-auto mb-4" fill="none" viewBox="0 0 24 24">
+              <svg className="w-8 h-8 animate-spin text-brand-600 mx-auto mb-4" fill="none" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
               </svg>
@@ -96,7 +96,7 @@ function ResetPasswordContent() {
               </p>
               <Link
                 href="/auth/forgot-password"
-                className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-purple-600 bg-purple-50 rounded-lg hover:bg-purple-100 transition-colors"
+                className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-brand-600 bg-brand-50 rounded-lg hover:bg-brand-100 transition-colors"
               >
                 Request a New Link
               </Link>
@@ -122,7 +122,7 @@ function ResetPasswordContent() {
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder="Create a strong password"
-                      className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none text-sm pr-10"
+                      className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent outline-none text-sm pr-10"
                       autoFocus
                     />
                     <button
@@ -173,7 +173,7 @@ function ResetPasswordContent() {
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     placeholder="Re-enter your password"
-                    className={`w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none text-sm ${
+                    className={`w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent outline-none text-sm ${
                       confirmPassword.length > 0 && !passwordsMatch ? 'border-red-300' : 'border-gray-300'
                     }`}
                   />
@@ -185,7 +185,7 @@ function ResetPasswordContent() {
                 <button
                   type="submit"
                   disabled={!canSubmit}
-                  className="w-full px-4 py-3 text-sm font-medium text-white bg-purple-600 rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                  className="w-full px-4 py-3 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
                 >
                   {submitting && (
                     <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
@@ -213,7 +213,7 @@ function ResetPasswordContent() {
               </p>
               <Link
                 href="/auth/login"
-                className="inline-flex items-center gap-2 px-6 py-2.5 text-sm font-medium text-white bg-purple-600 rounded-lg hover:bg-purple-700 transition-colors"
+                className="inline-flex items-center gap-2 px-6 py-2.5 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 transition-colors"
               >
                 Sign In
               </Link>
@@ -228,8 +228,8 @@ function ResetPasswordContent() {
 export default function ResetPasswordPage() {
   return (
     <Suspense fallback={
-      <div className="min-h-app bg-gradient-to-br from-purple-50 via-white to-purple-50 flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-purple-600 border-t-transparent rounded-full animate-spin" />
+      <div className="min-h-app bg-gradient-to-br from-brand-50 via-white to-brand-50 flex items-center justify-center">
+        <div className="w-8 h-8 border-4 border-brand-600 border-t-transparent rounded-full animate-spin" />
       </div>
     }>
       <ResetPasswordContent />

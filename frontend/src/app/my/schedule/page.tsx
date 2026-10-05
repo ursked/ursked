@@ -193,7 +193,7 @@ export default function MySchedulePage() {
                 key={v}
                 onClick={() => setView(v)}
                 className={`rounded-md px-3 py-1 text-xs font-medium capitalize transition-colors ${
-                  view === v ? 'bg-purple-600 text-white' : 'text-gray-600 hover:bg-gray-50'
+                  view === v ? 'bg-brand-600 text-white' : 'text-gray-600 hover:bg-gray-50'
                 }`}
               >
                 {v}
@@ -300,13 +300,13 @@ function WeekList({
         const holiday = holidayByDate.get(key)
         const isToday = key === todayIso
         return (
-          <Card key={key} className={isToday ? 'ring-1 ring-purple-400' : ''}>
+          <Card key={key} className={isToday ? 'ring-1 ring-brand-400' : ''}>
             <CardBody className="flex items-start gap-4 p-4">
               <div className="w-12 shrink-0 text-center">
                 <div className="text-xs uppercase text-gray-500">
                   {d.toLocaleDateString(undefined, { weekday: 'short' })}
                 </div>
-                <div className={'text-lg font-semibold ' + (isToday ? 'text-purple-700' : 'text-gray-800')}>
+                <div className={'text-lg font-semibold ' + (isToday ? 'text-brand-700' : 'text-gray-800')}>
                   {d.getDate()}
                 </div>
               </div>
@@ -384,10 +384,10 @@ function MonthGrid({
             <div
               key={key}
               className={`min-h-[52px] rounded-md border p-1 ${
-                isToday ? 'border-purple-400 bg-purple-50/40' : 'border-gray-100'
+                isToday ? 'border-brand-400 bg-brand-50/40' : 'border-gray-100'
               }`}
             >
-              <div className={`text-[10px] font-semibold ${isToday ? 'text-purple-700' : 'text-gray-500'}`}>
+              <div className={`text-[10px] font-semibold ${isToday ? 'text-brand-700' : 'text-gray-500'}`}>
                 {d.getDate()}
               </div>
               {holiday && <div className="mt-0.5 truncate text-[8px] text-red-500">{holiday}</div>}

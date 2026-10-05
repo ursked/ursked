@@ -12,7 +12,7 @@ export const Checkbox = React.forwardRef<
     ref={ref}
     type="checkbox"
     className={cn(
-      'h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500',
+      'h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500',
       className
     )}
     {...props}
@@ -37,8 +37,8 @@ export function Switch({ checked, onChange, disabled, id }: SwitchProps) {
       disabled={disabled}
       onClick={() => onChange(!checked)}
       className={cn(
-        'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 disabled:opacity-50',
-        checked ? 'bg-purple-600' : 'bg-gray-300'
+        'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 disabled:opacity-50',
+        checked ? 'bg-brand-600' : 'bg-gray-300'
       )}
     >
       <span
@@ -83,7 +83,7 @@ export function SegmentedControl<T extends string>({
           className={cn(
             'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
             value === opt.value
-              ? 'bg-white text-purple-700 shadow-sm'
+              ? 'bg-white text-brand-700 shadow-sm'
               : 'text-gray-500 hover:text-gray-700'
           )}
         >

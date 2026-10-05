@@ -101,18 +101,18 @@ export default function SwapRequestModal({
           {/* Your current shift */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Your Shift on {dateStr}</label>
-            <div className="p-3 rounded-lg bg-purple-50 border border-purple-200">
+            <div className="p-3 rounded-lg bg-brand-50 border border-brand-200">
               <div className="flex items-center gap-2">
-                <span className="text-sm font-medium text-purple-800">
+                <span className="text-sm font-medium text-brand-800">
                   {getStatusLabel(shift.status)}
                 </span>
                 {formatShiftTime(shift.start_time, shift.end_time) && (
-                  <span className="text-sm text-purple-600">
+                  <span className="text-sm text-brand-600">
                     {formatShiftTime(shift.start_time, shift.end_time)}
                   </span>
                 )}
                 {shift.work_arrangement && (
-                  <span className="text-xs px-1.5 py-0.5 rounded bg-purple-100 text-purple-700">
+                  <span className="text-xs px-1.5 py-0.5 rounded bg-brand-100 text-brand-700">
                     {WORK_ARRANGEMENT_LABELS[shift.work_arrangement] ?? shift.work_arrangement}
                   </span>
                 )}
@@ -126,7 +126,7 @@ export default function SwapRequestModal({
             <select
               value={targetEmployeeId}
               onChange={(e) => setTargetEmployeeId(e.target.value ? Number(e.target.value) : '')}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent"
             >
               <option value="">Select employee...</option>
               {otherEmployees.map((emp) => (
@@ -189,7 +189,7 @@ export default function SwapRequestModal({
                 type="checkbox"
                 checked={useRange}
                 onChange={(e) => setUseRange(e.target.checked)}
-                className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                className="rounded border-gray-300 text-brand-600 focus:ring-brand-500"
               />
               <span className="text-sm text-gray-700">Apply to date range</span>
             </label>
@@ -199,7 +199,7 @@ export default function SwapRequestModal({
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
                 min={dateStr}
-                className="mt-2 w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                className="mt-2 w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent"
                 placeholder="End date"
               />
             )}
@@ -212,7 +212,7 @@ export default function SwapRequestModal({
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               rows={3}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent resize-none"
               placeholder="Why do you need to swap schedules?"
             />
           </div>
@@ -236,7 +236,7 @@ export default function SwapRequestModal({
             <button
               type="submit"
               disabled={createMutation.isPending || !targetEmployeeId}
-              className="flex-1 px-4 py-2 text-sm font-medium text-white bg-purple-600 rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {createMutation.isPending ? 'Submitting...' : 'Submit Request'}
             </button>

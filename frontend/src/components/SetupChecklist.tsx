@@ -58,7 +58,7 @@ export default function SetupChecklist() {
                   cy="24"
                   r={radius}
                   fill="none"
-                  stroke="#7c3aed"
+                  stroke="#047857"
                   strokeWidth="4"
                   strokeDasharray={circ}
                   strokeDashoffset={offset}

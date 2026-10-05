@@ -136,7 +136,7 @@ export default function ScheduleToolbar({
           </button>
           <button
             onClick={onToday}
-            className="px-3 py-1 min-h-[44px] sm:min-h-0 text-xs font-medium rounded-lg bg-purple-50 text-purple-700 hover:bg-purple-100 transition-colors"
+            className="px-3 py-1 min-h-[44px] sm:min-h-0 text-xs font-medium rounded-lg bg-brand-50 text-brand-700 hover:bg-brand-100 transition-colors"
           >
             Today
           </button>
@@ -215,19 +215,19 @@ export default function ScheduleToolbar({
                   type="date"
                   value={customStartDate ?? ''}
                   onChange={(e) => onCustomRangeChange?.(e.target.value, customEndDate ?? '')}
-                  className="flex-1 text-xs border border-gray-300 rounded-md px-2 py-1.5 focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  className="flex-1 text-xs border border-gray-300 rounded-md px-2 py-1.5 focus:ring-2 focus:ring-brand-500 focus:border-transparent"
                 />
                 <span className="text-xs text-gray-400">to</span>
                 <input
                   type="date"
                   value={customEndDate ?? ''}
                   onChange={(e) => onCustomRangeChange?.(customStartDate ?? '', e.target.value)}
-                  className="flex-1 text-xs border border-gray-300 rounded-md px-2 py-1.5 focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  className="flex-1 text-xs border border-gray-300 rounded-md px-2 py-1.5 focus:ring-2 focus:ring-brand-500 focus:border-transparent"
                 />
               </div>
               <button
                 onClick={() => setShowCustomPicker(false)}
-                className="mt-2 w-full px-3 py-1 text-xs font-medium text-purple-700 bg-purple-50 rounded-md hover:bg-purple-100 transition-colors"
+                className="mt-2 w-full px-3 py-1 text-xs font-medium text-brand-700 bg-brand-50 rounded-md hover:bg-brand-100 transition-colors"
               >
                 Apply
               </button>
@@ -240,7 +240,7 @@ export default function ScheduleToolbar({
           <button
             onClick={() => onViewModeChange('day')}
             className={`min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 inline-flex items-center justify-center p-1.5 rounded-md transition-colors ${
-              viewMode === 'day' ? 'bg-white text-purple-600 shadow-sm' : 'text-gray-600 hover:text-gray-900'
+              viewMode === 'day' ? 'bg-white text-brand-600 shadow-sm' : 'text-gray-600 hover:text-gray-900'
             }`}
             title="Day View"
             aria-label="Day View"
@@ -253,7 +253,7 @@ export default function ScheduleToolbar({
           <button
             onClick={() => onViewModeChange('linear')}
             className={`min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 inline-flex items-center justify-center p-1.5 rounded-md transition-colors ${
-              viewMode === 'linear' ? 'bg-white text-purple-600 shadow-sm' : 'text-gray-600 hover:text-gray-900'
+              viewMode === 'linear' ? 'bg-white text-brand-600 shadow-sm' : 'text-gray-600 hover:text-gray-900'
             }`}
             title="Grid View"
             aria-label="Grid View"
@@ -266,7 +266,7 @@ export default function ScheduleToolbar({
           <button
             onClick={() => onViewModeChange('calendar')}
             className={`min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 inline-flex items-center justify-center p-1.5 rounded-md transition-colors ${
-              viewMode === 'calendar' ? 'bg-white text-purple-600 shadow-sm' : 'text-gray-600 hover:text-gray-900'
+              viewMode === 'calendar' ? 'bg-white text-brand-600 shadow-sm' : 'text-gray-600 hover:text-gray-900'
             }`}
             title="Calendar View"
             aria-label="Calendar View"
@@ -288,7 +288,7 @@ export default function ScheduleToolbar({
           <select
             value={orgNodeId ?? ''}
             onChange={(e) => onOrgNodeChange(e.target.value ? Number(e.target.value) : null)}
-            className="py-1.5 pl-3 pr-8 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white text-gray-700 max-w-[200px]"
+            className="py-1.5 pl-3 pr-8 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent bg-white text-gray-700 max-w-[200px]"
             title="Filter by org unit"
           >
             <option value="">All units</option>
@@ -310,22 +310,22 @@ export default function ScheduleToolbar({
             placeholder="Search employees..."
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
-            className="w-48 pl-8 pr-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+            className="w-48 pl-8 pr-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent"
           />
         </div>
 
         {/* Clipboard indicator */}
         {clipboard && (
-          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-purple-50 border border-purple-200 rounded-lg">
-            <svg className="w-3.5 h-3.5 text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-brand-50 border border-brand-200 rounded-lg">
+            <svg className="w-3.5 h-3.5 text-brand-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
             </svg>
-            <span className="text-xs font-medium text-purple-700">
+            <span className="text-xs font-medium text-brand-700">
               Copied: {clipboard.status}{clipboard.start_time ? ` ${clipboard.start_time.substring(0, 5)}` : ''}
             </span>
             <button
               onClick={onClearClipboard}
-              className="min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 inline-flex items-center justify-center p-0.5 rounded hover:bg-purple-100 text-purple-600 hover:text-purple-800 transition-colors"
+              className="min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 inline-flex items-center justify-center p-0.5 rounded hover:bg-brand-100 text-brand-600 hover:text-brand-800 transition-colors"
               title="Clear clipboard"
               aria-label="Clear the copied shift"
             >
@@ -341,7 +341,7 @@ export default function ScheduleToolbar({
           <button
             onClick={onSaveLayout}
             disabled={savingLayout}
-            className="px-3 py-1.5 text-xs font-medium text-purple-700 bg-purple-50 border border-purple-300 rounded-lg hover:bg-purple-100 transition-colors flex items-center gap-1.5 disabled:opacity-50"
+            className="px-3 py-1.5 text-xs font-medium text-brand-700 bg-brand-50 border border-brand-300 rounded-lg hover:bg-brand-100 transition-colors flex items-center gap-1.5 disabled:opacity-50"
           >
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
@@ -385,7 +385,7 @@ export default function ScheduleToolbar({
                     onClick={() => { onOpenSnapshots(); setShowMore(false); }}
                     className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2 transition-colors"
                   >
-                    <svg className="w-3.5 h-3.5 text-purple-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                    <svg className="w-3.5 h-3.5 text-brand-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z" />
                       <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0z" />
                     </svg>
@@ -398,7 +398,7 @@ export default function ScheduleToolbar({
                     onClick={() => { onCopyWeek(); setShowMore(false); }}
                     className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2 transition-colors"
                   >
-                    <svg className="w-3.5 h-3.5 text-purple-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                    <svg className="w-3.5 h-3.5 text-brand-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
                     </svg>
                     Duplicate week → next
@@ -410,7 +410,7 @@ export default function ScheduleToolbar({
                     onClick={() => { onOpenTemplates(); setShowMore(false); }}
                     className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2 transition-colors"
                   >
-                    <svg className="w-3.5 h-3.5 text-purple-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                    <svg className="w-3.5 h-3.5 text-brand-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M4 5h16M4 12h16M4 19h10" />
                     </svg>
                     Schedule Templates
@@ -512,7 +512,7 @@ export default function ScheduleToolbar({
         {canAddShift && (
           <button
             onClick={onAddShift}
-            className="px-3 py-1.5 text-xs font-medium text-white bg-purple-600 rounded-lg hover:bg-purple-700 transition-colors flex items-center gap-1.5"
+            className="px-3 py-1.5 text-xs font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 transition-colors flex items-center gap-1.5"
           >
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />

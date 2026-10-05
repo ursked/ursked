@@ -191,7 +191,7 @@ export default function HolidaysTab() {
             required
             value={formData.date}
             onChange={(e) => setFormData((p) => ({ ...p, date: e.target.value }))}
-            className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-purple-500 focus:ring-purple-500 focus:outline-none"
+            className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500 focus:outline-none"
           />
         </div>
         <div>
@@ -203,7 +203,7 @@ export default function HolidaysTab() {
             value={formData.title}
             onChange={(e) => setFormData((p) => ({ ...p, title: e.target.value }))}
             placeholder="e.g. New Year's Day"
-            className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-purple-500 focus:ring-purple-500 focus:outline-none"
+            className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500 focus:outline-none"
           />
         </div>
         <div>
@@ -214,7 +214,7 @@ export default function HolidaysTab() {
             value={formData.description}
             onChange={(e) => setFormData((p) => ({ ...p, description: e.target.value }))}
             placeholder="Optional"
-            className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-purple-500 focus:ring-purple-500 focus:outline-none"
+            className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500 focus:outline-none"
           />
         </div>
       </div>
@@ -226,7 +226,7 @@ export default function HolidaysTab() {
               type="checkbox"
               checked={formData.is_recurring}
               onChange={(e) => setFormData((p) => ({ ...p, is_recurring: e.target.checked }))}
-              className="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+              className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
             />
           </div>
           <div>
@@ -241,7 +241,7 @@ export default function HolidaysTab() {
               type="checkbox"
               checked={formData.is_special}
               onChange={(e) => setFormData((p) => ({ ...p, is_special: e.target.checked }))}
-              className="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+              className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
             />
           </div>
           <div>
@@ -255,7 +255,7 @@ export default function HolidaysTab() {
         <button
           type="submit"
           disabled={isMutating}
-          className="inline-flex items-center rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className="inline-flex items-center rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           {isMutating ? 'Saving...' : editingId ? 'Update' : 'Create'}
         </button>
@@ -279,7 +279,7 @@ export default function HolidaysTab() {
         setEditingRecurringOn(null)
         setFormData(EMPTY_FORM)
       }}
-      className="inline-flex items-center gap-1.5 rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-700 transition-colors"
+      className="inline-flex items-center gap-1.5 rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-700 transition-colors"
     >
       <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
@@ -318,7 +318,7 @@ export default function HolidaysTab() {
                   aria-pressed={selectedYear === year}
                   className={`px-3 py-1.5 text-sm rounded-md font-medium transition-colors ${
                     selectedYear === year
-                      ? 'bg-purple-600 text-white'
+                      ? 'bg-brand-600 text-white'
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`}
                 >
@@ -332,7 +332,7 @@ export default function HolidaysTab() {
 
           {isLoading ? (
             <div className="flex items-center gap-3 text-sm text-gray-500">
-              <svg className="h-5 w-5 animate-spin text-purple-600" fill="none" viewBox="0 0 24 24">
+              <svg className="h-5 w-5 animate-spin text-brand-600" fill="none" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
               </svg>
@@ -409,7 +409,7 @@ export default function HolidaysTab() {
                               <button
                                 type="button"
                                 onClick={() => handleEdit(holiday)}
-                                className="inline-flex items-center rounded-md p-1.5 text-gray-400 hover:text-purple-600 hover:bg-purple-50 transition-colors"
+                                className="inline-flex items-center rounded-md p-1.5 text-gray-400 hover:text-brand-600 hover:bg-brand-50 transition-colors"
                                 title="Edit"
                                 aria-label={`Edit ${holiday.title}`}
                               >
@@ -683,7 +683,7 @@ function SourceForm({ source, canManage }: { source: HolidaySourceConfig; canMan
                 type="button"
                 onClick={() => regionsMutation.mutate()}
                 disabled={!canSubmit}
-                className="text-xs font-medium text-purple-700 hover:text-purple-900 disabled:opacity-50"
+                className="text-xs font-medium text-brand-700 hover:text-brand-900 disabled:opacity-50"
               >
                 {regionsMutation.isPending ? 'Reading the calendar…' : availableRegions ? 'Refresh the list' : 'Load regions from the calendar'}
               </button>
@@ -702,7 +702,7 @@ function SourceForm({ source, canManage }: { source: HolidaySourceConfig; canMan
                       type="checkbox"
                       checked={regions.includes(r.code)}
                       onChange={() => setRegions((prev) => prev.includes(r.code) ? prev.filter((x) => x !== r.code) : [...prev, r.code])}
-                      className="mt-0.5 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                      className="mt-0.5 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
                     />
                     <span>
                       {r.label}{r.label !== r.code && !r.code.startsWith('other:') ? ` (${r.code})` : ''}
@@ -722,7 +722,7 @@ function SourceForm({ source, canManage }: { source: HolidaySourceConfig; canMan
               type="checkbox"
               checked={autoSync}
               onChange={(e) => setAutoSync(e.target.checked)}
-              className="mt-0.5 h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+              className="mt-0.5 h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
             />
             <span>
               <span className="block text-sm font-medium text-gray-900">Sync automatically every day</span>
@@ -747,7 +747,7 @@ function SourceForm({ source, canManage }: { source: HolidaySourceConfig; canMan
               type="button"
               onClick={() => previewMutation.mutate()}
               disabled={busy || !canSubmit}
-              className="rounded-md border border-purple-300 bg-purple-50 px-3 py-2 text-sm font-medium text-purple-700 hover:bg-purple-100 disabled:opacity-50"
+              className="rounded-md border border-brand-300 bg-brand-50 px-3 py-2 text-sm font-medium text-brand-700 hover:bg-brand-100 disabled:opacity-50"
             >
               {previewMutation.isPending ? 'Checking…' : 'Preview sync'}
             </button>
@@ -755,7 +755,7 @@ function SourceForm({ source, canManage }: { source: HolidaySourceConfig; canMan
               type="button"
               onClick={() => syncMutation.mutate()}
               disabled={busy || !canSubmit}
-              className="rounded-md bg-purple-600 px-3 py-2 text-sm font-medium text-white hover:bg-purple-700 disabled:opacity-50"
+              className="rounded-md bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
             >
               {syncMutation.isPending ? 'Syncing…' : 'Sync now'}
             </button>

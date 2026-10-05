@@ -75,7 +75,7 @@ export default function MemberAssignModal({ nodeId, nodeName, existingMemberIds,
             <button
               onClick={() => (selected.length ? assignMutation.mutate(selected) : showToast('Choose at least one employee', 'error'))}
               disabled={assignMutation.isPending || selected.length === 0}
-              className="px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors disabled:opacity-50"
+              className="px-4 py-2 text-sm font-medium text-white bg-brand-600 hover:bg-brand-700 rounded-lg transition-colors disabled:opacity-50"
             >
               {assignMutation.isPending ? 'Saving...' : mode === 'secondary' ? `Add (${selected.length})` : `Assign (${selected.length})`}
             </button>

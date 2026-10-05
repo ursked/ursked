@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="frontend/public/logo/urskedlogo.png" alt="ursked" width="360">
+<img src="frontend/public/logo/ursked-logo.svg" alt="ursked" width="300">
 
 ### The employee roster, all the way to the payslip — self-hosted.
 

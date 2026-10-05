@@ -185,7 +185,7 @@ export default function ChangeRequestModal({
                   type="time"
                   value={requestedStartTime}
                   onChange={(e) => setRequestedStartTime(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent"
                 />
               </div>
 
@@ -196,7 +196,7 @@ export default function ChangeRequestModal({
                   type="time"
                   value={requestedEndTime}
                   onChange={(e) => setRequestedEndTime(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent"
                 />
               </div>
 
@@ -206,7 +206,7 @@ export default function ChangeRequestModal({
                 <select
                   value={requestedStatus}
                   onChange={(e) => setRequestedStatus(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent"
                 >
                   {(statusOptions || []).map((s) => (
                     <option key={s.value} value={s.value}>
@@ -222,7 +222,7 @@ export default function ChangeRequestModal({
                 <select
                   value={requestedWorkArrangement}
                   onChange={(e) => setRequestedWorkArrangement(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent"
                 >
                   <option value="">—</option>
                   {workArrangements.map((wa) => (
@@ -242,7 +242,7 @@ export default function ChangeRequestModal({
                 type="checkbox"
                 checked={useRange}
                 onChange={(e) => setUseRange(e.target.checked)}
-                className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                className="rounded border-gray-300 text-brand-600 focus:ring-brand-500"
               />
               <span className="text-sm text-gray-700">Apply to date range</span>
             </label>
@@ -252,7 +252,7 @@ export default function ChangeRequestModal({
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
                 min={dateStr}
-                className="mt-2 w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                className="mt-2 w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent"
               />
             )}
           </div>
@@ -264,7 +264,7 @@ export default function ChangeRequestModal({
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               rows={3}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent resize-none"
               placeholder="Why do you need this schedule change?"
             />
           </div>
@@ -288,7 +288,7 @@ export default function ChangeRequestModal({
             <button
               type="submit"
               disabled={createMutation.isPending}
-              className="flex-1 px-4 py-2 text-sm font-medium text-white bg-purple-600 rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {createMutation.isPending ? 'Submitting...' : 'Submit Request'}
             </button>

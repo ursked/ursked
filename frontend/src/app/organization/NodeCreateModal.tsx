@@ -108,7 +108,7 @@ export default function NodeCreateModal({ parentId, levels, nodes, onClose, onCr
             <label className="block text-sm font-medium text-gray-700 mb-1">Level</label>
             {availableLevels.length === 1 ? (
               <div className="flex items-center gap-2">
-                <span className="inline-flex items-center px-2.5 py-1 rounded text-sm font-medium bg-purple-100 text-purple-700">
+                <span className="inline-flex items-center px-2.5 py-1 rounded text-sm font-medium bg-brand-100 text-brand-700">
                   {availableLevels[0].name}
                 </span>
                 <span className="text-xs text-gray-400">(Level {availableLevels[0].level_number})</span>
@@ -117,7 +117,7 @@ export default function NodeCreateModal({ parentId, levels, nodes, onClose, onCr
               <select
                 value={formData.level_id}
                 onChange={(e) => setFormData({ ...formData, level_id: Number(e.target.value) })}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none bg-white"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent outline-none bg-white"
               >
                 {availableLevels.map(l => (
                   <option key={l.id} value={l.id}>
@@ -138,7 +138,7 @@ export default function NodeCreateModal({ parentId, levels, nodes, onClose, onCr
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
               placeholder={`e.g., ${selectedLevel?.name || 'Unit'} A`}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent outline-none"
               maxLength={200}
               autoFocus
             />
@@ -154,7 +154,7 @@ export default function NodeCreateModal({ parentId, levels, nodes, onClose, onCr
               value={formData.code}
               onChange={(e) => setFormData({ ...formData, code: e.target.value })}
               placeholder="e.g., DEPT-001"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent outline-none"
               maxLength={50}
             />
           </div>
@@ -169,7 +169,7 @@ export default function NodeCreateModal({ parentId, levels, nodes, onClose, onCr
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
               placeholder="Brief description of this organization unit"
               rows={2}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none resize-none"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent outline-none resize-none"
             />
           </div>
         </div>
@@ -185,7 +185,7 @@ export default function NodeCreateModal({ parentId, levels, nodes, onClose, onCr
           <button
             onClick={handleSubmit}
             disabled={createMutation.isPending || !formData.name.trim() || !formData.level_id}
-            className="px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
+            className="px-4 py-2 text-sm font-medium text-white bg-brand-600 hover:bg-brand-700 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
           >
             {createMutation.isPending && (
               <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">

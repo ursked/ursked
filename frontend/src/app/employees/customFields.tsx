@@ -54,7 +54,7 @@ interface InputProps {
 }
 
 const inputClass =
-  'w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none text-sm disabled:bg-gray-50 disabled:text-gray-500';
+  'w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent outline-none text-sm disabled:bg-gray-50 disabled:text-gray-500';
 
 /** One input for a custom field, by type. Empty means "no value" (null). */
 export function CustomFieldInput({ def, value, onChange, disabled, id }: InputProps) {

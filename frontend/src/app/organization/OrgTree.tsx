@@ -13,7 +13,7 @@ interface Props {
 }
 
 const LEVEL_COLORS = [
-  { bg: 'bg-purple-100', text: 'text-purple-700', border: 'border-purple-200' },
+  { bg: 'bg-brand-100', text: 'text-brand-700', border: 'border-brand-200' },
   { bg: 'bg-blue-100', text: 'text-blue-700', border: 'border-blue-200' },
   { bg: 'bg-emerald-100', text: 'text-emerald-700', border: 'border-emerald-200' },
   { bg: 'bg-amber-100', text: 'text-amber-700', border: 'border-amber-200' },

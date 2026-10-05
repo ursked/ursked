@@ -40,7 +40,7 @@ const EMPTY: Draft = {
 };
 
 const inputClass =
-  'block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-purple-500 focus:ring-purple-500 focus:outline-none disabled:bg-gray-100 disabled:text-gray-500';
+  'block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500 focus:outline-none disabled:bg-gray-100 disabled:text-gray-500';
 
 function toKey(label: string) {
   const k = label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
@@ -180,7 +180,7 @@ export default function CustomFieldsTab() {
                 type="button"
                 disabled={labelDraft === null || saveLabel.isPending}
                 onClick={() => saveLabel.mutate(labelDraft?.trim() || null)}
-                className="rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-700 disabled:opacity-50"
+                className="rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
               >
                 Save
               </button>
@@ -211,7 +211,7 @@ export default function CustomFieldsTab() {
             <button
               type="button"
               onClick={() => { setCreating(true); setEditing(null); setDraft(EMPTY); }}
-              className="inline-flex items-center gap-1.5 rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-700 whitespace-nowrap"
+              className="inline-flex items-center gap-1.5 rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-700 whitespace-nowrap"
             >
               Add field
             </button>
@@ -325,22 +325,22 @@ export default function CustomFieldsTab() {
               </div>
               <div className="flex flex-wrap gap-x-6 gap-y-2">
                 <label className="inline-flex items-center gap-2 text-sm text-gray-700">
-                  <input type="checkbox" checked={draft.is_required} onChange={(e) => setDraft((d) => ({ ...d, is_required: e.target.checked }))} className="h-4 w-4 rounded border-gray-300 text-purple-600" />
+                  <input type="checkbox" checked={draft.is_required} onChange={(e) => setDraft((d) => ({ ...d, is_required: e.target.checked }))} className="h-4 w-4 rounded border-gray-300 text-brand-600" />
                   Required
                 </label>
                 {draft.field_type !== 'boolean' && (
                   <label className="inline-flex items-center gap-2 text-sm text-gray-700">
-                    <input type="checkbox" checked={draft.is_unique} onChange={(e) => setDraft((d) => ({ ...d, is_unique: e.target.checked }))} className="h-4 w-4 rounded border-gray-300 text-purple-600" />
+                    <input type="checkbox" checked={draft.is_unique} onChange={(e) => setDraft((d) => ({ ...d, is_unique: e.target.checked }))} className="h-4 w-4 rounded border-gray-300 text-brand-600" />
                     Unique (no two employees may share a value; searchable in the directory)
                   </label>
                 )}
                 <label className="inline-flex items-center gap-2 text-sm text-gray-700">
-                  <input type="checkbox" checked={draft.is_sensitive} onChange={(e) => setDraft((d) => ({ ...d, is_sensitive: e.target.checked }))} className="h-4 w-4 rounded border-gray-300 text-purple-600" />
+                  <input type="checkbox" checked={draft.is_sensitive} onChange={(e) => setDraft((d) => ({ ...d, is_sensitive: e.target.checked }))} className="h-4 w-4 rounded border-gray-300 text-brand-600" />
                   Sensitive (never shown in tables, search or reports below HR level)
                 </label>
               </div>
               <div className="flex gap-3">
-                <button type="submit" disabled={save.isPending} className="rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-700 disabled:opacity-50">
+                <button type="submit" disabled={save.isPending} className="rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50">
                   {save.isPending ? 'Saving…' : editing ? 'Save changes' : 'Add field'}
                 </button>
                 <button type="button" onClick={close} className="rounded-md bg-white px-4 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50">
@@ -400,7 +400,7 @@ export default function CustomFieldsTab() {
                       </td>
                       {canManage && (
                         <td className="px-4 py-3 text-right whitespace-nowrap">
-                          <button type="button" onClick={() => startEdit(f)} className="rounded-md px-2 py-1 text-sm text-purple-700 hover:bg-purple-50">Edit</button>
+                          <button type="button" onClick={() => startEdit(f)} className="rounded-md px-2 py-1 text-sm text-brand-700 hover:bg-brand-50">Edit</button>
                           <button
                             type="button"
                             onClick={() => {
@@ -427,7 +427,7 @@ export default function CustomFieldsTab() {
                 {archived.map((f) => (
                   <li key={f.id} className="flex items-center justify-between px-4 py-2 text-sm">
                     <span className="text-gray-700">{f.label} <span className="font-mono text-xs text-gray-500">{f.key}</span></span>
-                    <button type="button" onClick={() => restore.mutate(f)} className="rounded-md px-2 py-1 text-sm text-purple-700 hover:bg-purple-50">Restore</button>
+                    <button type="button" onClick={() => restore.mutate(f)} className="rounded-md px-2 py-1 text-sm text-brand-700 hover:bg-brand-50">Restore</button>
                   </li>
                 ))}
               </ul>

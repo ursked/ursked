@@ -90,7 +90,7 @@ export default function MyLeavePage() {
           {(balance?.balances ?? []).map((b) => (
             <Card key={b.leave_type}>
               <CardBody className="p-4">
-                <div className="text-2xl font-bold text-purple-700">
+                <div className="text-2xl font-bold text-brand-700">
                   {b.available_days}
                 </div>
                 <div className="truncate text-sm font-medium text-gray-700">

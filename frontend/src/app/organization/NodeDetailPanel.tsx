@@ -69,7 +69,7 @@ function descendantIds(nodes: FlatNode[], rootId: number): Set<number> {
   return out;
 }
 
-const FIELD = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none';
+const FIELD = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent outline-none';
 
 export default function NodeDetailPanel({
   nodeId, canEdit, canDelete = false, canViewMembers = true, nodes = [], onClose, onUpdated, onDeleted, onAddChild,
@@ -251,7 +251,7 @@ export default function NodeDetailPanel({
 
         <div className="p-4 space-y-4">
           <div>
-            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-700 mb-2">
+            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-brand-100 text-brand-700 mb-2">
               {node.level_name}
             </span>
             {editing ? (
@@ -321,7 +321,7 @@ export default function NodeDetailPanel({
                 </div>
                 <div className="flex gap-2">
                   <button onClick={handleSave} disabled={updateMutation.isPending}
-                    className="px-3 py-1.5 text-xs font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-lg disabled:opacity-50">
+                    className="px-3 py-1.5 text-xs font-medium text-white bg-brand-600 hover:bg-brand-700 rounded-lg disabled:opacity-50">
                     {updateMutation.isPending ? 'Saving...' : 'Save'}
                   </button>
                   <button onClick={() => { setEditing(false); setFormData(resetForm(node)); }}
@@ -362,7 +362,7 @@ export default function NodeDetailPanel({
               )}
               {onAddChild && (
                 <button onClick={() => onAddChild(node.id)}
-                  className="px-3 py-1.5 text-xs font-medium text-purple-700 bg-purple-50 hover:bg-purple-100 rounded-lg transition-colors">
+                  className="px-3 py-1.5 text-xs font-medium text-brand-700 bg-brand-50 hover:bg-brand-100 rounded-lg transition-colors">
                   Add Child
                 </button>
               )}
@@ -382,10 +382,10 @@ export default function NodeDetailPanel({
                 <h4 className="text-sm font-semibold text-gray-900">Members ({members.length})</h4>
                 {canEdit && (
                   <div className="flex gap-3">
-                    <button onClick={() => setMemberModal('primary')} className="text-xs font-medium text-purple-600 hover:text-purple-700">
+                    <button onClick={() => setMemberModal('primary')} className="text-xs font-medium text-brand-600 hover:text-brand-700">
                       Assign
                     </button>
-                    <button onClick={() => setMemberModal('secondary')} className="text-xs font-medium text-purple-600 hover:text-purple-700">
+                    <button onClick={() => setMemberModal('secondary')} className="text-xs font-medium text-brand-600 hover:text-brand-700">
                       Add secondary member
                     </button>
                   </div>

@@ -38,8 +38,8 @@ export function WizardProgress({
                 onClick={() => clickable && onStepClick(i)}
                 className={cn(
                   'flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-sm font-medium transition-colors',
-                  done && 'border-purple-600 bg-purple-600 text-white',
-                  active && 'border-purple-600 bg-white text-purple-700',
+                  done && 'border-brand-600 bg-brand-600 text-white',
+                  active && 'border-brand-600 bg-white text-brand-700',
                   !done && !active && 'border-gray-300 bg-white text-gray-400',
                   clickable && 'cursor-pointer'
                 )}

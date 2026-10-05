@@ -42,7 +42,7 @@ export default function TeamOverviewTab() {
       {/* ── Summary Cards ───────────────────────────────────────────── */}
       {statsLoading ? (
         <div className="flex items-center gap-3 text-sm text-gray-500">
-          <svg className="h-5 w-5 animate-spin text-purple-600" fill="none" viewBox="0 0 24 24">
+          <svg className="h-5 w-5 animate-spin text-brand-600" fill="none" viewBox="0 0 24 24">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
           </svg>
@@ -65,7 +65,7 @@ export default function TeamOverviewTab() {
             </div>
             <div className="bg-white border border-gray-200 rounded-lg p-4">
               <p className="text-sm text-gray-500">Approval Rate</p>
-              <p className="mt-1 text-2xl font-bold text-purple-600">{approvalRate}%</p>
+              <p className="mt-1 text-2xl font-bold text-brand-600">{approvalRate}%</p>
             </div>
           </div>
 
@@ -84,7 +84,7 @@ export default function TeamOverviewTab() {
                       </div>
                       <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
                         <div
-                          className="h-full bg-purple-500 rounded-full transition-all"
+                          className="h-full bg-brand-500 rounded-full transition-all"
                           style={{ width: `${maxByType > 0 ? (t.days / maxByType) * 100 : 0}%` }}
                         />
                       </div>
@@ -135,7 +135,7 @@ export default function TeamOverviewTab() {
                 onClick={() => { setStatusFilter(s); setPage(1) }}
                 className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
                   statusFilter === s
-                    ? 'bg-purple-100 text-purple-700'
+                    ? 'bg-brand-100 text-brand-700'
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                 }`}
               >
@@ -147,7 +147,7 @@ export default function TeamOverviewTab() {
         <div className="px-6 py-4">
           {appsLoading ? (
             <div className="flex items-center gap-3 text-sm text-gray-500 py-8">
-              <svg className="h-5 w-5 animate-spin text-purple-600" fill="none" viewBox="0 0 24 24">
+              <svg className="h-5 w-5 animate-spin text-brand-600" fill="none" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
               </svg>

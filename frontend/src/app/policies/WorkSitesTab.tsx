@@ -144,7 +144,7 @@ export default function WorkSitesTab() {
           </div>
           {canCreate && !form && (
             <button type="button" onClick={() => { setEditingId(null); setForm(EMPTY) }}
-              className="rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-700">
+              className="rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700">
               Add work site
             </button>
           )}
@@ -195,7 +195,7 @@ export default function WorkSitesTab() {
               <button type="button" onClick={() => { setForm(null); setEditingId(null) }}
                 className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
               <button type="submit" disabled={problems.length > 0 || saveSite.isPending}
-                className="rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-700 disabled:opacity-50">
+                className="rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50">
                 {editingId ? 'Save site' : 'Add site'}
               </button>
             </div>
@@ -230,12 +230,12 @@ export default function WorkSitesTab() {
                     </td>
                     <td className="px-4 py-2 text-gray-600">
                       {s.latitude.toFixed(5)}, {s.longitude.toFixed(5)}
-                      <a className="ml-2 text-purple-700 underline" target="_blank" rel="noreferrer noopener"
+                      <a className="ml-2 text-brand-700 underline" target="_blank" rel="noreferrer noopener"
                         href={`https://www.openstreetmap.org/?mlat=${s.latitude}&mlon=${s.longitude}#map=17/${s.latitude}/${s.longitude}`}>map</a>
                     </td>
                     <td className="px-4 py-2 text-gray-600">{s.radius_m} m</td>
                     <td className="px-4 py-2 text-right space-x-2">
-                      {canEdit && <button type="button" onClick={() => startEdit(s)} className="text-sm text-purple-600 hover:text-purple-800">Edit</button>}
+                      {canEdit && <button type="button" onClick={() => startEdit(s)} className="text-sm text-brand-600 hover:text-brand-800">Edit</button>}
                       {canDelete && (confirmDelete === s.id ? (
                         <>
                           <button type="button" onClick={() => removeSite.mutate(s.id)} disabled={removeSite.isPending} className="text-sm font-medium text-red-600 hover:text-red-800">Confirm remove</button>
@@ -261,7 +261,7 @@ export default function WorkSitesTab() {
                   <span>{s.name}</span>
                   {canEdit && (
                     <button type="button" onClick={() => setActive.mutate({ id: s.id, is_active: true })}
-                      className="text-sm text-purple-600 hover:text-purple-800">Turn back on</button>
+                      className="text-sm text-brand-600 hover:text-brand-800">Turn back on</button>
                   )}
                 </li>
               ))}
