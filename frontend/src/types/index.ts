@@ -251,6 +251,7 @@ export interface AppSettings {
   timeclock_default_radius_m?: number;
   id: number;
   timezone: string;
+  country_code?: string | null;
   currency_code: string;
   week_starts_on: 'monday' | 'sunday' | 'saturday';
   default_leave_days: number;

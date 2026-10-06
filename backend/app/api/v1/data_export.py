@@ -266,7 +266,7 @@ async def export_data(
 
 
 def _suffix_currency(output_columns, data_source, currency_code, aliases=None):
-    """Append "(PHP)" to money column headers, unless the user renamed them."""
+    """Append "(USD)" (the tenant currency) to money column headers, unless the user renamed them."""
     if not currency_code:
         return output_columns
     from app.services.data_source_registry import column_is_monetary

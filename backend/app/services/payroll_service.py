@@ -598,8 +598,8 @@ class PayrollService:
     @staticmethod
     def _holiday_multiplier(settings, holiday) -> float:
         if holiday is not None and holiday.is_special:
-            return getattr(settings, "special_holiday_worked_multiplier", 1.3) or 1.3
-        return getattr(settings, "holiday_worked_multiplier", 2.0) or 2.0
+            return getattr(settings, "special_holiday_worked_multiplier", 1.0) or 1.0
+        return getattr(settings, "holiday_worked_multiplier", 1.0) or 1.0
 
     @staticmethod
     async def _premiums(
@@ -654,7 +654,7 @@ class PayrollService:
 
         night_start = getattr(settings, "night_shift_start", None)
         night_end = getattr(settings, "night_shift_end", None)
-        night_mult = getattr(settings, "night_diff_multiplier", 1.10) or 1.10
+        night_mult = getattr(settings, "night_diff_multiplier", 1.0) or 1.0
 
         total = 0.0
         lines: List[dict] = []

@@ -24,7 +24,7 @@ const CONDITION_FIELDS: { value: string; label: string; type: 'number' | 'boolea
   { value: 'hours_worked', label: 'Hours Worked', type: 'number' },
   { value: 'shift_hours', label: 'Shift Duration (hours)', type: 'number' },
   { value: 'is_holiday', label: 'Is Holiday?', type: 'boolean' },
-  { value: 'is_special', label: 'Is Special Holiday?', type: 'boolean' },
+  { value: 'is_special', label: 'Is a second-rate holiday?', type: 'boolean' },
   // Engine uses ISO weekday numbering (Mon=1 … Sun=7); these values MUST match or
   // the condition never fires (the engine never emits 0).
   { value: 'day_of_week', label: 'Day of Week', type: 'select', options: [

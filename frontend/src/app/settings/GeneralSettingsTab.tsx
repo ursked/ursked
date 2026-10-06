@@ -6,6 +6,7 @@ import { api } from '@/lib/api'
 import type { AppSettings, ScheduleVisibilityGrant, User, OrgTreeNode, OrgTreeResponse } from '@/types'
 import { useToast } from '@/components/ui/Toast'
 import { CURATED_CURRENCIES, normalizeCurrency, formatMoney } from '@/lib/currency'
+import { COUNTRIES, countryName, currencyForCountry } from '@/lib/countries'
 import NumberSetting from './NumberSetting'
 
 const WEEK_START_OPTIONS = [
@@ -120,8 +121,76 @@ export default function GeneralSettingsTab() {
     )
   }
 
+  // The country only suggests: after picking one, the admin is offered its
+  // currency and pointed at its holiday calendar, and confirms each.
+  const country = appSettings?.country_code || ''
+  const suggestedCurrency = currencyForCountry(country)
+  const saveCountry = (code: string) => {
+    updateSettingsMutation.mutate(
+      { country_code: code },
+      {
+        onSuccess: () => showToast(`Country set to ${countryName(code)}`, 'success'),
+        onError: (err: Error) => showToast(err.message, 'error'),
+      },
+    )
+  }
+
   return (
     <div className="space-y-8">
+      {/* ── Section: Country ─────────────────────────────────────── */}
+      <div className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-xl">
+        <div className="border-b border-gray-200 px-6 py-4">
+          <h2 className="text-lg font-semibold text-gray-900">Country</h2>
+          <p className="mt-1 text-sm text-gray-500">
+            Where your organization operates. It suggests your currency and public-holiday calendar; nothing is
+            assumed until you choose.
+          </p>
+        </div>
+        <div className="px-6 py-6">
+          {settingsLoading ? (
+            <div className="text-sm text-gray-500">Loading...</div>
+          ) : (
+            <div className="max-w-md space-y-3">
+              <div>
+                <label htmlFor="org-country" className="block text-sm font-medium text-gray-700 mb-1">Country</label>
+                <select
+                  id="org-country"
+                  value={country}
+                  onChange={(e) => e.target.value && saveCountry(e.target.value)}
+                  disabled={updateSettingsMutation.isPending}
+                  className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500 focus:outline-none disabled:opacity-50"
+                >
+                  {!country && <option value="">Choose a country</option>}
+                  {country && !COUNTRIES.some((c) => c.code === country) && <option value={country}>{countryName(country)}</option>}
+                  {COUNTRIES.map((c) => (
+                    <option key={c.code} value={c.code}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+              {suggestedCurrency && suggestedCurrency !== currentCurrency && (
+                <div className="flex flex-wrap items-center gap-3 rounded-md bg-brand-50 px-3 py-2 text-sm text-brand-800">
+                  <span>{countryName(country)} usually pays in {suggestedCurrency}. Your currency is {currentCurrency}.</span>
+                  <button
+                    type="button"
+                    onClick={() => saveCurrency(suggestedCurrency)}
+                    disabled={updateSettingsMutation.isPending}
+                    className="rounded-md bg-brand-600 px-3 py-1 text-xs font-medium text-white hover:bg-brand-700 disabled:opacity-50"
+                  >
+                    Use {suggestedCurrency}
+                  </button>
+                </div>
+              )}
+              {country && (
+                <p className="text-xs text-gray-500">
+                  Public holidays: choose the calendar under Policies → Holidays, where {countryName(country)} is
+                  preselected when it is available. Holiday and night pay rates are set under Finances → Pay rules.
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* ── Section: Tenant Timezone ─────────────────────────────── */}
       <div className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-xl">
         <div className="border-b border-gray-200 px-6 py-4">

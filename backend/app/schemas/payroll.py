@@ -272,11 +272,11 @@ class PayRulesResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     working_days_per_month: int = 22
-    night_diff_multiplier: float = 1.10
+    night_diff_multiplier: float = 1.0
     night_shift_start: Optional[time] = None
     night_shift_end: Optional[time] = None
-    holiday_worked_multiplier: float = 2.0
-    special_holiday_worked_multiplier: float = 1.3
+    holiday_worked_multiplier: float = 1.0
+    special_holiday_worked_multiplier: float = 1.0
 
 
 class PayRulesUpdate(BaseModel):

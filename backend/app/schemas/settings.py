@@ -11,7 +11,8 @@ class AppSettingsResponse(BaseModel):
 
     id: int
     timezone: str
-    currency_code: str = "PHP"
+    country_code: Optional[str] = None
+    currency_code: str = "USD"
     week_starts_on: str
     default_leave_days: int
     default_shift_duration_hours: int
@@ -19,14 +20,14 @@ class AppSettingsResponse(BaseModel):
     notify_on_leave_approval: bool
     notify_on_schedule_change: bool
     schedule_employee_visibility: str = "own_node"
-    # ── Payroll computation. Defaults are Philippine statutory rates; every
-    # install is expected to set these to its own jurisdiction / agreement.
+    # ── Payroll computation. 1.0 = no premium until finance sets the rates
+    # for its own country and agreements.
     working_days_per_month: int = 22
-    night_diff_multiplier: float = 1.10
+    night_diff_multiplier: float = 1.0
     night_shift_start: Optional[time] = None
     night_shift_end: Optional[time] = None
-    holiday_worked_multiplier: float = 2.0
-    special_holiday_worked_multiplier: float = 1.3
+    holiday_worked_multiplier: float = 1.0
+    special_holiday_worked_multiplier: float = 1.0
     # ── Schedule enforcement. 0 = rule disabled.
     max_consecutive_work_days: int = 0
     min_rest_days_per_week: int = 0
@@ -85,6 +86,7 @@ class AppSettingsResponse(BaseModel):
 class AppSettingsUpdate(BaseModel):
     timezone: Optional[str] = None
     # ISO 4217 uppercase 3-letter code. Curated in the UI with a custom option.
+    country_code: Optional[str] = Field(None, pattern=r"^[A-Z]{2}$")
     currency_code: Optional[str] = Field(None, pattern=r"^[A-Z]{3}$")
     week_starts_on: Optional[str] = Field(None, pattern=r"^(monday|sunday|saturday)$")
     # Credits per leave type for employees no leave policy covers.

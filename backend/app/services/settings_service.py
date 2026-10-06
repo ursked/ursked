@@ -413,10 +413,10 @@ class SettingsService:
 
     @staticmethod
     async def get_tenant_currency(db: AsyncSession, tenant_id: UUID) -> str:
-        """The tenant's master currency code (ISO 4217), default PHP."""
+        """The tenant's master currency code (ISO 4217), default USD."""
         stmt = select(AppSettings.currency_code).where(AppSettings.tenant_id == tenant_id)
         code = (await db.execute(stmt)).scalar_one_or_none()
-        return code or "PHP"
+        return code or "USD"
 
     @staticmethod
     async def update_user_preferences(

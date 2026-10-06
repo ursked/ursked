@@ -60,27 +60,67 @@ RETRY_AFTER_FAILURE = timedelta(hours=1)
 
 # Countries offered in the picker (slug as officeholidays.com spells it,
 # display name, ISO 3166-1 alpha-2). Checked against the live site on
-# 2026-09-28: note "usa" and "uae", not "united-states" / "united-arab-emirates".
+# 2026-09-28 and 2026-10-06: note "usa" and "uae", not "united-states" / "united-arab-emirates".
+# Alphabetical: no country is the default; the organisation's own country
+# (Settings -> General) is preselected when it is set.
 COUNTRIES = [
-    ("philippines", "Philippines", "PH"),
-    ("usa", "United States", "US"),
-    ("singapore", "Singapore", "SG"),
-    ("malaysia", "Malaysia", "MY"),
-    ("indonesia", "Indonesia", "ID"),
+    ("argentina", "Argentina", "AR"),
     ("australia", "Australia", "AU"),
-    ("united-kingdom", "United Kingdom", "GB"),
+    ("austria", "Austria", "AT"),
+    ("bangladesh", "Bangladesh", "BD"),
+    ("belgium", "Belgium", "BE"),
+    ("brazil", "Brazil", "BR"),
     ("canada", "Canada", "CA"),
-    ("india", "India", "IN"),
-    ("japan", "Japan", "JP"),
-    ("hong-kong", "Hong Kong", "HK"),
-    ("uae", "United Arab Emirates", "AE"),
-    ("saudi-arabia", "Saudi Arabia", "SA"),
-    ("new-zealand", "New Zealand", "NZ"),
+    ("chile", "Chile", "CL"),
+    ("china", "China", "CN"),
+    ("colombia", "Colombia", "CO"),
+    ("czech-republic", "Czech Republic", "CZ"),
+    ("denmark", "Denmark", "DK"),
+    ("egypt", "Egypt", "EG"),
+    ("finland", "Finland", "FI"),
+    ("france", "France", "FR"),
     ("germany", "Germany", "DE"),
+    ("ghana", "Ghana", "GH"),
+    ("greece", "Greece", "GR"),
+    ("hong-kong", "Hong Kong", "HK"),
+    ("hungary", "Hungary", "HU"),
+    ("india", "India", "IN"),
+    ("indonesia", "Indonesia", "ID"),
     ("ireland", "Ireland", "IE"),
-    ("thailand", "Thailand", "TH"),
-    ("vietnam", "Vietnam", "VN"),
+    ("israel", "Israel", "IL"),
+    ("italy", "Italy", "IT"),
+    ("japan", "Japan", "JP"),
+    ("kenya", "Kenya", "KE"),
+    ("kuwait", "Kuwait", "KW"),
+    ("malaysia", "Malaysia", "MY"),
+    ("mexico", "Mexico", "MX"),
+    ("morocco", "Morocco", "MA"),
+    ("netherlands", "Netherlands", "NL"),
+    ("new-zealand", "New Zealand", "NZ"),
+    ("nigeria", "Nigeria", "NG"),
+    ("norway", "Norway", "NO"),
+    ("pakistan", "Pakistan", "PK"),
+    ("peru", "Peru", "PE"),
+    ("philippines", "Philippines", "PH"),
+    ("poland", "Poland", "PL"),
+    ("portugal", "Portugal", "PT"),
+    ("qatar", "Qatar", "QA"),
+    ("romania", "Romania", "RO"),
+    ("saudi-arabia", "Saudi Arabia", "SA"),
+    ("singapore", "Singapore", "SG"),
+    ("south-africa", "South Africa", "ZA"),
     ("south-korea", "South Korea", "KR"),
+    ("spain", "Spain", "ES"),
+    ("sri-lanka", "Sri Lanka", "LK"),
+    ("sweden", "Sweden", "SE"),
+    ("switzerland", "Switzerland", "CH"),
+    ("taiwan", "Taiwan", "TW"),
+    ("thailand", "Thailand", "TH"),
+    ("turkey", "Turkey", "TR"),
+    ("uae", "United Arab Emirates", "AE"),
+    ("united-kingdom", "United Kingdom", "GB"),
+    ("usa", "United States", "US"),
+    ("vietnam", "Vietnam", "VN"),
 ]
 
 _SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -95,8 +135,8 @@ class HolidayFeedError(Exception):
 
 
 def suggest_country_slug(country: Optional[str]) -> Optional[str]:
-    """The picker default for a tenant whose country is set (free text: a
-    name like "Philippines" or a code like "PH")."""
+    """The picker default for an organisation whose country is set (an ISO
+    code like "DE", or a name like "Germany"). None when it is not set."""
     if not country:
         return None
     c = country.strip().lower()

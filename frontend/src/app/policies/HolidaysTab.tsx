@@ -245,8 +245,8 @@ export default function HolidaysTab() {
             />
           </div>
           <div>
-            <span className="text-sm font-medium text-gray-700">Special Non-Working Holiday</span>
-            <p className="text-xs text-gray-500">Distinguished from regular holidays for pay rules</p>
+            <span className="text-sm font-medium text-gray-700">Paid at the second holiday rate</span>
+            <p className="text-xs text-gray-500">For countries or agreements that pay some holidays differently (Finances → Pay rules)</p>
           </div>
         </label>
       </div>
@@ -372,7 +372,7 @@ export default function HolidaysTab() {
                             <Pill className="bg-yellow-100 text-yellow-800" title="The date is not confirmed yet and may move">Tentative</Pill>
                           )}
                           {holiday.needs_review && (
-                            <Pill className="bg-orange-100 text-orange-800" title="The feed did not say whether this is a regular or special holiday. It was saved as regular; edit it to confirm.">Needs review</Pill>
+                            <Pill className="bg-orange-100 text-orange-800" title="The feed marks some holidays as paid differently but did not say which rate this one gets. It was saved at the public-holiday rate; edit it to confirm.">Needs review</Pill>
                           )}
                           {holiday.region && (
                             <Pill className="bg-violet-100 text-violet-800" title={holiday.region}>
@@ -390,7 +390,7 @@ export default function HolidaysTab() {
                               : 'bg-red-100 text-red-800'
                           }`}
                         >
-                          {holiday.is_special ? 'Special' : 'Regular'}
+                          {holiday.is_special ? 'Second rate' : 'Public'}
                         </span>
                       </td>
                       <td className="px-4 py-3">
@@ -497,7 +497,7 @@ export default function HolidaysTab() {
           </div>
           <p>
             <strong>Recurring holidays</strong> automatically apply every year on the same date (e.g., January 1 for New Year).
-            <strong> Special holidays</strong> can be distinguished from regular holidays for different pay rules via policy configuration.
+            <strong> Second-rate holidays</strong> are for countries or agreements that pay some holidays at a different rate; set both rates under Finances → Pay rules.
           </p>
         </div>
       </details>
@@ -512,6 +512,7 @@ export default function HolidaysTab() {
 // company at a live feed and keeps it in sync; the admin still decides what
 // is kept, edited or deleted.
 
+const NONE = ''
 const OTHER = '__other'
 const CUSTOM = '__custom'
 
@@ -527,10 +528,12 @@ function SourceForm({ source, canManage }: { source: HolidaySourceConfig; canMan
   const queryClient = useQueryClient()
   const { showToast } = useToast()
   const known = new Set(source.countries.map((c) => c.slug))
-  const initialSlug = source.country_slug ?? source.suggested_country_slug ?? 'philippines'
+  // No country is assumed: the saved one, else the organisation's own country
+  // (Settings -> General), else nothing until the admin chooses.
+  const initialSlug = source.country_slug ?? source.suggested_country_slug ?? ''
 
   const [choice, setChoice] = useState<string>(
-    source.provider === 'ics_url' ? CUSTOM : known.has(initialSlug) ? initialSlug : OTHER,
+    source.provider === 'ics_url' ? CUSTOM : !initialSlug ? NONE : known.has(initialSlug) ? initialSlug : OTHER,
   )
   const [otherSlug, setOtherSlug] = useState(known.has(initialSlug) ? '' : initialSlug)
   const [feedUrl, setFeedUrl] = useState(source.feed_url ?? '')
@@ -540,7 +543,7 @@ function SourceForm({ source, canManage }: { source: HolidaySourceConfig; canMan
   const [preview, setPreview] = useState<HolidaySyncResult | null>(null)
 
   const provider = choice === CUSTOM ? 'ics_url' : 'officeholidays'
-  const slug = choice === CUSTOM ? null : choice === OTHER ? otherSlug.trim().toLowerCase() : choice
+  const slug = choice === CUSTOM || choice === NONE ? null : choice === OTHER ? otherSlug.trim().toLowerCase() : choice
   const body = {
     provider: provider as 'officeholidays' | 'ics_url',
     country_slug: slug,
@@ -639,6 +642,7 @@ function SourceForm({ source, canManage }: { source: HolidaySourceConfig; canMan
                 onChange={(e) => { setChoice(e.target.value); setAvailableRegions(null); setRegions([]); setPreview(null) }}
                 className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
               >
+                {choice === NONE && <option value={NONE}>Choose a country</option>}
                 {source.countries.map((c) => (
                   <option key={c.slug} value={c.slug}>{c.name}</option>
                 ))}

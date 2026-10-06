@@ -50,9 +50,13 @@ class AppSettings(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), unique=True, nullable=False)
     timezone = Column(String(100), default="UTC")
-    # Tenant master currency (ISO 4217, e.g. PHP, USD). All monetary values —
+    # The organisation's country (ISO 3166-1 alpha-2), chosen by the admin.
+    # Nothing is assumed until it is set: it only suggests the currency and the
+    # public-holiday calendar, and the admin confirms each.
+    country_code = Column(String(2), nullable=True)
+    # Tenant master currency (ISO 4217, e.g. USD, EUR). All monetary values —
     # salary grades, payroll, compensation, exports — are denominated in this.
-    currency_code = Column(String(3), nullable=False, default="PHP", server_default="PHP")
+    currency_code = Column(String(3), nullable=False, default="USD", server_default="USD")
     date_format = Column(String(50), default="YYYY-MM-DD")
     time_format = Column(String(50), default="HH:mm")
     week_starts_on = Column(String(20), default="monday")
@@ -77,11 +81,13 @@ class AppSettings(Base):
     # Used to derive daily/hourly rate from a monthly salary grade.
     working_days_per_month = Column(Integer, default=22)
     # Premium multipliers. Applied to worked hours on the relevant dates/times.
-    night_diff_multiplier = Column(Float, default=1.10)
+    # 1.0 means no premium: premiums depend on the country and the company, so
+    # a new install pays none until finance sets them (Finances -> Pay rules).
+    night_diff_multiplier = Column(Float, default=1.0)
     night_shift_start = Column(Time, nullable=True)   # e.g. 22:00
     night_shift_end = Column(Time, nullable=True)     # e.g. 06:00
-    holiday_worked_multiplier = Column(Float, default=2.0)
-    special_holiday_worked_multiplier = Column(Float, default=1.3)
+    holiday_worked_multiplier = Column(Float, default=1.0)
+    special_holiday_worked_multiplier = Column(Float, default=1.0)
     holiday_unworked_paid = Column(Boolean, default=False)
     notify_on_leave_request = Column(Boolean, default=True)
     notify_on_leave_approval = Column(Boolean, default=True)

@@ -168,8 +168,8 @@ export default function CalendarView({
             // never in shift_status_types — but they colour cells, and every
             // colour on screen should be explained by the legend.
             .concat([
-              { label: 'Regular holiday', color: '#fca5a5' },
-              { label: 'Special holiday', color: '#fcd34d' },
+              { label: 'Public holiday', color: '#fca5a5' },
+              { label: 'Holiday (second rate)', color: '#fcd34d' },
             ])
             .map((item) => (
             <div key={item.label} className="flex items-center gap-1">

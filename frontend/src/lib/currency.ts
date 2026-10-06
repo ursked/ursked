@@ -3,7 +3,7 @@
  *
  * All monetary values in the app (salary grades, payroll, compensation,
  * payslips, exports) are denominated in the tenant's single master currency,
- * stored as an ISO 4217 code on AppSettings.currency_code (default "PHP").
+ * stored as an ISO 4217 code on AppSettings.currency_code (default "USD").
  *
  * `formatMoney` is a pure formatter; `useCurrency` reads the tenant setting and
  * returns a bound formatter so components never hardcode a currency again.
@@ -14,25 +14,36 @@ import { api } from '@/lib/api'
 /** Curated shortlist shown in the settings picker. The admin can also enter any
  *  custom ISO 4217 code, so this list is for convenience, not a hard limit. */
 export const CURATED_CURRENCIES: { code: string; label: string }[] = [
-  { code: 'PHP', label: 'Philippine Peso' },
   { code: 'USD', label: 'US Dollar' },
   { code: 'EUR', label: 'Euro' },
   { code: 'GBP', label: 'British Pound' },
-  { code: 'JPY', label: 'Japanese Yen' },
-  { code: 'AUD', label: 'Australian Dollar' },
-  { code: 'CAD', label: 'Canadian Dollar' },
-  { code: 'SGD', label: 'Singapore Dollar' },
-  { code: 'HKD', label: 'Hong Kong Dollar' },
   { code: 'AED', label: 'UAE Dirham' },
-  { code: 'INR', label: 'Indian Rupee' },
+  { code: 'AUD', label: 'Australian Dollar' },
+  { code: 'BRL', label: 'Brazilian Real' },
+  { code: 'CAD', label: 'Canadian Dollar' },
+  { code: 'CHF', label: 'Swiss Franc' },
   { code: 'CNY', label: 'Chinese Yuan' },
-  { code: 'MYR', label: 'Malaysian Ringgit' },
-  { code: 'THB', label: 'Thai Baht' },
+  { code: 'HKD', label: 'Hong Kong Dollar' },
   { code: 'IDR', label: 'Indonesian Rupiah' },
+  { code: 'INR', label: 'Indian Rupee' },
+  { code: 'JPY', label: 'Japanese Yen' },
+  { code: 'KES', label: 'Kenyan Shilling' },
+  { code: 'KRW', label: 'South Korean Won' },
+  { code: 'MXN', label: 'Mexican Peso' },
+  { code: 'MYR', label: 'Malaysian Ringgit' },
+  { code: 'NGN', label: 'Nigerian Naira' },
+  { code: 'NZD', label: 'New Zealand Dollar' },
+  { code: 'PHP', label: 'Philippine Peso' },
+  { code: 'PLN', label: 'Polish Zloty' },
+  { code: 'SAR', label: 'Saudi Riyal' },
+  { code: 'SEK', label: 'Swedish Krona' },
+  { code: 'SGD', label: 'Singapore Dollar' },
+  { code: 'THB', label: 'Thai Baht' },
   { code: 'VND', label: 'Vietnamese Dong' },
+  { code: 'ZAR', label: 'South African Rand' },
 ]
 
-const DEFAULT_CURRENCY = 'PHP'
+const DEFAULT_CURRENCY = 'USD'
 
 /** Normalise a possibly-empty/invalid code to a usable ISO 4217 code. */
 export function normalizeCurrency(code?: string | null): string {

@@ -351,7 +351,7 @@ export default function LinearGridView({
                         }`}
                         title={
                           remark.is_holiday
-                            ? `${remark.title} — ${remark.is_special ? 'special (non-working)' : 'regular'} holiday`
+                            ? `${remark.title} — ${remark.is_special ? 'holiday, second pay rate' : 'public holiday'}`
                             : remark.title
                         }
                       >

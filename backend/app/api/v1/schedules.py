@@ -601,10 +601,14 @@ async def _source_response(db: AsyncSession, user: User, source) -> dict:
     from app.models.tenant import Tenant
     from app.services import holiday_sync_service as hs
 
+    from app.services.settings_service import SettingsService
+
     tenant = await db.get(Tenant, user.tenant_id)
+    settings = await SettingsService.get_or_create_app_settings(db, user.tenant_id)
+    country = getattr(settings, "country_code", None) or getattr(tenant, "country", None)
     out = {
         "configured": source is not None,
-        "suggested_country_slug": hs.suggest_country_slug(getattr(tenant, "country", None)),
+        "suggested_country_slug": hs.suggest_country_slug(country),
         "countries": [{"slug": s, "name": n} for s, n, _ in hs.COUNTRIES],
     }
     if source is not None:

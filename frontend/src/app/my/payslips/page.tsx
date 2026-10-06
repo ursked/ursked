@@ -29,7 +29,7 @@ function lines(breakdown: Record<string, unknown>, key: string): Array<Record<st
 
 const PREMIUM_LABEL: Record<string, string> = {
   holiday_regular: 'Holiday pay',
-  holiday_special: 'Special holiday pay',
+  holiday_special: 'Holiday pay (second rate)',
   night_diff: 'Night differential',
 }
 

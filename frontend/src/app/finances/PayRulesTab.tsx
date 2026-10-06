@@ -35,14 +35,14 @@ const NUMBER_FIELDS: { key: NumberKey; label: string; help: string; min: number;
   },
   {
     key: 'holiday_worked_multiplier',
-    label: 'Regular holiday multiplier',
-    help: 'Applied to hours worked on a regular holiday. 2.0 pays double.',
+    label: 'Public holiday multiplier',
+    help: 'Applied to hours worked on a public holiday. 1.0 means no premium; 2.0 pays double.',
     min: 1, max: 10, step: 0.01,
   },
   {
     key: 'special_holiday_worked_multiplier',
-    label: 'Special holiday multiplier',
-    help: 'Applied to hours worked on a special (non-regular) holiday.',
+    label: 'Second-rate holiday multiplier',
+    help: 'For countries or agreements that pay some holidays at a different rate: applied to hours worked on holidays marked "second rate". 1.0 means no premium.',
     min: 1, max: 10, step: 0.01,
   },
 ]
@@ -151,9 +151,9 @@ export default function PayRulesTab() {
       <div>
         <h2 className="text-lg font-semibold text-gray-900">Pay rules</h2>
         <p className="text-sm text-gray-500">
-          The rates payroll uses to work out everyone&apos;s pay. The values the app ships with are
-          Philippine statutory defaults. Check them against the rules that apply to your company, such as
-          local law and any collective agreement, and change them to match.
+          The rates payroll uses to work out everyone&apos;s pay. A new install pays no premiums (every
+          multiplier is 1.0). Set them to the rules that apply to your company, such as local law and any
+          collective agreement.
         </p>
       </div>
 
