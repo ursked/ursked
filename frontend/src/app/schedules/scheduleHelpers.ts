@@ -90,7 +90,7 @@ export const WORK_ARRANGEMENT_LABELS: Record<string, string> = {
   wfh: 'WFH',
   onsite: 'On-site',
   hybrid: 'Hybrid',
-  ob: 'OB',
+  ob: 'Field',
 };
 
 export const WORK_ARRANGEMENT_BADGE: Record<string, string> = {
@@ -126,7 +126,7 @@ export const ALL_WORK_ARRANGEMENTS: { value: WorkArrangement; label: string }[] 
   { value: 'onsite', label: 'On-site' },
   { value: 'wfh', label: 'Work From Home' },
   { value: 'hybrid', label: 'Hybrid' },
-  { value: 'ob', label: 'Official Business' },
+  { value: 'ob', label: 'Field work' },
 ];
 
 // ── Dynamic Status Maps (built from tenant's ShiftStatusType[]) ─────

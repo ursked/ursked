@@ -15,7 +15,7 @@ const ARRANGEMENT_LABEL: Record<string, string> = {
   onsite: 'On-site',
   wfh: 'Work From Home',
   hybrid: 'Hybrid',
-  ob: 'Official Business',
+  ob: 'Field work',
 }
 
 function hhmm(t?: string | null) {

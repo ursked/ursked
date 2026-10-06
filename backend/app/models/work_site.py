@@ -68,7 +68,7 @@ class WorkArrangementRule(Base):
     )
 
     # require_site : must be within radius of a site, else flagged (never blocked)
-    # any_location : capture coordinates, never evaluate them (WFH, official business)
+    # any_location : capture coordinates, never evaluate them (WFH, field work)
     # record_only  : capture if offered, no expectation either way
     GEOFENCE_MODES = ("require_site", "any_location", "record_only")
 

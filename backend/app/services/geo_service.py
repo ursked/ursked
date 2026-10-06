@@ -35,7 +35,7 @@ def evaluate_geofence(
     Returns (geofence_status, work_site_id, distance_m).
 
     Only `require_site` is ever evaluated. `any_location` covers work-from-home and
-    official business, where being far from an office is the whole point, so a
+    field work, where being far from an office is the whole point, so a
     distance verdict there would be meaningless noise on a timesheet.
 
     The device's own accuracy figure is credited to the employee: a fix reported as

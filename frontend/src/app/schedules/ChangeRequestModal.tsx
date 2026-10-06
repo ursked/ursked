@@ -103,7 +103,7 @@ export default function ChangeRequestModal({
     { value: 'onsite', label: 'On-site' },
     { value: 'wfh', label: 'Work From Home' },
     { value: 'hybrid', label: 'Hybrid' },
-    { value: 'ob', label: 'Official Business' },
+    { value: 'ob', label: 'Field work' },
   ];
 
   // The schedule is authored in the organization (master) timezone, and requests

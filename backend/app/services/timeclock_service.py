@@ -540,14 +540,14 @@ class TimeclockService:
         """Idempotently create the default arrangement rules for a tenant.
 
         Mirrors the vocabulary the scheduler already offers. Only `onsite` implies
-        a place to be; work-from-home and official business record a location
+        a place to be; work-from-home and field work record a location
         without judging it.
         """
         defaults = [
             ("onsite", "On-site", "require_site", 1),
             ("wfh", "Work From Home", "any_location", 2),
             ("hybrid", "Hybrid", "any_location", 3),
-            ("ob", "Official Business", "any_location", 4),
+            ("ob", "Field work", "any_location", 4),
         ]
         existing = {
             c for (c,) in (
